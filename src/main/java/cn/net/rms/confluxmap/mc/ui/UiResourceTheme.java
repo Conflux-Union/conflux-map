@@ -53,6 +53,9 @@ public final class UiResourceTheme {
     );
     private static final Map<Identifier, UiIcon> XAERO_WORLD_MAP_ICONS = xaeroIcons();
 
+    private static final Supplier<ConfluxConfig.ControlStyle> DEFAULT_CONTROL_STYLE_SUPPLIER =
+        () -> ConfluxConfig.ControlStyle.AUTO;
+
     private boolean xaeroMinimapFrame;
     private boolean xaeroWorldMapGui;
     private boolean confluxSquareFrame;
@@ -64,13 +67,11 @@ public final class UiResourceTheme {
     private final Supplier<ConfluxConfig.ControlStyle> controlStyleSupplier;
 
     public UiResourceTheme() {
-        this(() -> ConfluxConfig.ControlStyle.AUTO);
+        this(DEFAULT_CONTROL_STYLE_SUPPLIER);
     }
 
     public UiResourceTheme(final Supplier<ConfluxConfig.ControlStyle> controlStyleSupplier) {
-        this.controlStyleSupplier = controlStyleSupplier != null
-            ? controlStyleSupplier
-            : () -> ConfluxConfig.ControlStyle.AUTO;
+        this(false, false, false, false, Set.of(), controlStyleSupplier);
     }
 
     UiResourceTheme(
@@ -86,7 +87,7 @@ public final class UiResourceTheme {
             confluxSquareFrame,
             confluxCircleFrame,
             overriddenConfluxIcons,
-            () -> ConfluxConfig.ControlStyle.AUTO
+            DEFAULT_CONTROL_STYLE_SUPPLIER
         );
     }
 
@@ -105,7 +106,7 @@ public final class UiResourceTheme {
         this.overriddenConfluxIcons = Set.copyOf(overriddenConfluxIcons);
         this.controlStyleSupplier = controlStyleSupplier != null
             ? controlStyleSupplier
-            : () -> ConfluxConfig.ControlStyle.AUTO;
+            : DEFAULT_CONTROL_STYLE_SUPPLIER;
     }
 
     public void reload(final ResourceManager manager) {
@@ -144,13 +145,10 @@ public final class UiResourceTheme {
     /** Uses the effective Minecraft button skin only when another resource layer replaces it. */
     public boolean useVanillaButtonStyle() {
         final ConfluxConfig.ControlStyle style = controlStyleSupplier.get();
-        if (style == ConfluxConfig.ControlStyle.CONFLUX) {
-            return false;
+        if (style == null || style == ConfluxConfig.ControlStyle.AUTO) {
+            return vanillaButtonStyle;
         }
-        if (style == ConfluxConfig.ControlStyle.VANILLA) {
-            return true;
-        }
-        return vanillaButtonStyle;
+        return style == ConfluxConfig.ControlStyle.VANILLA;
     }
 
     /** Optional player marker supplied only by an enabled resource pack. */

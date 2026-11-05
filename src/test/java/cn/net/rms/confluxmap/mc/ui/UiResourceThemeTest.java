@@ -251,6 +251,26 @@ final class UiResourceThemeTest {
         assertTrue(theme.useVanillaButtonStyle());
     }
 
+    @Test
+    void autoStyleDelegatesToDetectedVanillaButtonStyle() {
+        final UiResourceTheme theme = new UiResourceTheme(() -> ConfluxConfig.ControlStyle.AUTO);
+        theme.reload(resourceManagerWithVanillaButtonLayers(1));
+        assertFalse(theme.useVanillaButtonStyle());
+
+        theme.reload(resourceManagerWithVanillaButtonLayers(2));
+        assertTrue(theme.useVanillaButtonStyle());
+    }
+
+    @Test
+    void nullSupplierFallsBackToDetectedStyleSafely() {
+        final UiResourceTheme theme = new UiResourceTheme(() -> null);
+        theme.reload(resourceManagerWithVanillaButtonLayers(1));
+        assertFalse(theme.useVanillaButtonStyle());
+
+        theme.reload(resourceManagerWithVanillaButtonLayers(2));
+        assertTrue(theme.useVanillaButtonStyle());
+    }
+
     private static UiResourceTheme theme(
         final boolean xaeroMinimap,
         final boolean xaeroWorldMap,
