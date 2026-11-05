@@ -402,7 +402,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         );
         measureState = new MeasureState();
         deathWatcher = new DeathWatcher(gameBridge, config, waypointService, companionSession::waypointsAllowed);
-        uiResourceTheme = new UiResourceTheme();
+        uiResourceTheme = new UiResourceTheme(() -> config.controlStyle);
         minimapHudRenderer = new MinimapHudRenderer(
             client, config, gameBridge, tileService, tileTextureManager, radarScanner, entityIconManager,
             serverPlayerRadar, playerTrail, annotationService, layerSelector, waypointRenderCatalog,

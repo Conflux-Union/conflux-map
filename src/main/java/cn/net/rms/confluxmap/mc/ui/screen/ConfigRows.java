@@ -760,6 +760,17 @@ final class ConfigRows {
                     () -> config.uiTransitionSpeed, v -> config.uiTransitionSpeed = v,
                     ConfigValueLabels::uiTransitionSpeedKey
                 );
+                y = addEnumRow(
+                    y, "confluxmap.config.interface.control_style",
+                    ConfluxConfig.ControlStyle.values(),
+                    () -> config.controlStyle,
+                    v -> {
+                        config.controlStyle = v;
+                        configIo.save(config);
+                        screen.rebuild();
+                    },
+                    ConfigValueLabels::controlStyleKey
+                );
                 y = addIntSliderRow(
                     y, "confluxmap.config.performance.snapshot_budget", 1, 64,
                     () -> config.snapshotBudgetPerTick, v -> config.snapshotBudgetPerTick = v, ConfigValueLabels::plainText

@@ -76,6 +76,17 @@ final class ConfigValueLabels {
         return "confluxmap.value.ui_transition_speed." + speed.name().toLowerCase(java.util.Locale.ROOT);
     }
 
+    static String controlStyleKey(final ConfluxConfig.ControlStyle style) {
+        switch (style) {
+            case CONFLUX:
+                return "confluxmap.value.interface.control_style.conflux";
+            case VANILLA:
+                return "confluxmap.value.interface.control_style.vanilla";
+            default:
+                return "confluxmap.value.interface.control_style.auto";
+        }
+    }
+
     static String voidColumnColorKey(final ConfluxConfig.VoidColumnColor color) {
         return "confluxmap.value.map.void_color." + color.name().toLowerCase(java.util.Locale.ROOT);
     }

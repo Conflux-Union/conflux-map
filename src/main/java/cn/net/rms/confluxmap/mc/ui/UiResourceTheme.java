@@ -1,12 +1,14 @@
 package cn.net.rms.confluxmap.mc.ui;
 
 import cn.net.rms.confluxmap.compat.Ids;
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.resource.ResourceManager;
 import net.minecraft.util.Identifier;
@@ -59,8 +61,16 @@ public final class UiResourceTheme {
     private boolean xaeroPlayerMarker;
     private boolean vanillaButtonStyle;
     private Set<Identifier> overriddenConfluxIcons = Set.of();
+    private final Supplier<ConfluxConfig.ControlStyle> controlStyleSupplier;
 
     public UiResourceTheme() {
+        this(() -> ConfluxConfig.ControlStyle.AUTO);
+    }
+
+    public UiResourceTheme(final Supplier<ConfluxConfig.ControlStyle> controlStyleSupplier) {
+        this.controlStyleSupplier = controlStyleSupplier != null
+            ? controlStyleSupplier
+            : () -> ConfluxConfig.ControlStyle.AUTO;
     }
 
     UiResourceTheme(
@@ -70,11 +80,32 @@ public final class UiResourceTheme {
         final boolean confluxCircleFrame,
         final Set<Identifier> overriddenConfluxIcons
     ) {
+        this(
+            xaeroMinimapFrame,
+            xaeroWorldMapGui,
+            confluxSquareFrame,
+            confluxCircleFrame,
+            overriddenConfluxIcons,
+            () -> ConfluxConfig.ControlStyle.AUTO
+        );
+    }
+
+    UiResourceTheme(
+        final boolean xaeroMinimapFrame,
+        final boolean xaeroWorldMapGui,
+        final boolean confluxSquareFrame,
+        final boolean confluxCircleFrame,
+        final Set<Identifier> overriddenConfluxIcons,
+        final Supplier<ConfluxConfig.ControlStyle> controlStyleSupplier
+    ) {
         this.xaeroMinimapFrame = xaeroMinimapFrame;
         this.xaeroWorldMapGui = xaeroWorldMapGui;
         this.confluxSquareFrame = confluxSquareFrame;
         this.confluxCircleFrame = confluxCircleFrame;
         this.overriddenConfluxIcons = Set.copyOf(overriddenConfluxIcons);
+        this.controlStyleSupplier = controlStyleSupplier != null
+            ? controlStyleSupplier
+            : () -> ConfluxConfig.ControlStyle.AUTO;
     }
 
     public void reload(final ResourceManager manager) {
@@ -112,6 +143,13 @@ public final class UiResourceTheme {
 
     /** Uses the effective Minecraft button skin only when another resource layer replaces it. */
     public boolean useVanillaButtonStyle() {
+        final ConfluxConfig.ControlStyle style = controlStyleSupplier.get();
+        if (style == ConfluxConfig.ControlStyle.CONFLUX) {
+            return false;
+        }
+        if (style == ConfluxConfig.ControlStyle.VANILLA) {
+            return true;
+        }
         return vanillaButtonStyle;
     }
 

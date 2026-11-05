@@ -46,6 +46,20 @@ final class ConfluxConfigTest {
     }
 
     @Test
+    void controlStyleDefaultsToAutoAndSurvivesCopyAndNormalize() {
+        final ConfluxConfig config = new ConfluxConfig();
+        assertEquals(ConfluxConfig.ControlStyle.AUTO, config.controlStyle);
+
+        config.controlStyle = ConfluxConfig.ControlStyle.CONFLUX;
+        final ConfluxConfig copy = config.copy();
+        assertEquals(ConfluxConfig.ControlStyle.CONFLUX, copy.controlStyle);
+
+        copy.controlStyle = null;
+        copy.normalize();
+        assertEquals(ConfluxConfig.ControlStyle.AUTO, copy.controlStyle);
+    }
+
+    @Test
     void waypointListDefaultsNormalizeNullEnumsBackToDefaults() {
         final ConfluxConfig config = new ConfluxConfig();
         config.waypointListDefaultTab = null;
