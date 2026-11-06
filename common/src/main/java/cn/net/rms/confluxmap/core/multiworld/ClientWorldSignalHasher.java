@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.core.multiworld;
 
+import cn.net.rms.confluxmap.core.util.HexCodec;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -8,8 +9,6 @@ import java.util.Comparator;
 
 /** One-way canonicalization for server fingerprints; raw server metadata is never persisted. */
 public final class ClientWorldSignalHasher {
-    private static final char[] HEX = "0123456789abcdef".toCharArray();
-
     private ClientWorldSignalHasher() {
     }
 
@@ -34,12 +33,6 @@ public final class ClientWorldSignalHasher {
         } catch (final NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is required by the Java runtime", e);
         }
-        final char[] encoded = new char[bytes.length * 2];
-        for (int i = 0; i < bytes.length; i++) {
-            final int current = bytes[i] & 0xFF;
-            encoded[i * 2] = HEX[current >>> 4];
-            encoded[i * 2 + 1] = HEX[current & 0x0F];
-        }
-        return new String(encoded);
+        return HexCodec.format(bytes);
     }
 }

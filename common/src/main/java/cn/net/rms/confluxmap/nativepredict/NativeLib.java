@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.nativepredict;
 
+import cn.net.rms.confluxmap.core.util.HexCodec;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -175,7 +176,6 @@ public final class NativeLib {
         }
     }
 
-    /** Manual hex encode - {@code java.util.HexFormat} is JDK 17+, this mod compiles at Java 16. */
     private static String sha256Hex(final byte[] bytes) {
         final byte[] hash;
         try {
@@ -183,14 +183,7 @@ public final class NativeLib {
         } catch (final NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 unavailable", e);
         }
-        final char[] digits = "0123456789abcdef".toCharArray();
-        final char[] hex = new char[hash.length * 2];
-        for (int i = 0; i < hash.length; i++) {
-            final int v = hash[i] & 0xFF;
-            hex[i * 2] = digits[v >>> 4];
-            hex[i * 2 + 1] = digits[v & 0x0F];
-        }
-        return new String(hex);
+        return HexCodec.format(hash);
     }
 
     private static String libFileName(final String target) {

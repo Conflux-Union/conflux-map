@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.model;
 
 import cn.net.rms.confluxmap.core.store.WorldIdStore;
+import cn.net.rms.confluxmap.core.util.HexCodec;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -22,7 +23,6 @@ import java.util.stream.Stream;
  */
 public final class WorldIdentity {
     private static final int SAVE_ID_PREFIX_MAX_LENGTH = 80;
-    private static final char[] HEX = "0123456789abcdef".toCharArray();
 
     public static final WorldIdentity NONE = new WorldIdentity("none", "none");
 
@@ -172,13 +172,7 @@ public final class WorldIdentity {
         } catch (final NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is required by the Java runtime", e);
         }
-        final char[] encoded = new char[digest.length * 2];
-        for (int i = 0; i < digest.length; i++) {
-            final int valueByte = digest[i] & 0xFF;
-            encoded[i * 2] = HEX[valueByte >>> 4];
-            encoded[i * 2 + 1] = HEX[valueByte & 0x0F];
-        }
-        return new String(encoded);
+        return HexCodec.format(digest);
     }
 
     private static boolean legacyStorageIdIsUnique(final Path saveRoot, final String legacyId) {
