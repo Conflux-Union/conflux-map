@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.compat.Ids;
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import java.lang.reflect.Proxy;
 import java.util.Collections;
 import java.util.List;
@@ -231,6 +232,42 @@ final class UiResourceThemeTest {
 
         theme.reload(resourceManagerWithVanillaButtonLayers(2));
 
+        assertTrue(theme.useVanillaButtonStyle());
+    }
+
+    @Test
+    void explicitConfluxStyleForcesConfluxButtonsEvenWithOverrides() {
+        final UiResourceTheme theme = new UiResourceTheme(() -> ConfluxConfig.ControlStyle.CONFLUX);
+        theme.reload(resourceManagerWithVanillaButtonLayers(2));
+
+        assertFalse(theme.useVanillaButtonStyle());
+    }
+
+    @Test
+    void explicitVanillaStyleForcesVanillaButtonsEvenWithoutOverrides() {
+        final UiResourceTheme theme = new UiResourceTheme(() -> ConfluxConfig.ControlStyle.VANILLA);
+        theme.reload(resourceManagerWithVanillaButtonLayers(1));
+
+        assertTrue(theme.useVanillaButtonStyle());
+    }
+
+    @Test
+    void autoStyleDelegatesToDetectedVanillaButtonStyle() {
+        final UiResourceTheme theme = new UiResourceTheme(() -> ConfluxConfig.ControlStyle.AUTO);
+        theme.reload(resourceManagerWithVanillaButtonLayers(1));
+        assertFalse(theme.useVanillaButtonStyle());
+
+        theme.reload(resourceManagerWithVanillaButtonLayers(2));
+        assertTrue(theme.useVanillaButtonStyle());
+    }
+
+    @Test
+    void nullSupplierFallsBackToDetectedStyleSafely() {
+        final UiResourceTheme theme = new UiResourceTheme(() -> null);
+        theme.reload(resourceManagerWithVanillaButtonLayers(1));
+        assertFalse(theme.useVanillaButtonStyle());
+
+        theme.reload(resourceManagerWithVanillaButtonLayers(2));
         assertTrue(theme.useVanillaButtonStyle());
     }
 

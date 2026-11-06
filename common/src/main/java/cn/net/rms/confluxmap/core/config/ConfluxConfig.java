@@ -95,6 +95,8 @@ public final class ConfluxConfig {
 
     public enum PlayerMarkerStyle { TRADITIONAL, MODERN }
 
+    public enum ControlStyle { AUTO, CONFLUX, VANILLA }
+
     /**
      * Map quality preset governing the slope (loadline) at which fullscreen and minimap views
      * transition between LOD levels as scale increases.
@@ -419,6 +421,8 @@ public final class ConfluxConfig {
     public boolean uiTransitionsEnabled = true;
     /** Reveal duration tier for {@link #uiTransitionsEnabled}. */
     public UiTransitionSpeed uiTransitionSpeed = UiTransitionSpeed.STANDARD;
+    /** Visual skin for screen buttons and toolbar controls. */
+    public ControlStyle controlStyle = ControlStyle.AUTO;
 
     /** Permanent local opt-out for the unsupported-platform startup warning. */
     public boolean unsupportedPlatformWarningDismissed;
@@ -541,6 +545,7 @@ public final class ConfluxConfig {
         c.updateCheckEnabled = updateCheckEnabled;
         c.uiTransitionsEnabled = uiTransitionsEnabled;
         c.uiTransitionSpeed = uiTransitionSpeed;
+        c.controlStyle = controlStyle;
         c.unsupportedPlatformWarningDismissed = unsupportedPlatformWarningDismissed;
         c.surveyReminderGameOpenMillis = surveyReminderGameOpenMillis;
         c.surveyReminderNextPromptAtMillis = surveyReminderNextPromptAtMillis;
@@ -659,6 +664,9 @@ public final class ConfluxConfig {
         }
         if (playerMarkerStyle == null) {
             playerMarkerStyle = PlayerMarkerStyle.MODERN;
+        }
+        if (controlStyle == null) {
+            controlStyle = ControlStyle.AUTO;
         }
         if (layerOverride == null) {
             layerOverride = LayerOverride.AUTO;
