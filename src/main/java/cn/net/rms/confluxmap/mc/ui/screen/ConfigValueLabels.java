@@ -77,14 +77,7 @@ final class ConfigValueLabels {
     }
 
     static String controlStyleKey(final ConfluxConfig.ControlStyle style) {
-        switch (style) {
-            case CONFLUX:
-                return "confluxmap.value.interface.control_style.conflux";
-            case VANILLA:
-                return "confluxmap.value.interface.control_style.vanilla";
-            default:
-                return "confluxmap.value.interface.control_style.auto";
-        }
+        return "confluxmap.value.interface.control_style." + style.name().toLowerCase(java.util.Locale.ROOT);
     }
 
     static String voidColumnColorKey(final ConfluxConfig.VoidColumnColor color) {

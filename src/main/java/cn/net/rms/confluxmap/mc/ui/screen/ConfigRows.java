@@ -763,12 +763,7 @@ final class ConfigRows {
                 y = addEnumRow(
                     y, "confluxmap.config.interface.control_style",
                     ConfluxConfig.ControlStyle.values(),
-                    () -> config.controlStyle,
-                    v -> {
-                        config.controlStyle = v;
-                        configIo.save(config);
-                        screen.rebuild();
-                    },
+                    () -> config.controlStyle, v -> config.controlStyle = v,
                     ConfigValueLabels::controlStyleKey
                 );
                 y = addIntSliderRow(

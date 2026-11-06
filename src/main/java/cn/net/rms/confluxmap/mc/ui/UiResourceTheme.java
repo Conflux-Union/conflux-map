@@ -104,9 +104,7 @@ public final class UiResourceTheme {
         this.confluxSquareFrame = confluxSquareFrame;
         this.confluxCircleFrame = confluxCircleFrame;
         this.overriddenConfluxIcons = Set.copyOf(overriddenConfluxIcons);
-        this.controlStyleSupplier = controlStyleSupplier != null
-            ? controlStyleSupplier
-            : DEFAULT_CONTROL_STYLE_SUPPLIER;
+        this.controlStyleSupplier = controlStyleSupplier;
     }
 
     public void reload(final ResourceManager manager) {
@@ -142,7 +140,7 @@ public final class UiResourceTheme {
         return XAERO_WORLD_MAP_ICONS.getOrDefault(confluxIcon, UiIcon.monochrome(confluxIcon));
     }
 
-    /** Uses the effective Minecraft button skin only when another resource layer replaces it. */
+    /** Vanilla button skin per the configured control style; AUTO defers to resource-pack override detection. */
     public boolean useVanillaButtonStyle() {
         final ConfluxConfig.ControlStyle style = controlStyleSupplier.get();
         if (style == null || style == ConfluxConfig.ControlStyle.AUTO) {
