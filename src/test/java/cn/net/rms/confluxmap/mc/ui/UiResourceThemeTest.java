@@ -262,6 +262,14 @@ final class UiResourceThemeTest {
     }
 
     @Test
+    void brokenPackArtNeverEscapesReloadAndFallsBackToTheLayerCountVerdict() {
+        final UiResourceTheme theme = new UiResourceTheme();
+        theme.reload(brokenResourceManagerWithVanillaButtonLayers(2));
+
+        assertTrue(theme.useVanillaButtonStyle());
+    }
+
+    @Test
     void nullSupplierFallsBackToDetectedStyleSafely() {
         final UiResourceTheme theme = new UiResourceTheme(() -> null);
         theme.reload(resourceManagerWithVanillaButtonLayers(1));
@@ -287,15 +295,28 @@ final class UiResourceThemeTest {
         return resourceManagerWithLayers(UiResourceTheme.vanillaButtonResource(), layers);
     }
 
+    private static ResourceManager brokenResourceManagerWithVanillaButtonLayers(final int layers) {
+        return resourceManagerWithLayers(
+            Map.of(UiResourceTheme.vanillaButtonResource(), layers), true
+        );
+    }
+
     private static ResourceManager resourceManagerWithLayers(
         final Identifier resource,
         final int layers
     ) {
-        return resourceManagerWithLayers(Map.of(resource, layers));
+        return resourceManagerWithLayers(Map.of(resource, layers), false);
     }
 
     private static ResourceManager resourceManagerWithLayers(
         final Map<Identifier, Integer> layers
+    ) {
+        return resourceManagerWithLayers(layers, false);
+    }
+
+    private static ResourceManager resourceManagerWithLayers(
+        final Map<Identifier, Integer> layers,
+        final boolean breakGetResource
     ) {
         return (ResourceManager) Proxy.newProxyInstance(
             ResourceManager.class.getClassLoader(),
@@ -308,6 +329,19 @@ final class UiResourceThemeTest {
                     final Identifier requested = (Identifier) arguments[0];
                     final int count = layers.getOrDefault(requested, 0);
                     return Collections.nCopies(count, null);
+                }
+                if (method.getName().equals("getResource")) {
+                    if (breakGetResource) {
+                        // ImageIO surfaces some malformed pack PNGs as runtime exceptions.
+                        throw new IllegalStateException("simulated broken pack art");
+                    }
+                    // No layer in this fake decodes, so the pixel check falls back to
+                    // the layer-count verdict on every atlas version.
+                    //#if MC>=11900
+                    //$$ return java.util.Optional.empty();
+                    //#else
+                    throw new java.io.FileNotFoundException(String.valueOf(arguments[0]));
+                    //#endif
                 }
                 throw new UnsupportedOperationException(method.getName());
             }

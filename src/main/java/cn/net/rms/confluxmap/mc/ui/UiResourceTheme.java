@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.ui;
 import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -122,7 +123,11 @@ public final class UiResourceTheme {
         confluxSquareFrame = resourceCount(manager, CONFLUX_SQUARE_FRAME) > 0;
         confluxCircleFrame = resourceCount(manager, CONFLUX_CIRCLE_FRAME) > 0;
         confluxPlayerMarker = resourceCount(manager, CONFLUX_PLAYER_MARKER) > 0;
-        vanillaButtonStyle = resourceCount(manager, VANILLA_BUTTON_RESOURCE) > 1;
+        //#if MC>=12002
+        //$$ vanillaButtonStyle = resourceCount(manager, VANILLA_BUTTON_RESOURCE) > 1;
+        //#else
+        vanillaButtonStyle = atlasButtonStyle(manager, resourceCount(manager, VANILLA_BUTTON_RESOURCE));
+        //#endif
 
         final Set<Identifier> overridden = new HashSet<>();
         for (final Identifier icon : XAERO_WORLD_MAP_ICONS.keySet()) {
@@ -203,6 +208,50 @@ public final class UiResourceTheme {
     ) {
         return isResourcePackOverride(resourceCount(manager, id), providingModLoaded);
     }
+
+    //#if MC<12002
+    /**
+     * Reference digest of the vanilla widgets.png button strips: ARGB row-major over
+     * x in [0,200), v in [46,106). The 1.17.1/1.18.2/1.20.1 vanilla atlases are
+     * byte-identical, so this one value anchors the whole atlas era.
+     */
+    private static final String VANILLA_BUTTON_REGION_DIGEST =
+        "67e145cc81f840aa7213408fe9981828b2a91330a0aca4cb2d871993f5fb0e72";
+
+    /**
+     * AUTO detection for the widgets-atlas era: a pack claims the vanilla button style
+     * only when the effective atlas actually changes the button strips; unverifiable art
+     * falls back to the legacy layer-count verdict.
+     */
+    private static boolean atlasButtonStyle(
+        final ResourceManager manager,
+        final int overrideLayers
+    ) {
+        if (overrideLayers <= 1) {
+            return false;
+        }
+        try {
+            //#if MC>=11900
+            //$$ final java.util.Optional<net.minecraft.resource.Resource> resource =
+            //$$     manager.getResource(VANILLA_BUTTON_RESOURCE);
+            //$$ if (resource.isEmpty()) {
+            //$$     return true;
+            //$$ }
+            //$$ try (InputStream stream = resource.get().getInputStream()) {
+            //#else
+            try (InputStream stream = manager.getResource(VANILLA_BUTTON_RESOURCE).getInputStream()) {
+            //#endif
+                return !VanillaWidgetsButtonArt.matchesVanillaButtons(
+                    stream, VANILLA_BUTTON_REGION_DIGEST
+                );
+            }
+        } catch (final IOException | RuntimeException exception) {
+            // Pack bytes are untrusted; ImageIO surfaces malformed PNGs as runtime
+            // exceptions, and one bad pack must not fail the whole resource reload.
+            return true;
+        }
+    }
+    //#endif
 
     static boolean isResourcePackOverride(
         final int resourceCount,
