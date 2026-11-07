@@ -768,7 +768,7 @@ typedef struct {
 
 static const CfxNoiseDetail CFX_DETAIL_FULL = {0, 0, 0};
 
-#define CFX_DETAIL_MIN_STRIDE 8
+#define CFX_DETAIL_MIN_STRIDE 4
 #define CFX_JAGGED_KEEP_OCTAVES 4
 
 static CfxNoiseDetail cfxNoiseDetailForStride(const SurfaceNoise *sn, int stride)
@@ -920,7 +920,7 @@ static int cfxModernOverviewHeight(
         const double above = 128.0 * (base + noise / factor);
         const double below = 128.0 * (base + noise / (4.0 * factor));
         const double next = above >= 128.0 * base ? above : below;
-        if (fabs(next - y) < 0.5)
+        if (fabs(next - y) < 1.0)
         {
             y = next;
             break;
@@ -957,6 +957,8 @@ static int cfxLegacyOverviewHeight(
     return (int) floor(128.0 * (0.53125 + densityOffset + blendedDepth));
 }
 
+#include "adaptive_macro.h"
+
 static jint cfxOverviewHeightsImpl(
     JNIEnv *env, CfxContext *ctx,
     jint blockX, jint blockZ, jint w, jint h, jint stride,
@@ -981,7 +983,7 @@ static jint cfxOverviewHeightsImpl(
 
     if (ctx->mc >= MC_1_18)
     {
-        if (stride < 4)
+        if (stride <= 4)
         {
             const int minX4 = floordiv(blockX, 4);
             const int minZ4 = floordiv(blockZ, 4);
@@ -995,12 +997,9 @@ static jint cfxOverviewHeightsImpl(
                 free(heights);
                 return CFX_ERR_ALLOC;
             }
+            CfxNoiseDetail macroDetail = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 4);
+            cfxEvaluateAdaptiveMacroGrid(ctx, macro, gridW, gridH, minX4, minZ4, &macroDetail);
             int j, i;
-            for (j = 0; j < gridH; j++)
-                for (i = 0; i < gridW; i++)
-                    macro[j*gridW+i] = cfxModernOverviewHeight(
-                        ctx, minX4+i, minZ4+j, detail
-                    );
             for (j = 0; j < h; j++)
             {
                 const int sampleZ = (int)((int64_t)blockZ + (int64_t)j*stride);

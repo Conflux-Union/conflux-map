@@ -65,7 +65,7 @@ final List<String> nativeSources = [
     'native/cubiomes/features/stronghold.c',
 ]
 final List<String> nativeCflags = [
-    '-shared', '-fPIC', '-O2', '-g0', '-fno-fast-math', '-ffp-contract=off', '-fvisibility=hidden', '-Wall',
+    '-shared', '-fPIC', '-O3', '-g0', '-fno-fast-math', '-ffp-contract=off', '-fvisibility=hidden', '-Wall',
     '-Wl,--no-undefined',
     '-Inative/jni', '-Inative/cubiomes',
 ]
