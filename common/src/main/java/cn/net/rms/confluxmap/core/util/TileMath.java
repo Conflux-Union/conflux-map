@@ -85,6 +85,45 @@ public final class TileMath {
         return (block >> lod) & (TILE_SIZE - 1);
     }
 
+    /**
+     * Parent tile coordinate one LOD coarser than {@code childTile}. Arithmetic right shift keeps
+     * negative tiles in the correct parent: tile -1 and tile -2 both belong to parent -1.
+     */
+    public static int parentTile(final int childTile) {
+        return childTile >> 1;
+    }
+
+    /** Child tile coordinate one LOD finer, for the half of {@code parentTile} selected by {@code quadrant}. */
+    public static int childTile(final int parentTile, final int quadrant) {
+        return (parentTile << 1) + (quadrant & 1);
+    }
+
+    /**
+     * Which half of its parent tile {@code childTile} occupies: 0 for the negative-coordinate half
+     * (west / north), 1 for the positive-coordinate half (east / south).
+     */
+    public static int quadrantInParent(final int childTile) {
+        return childTile & 1;
+    }
+
+    /**
+     * UV rectangle of {@code childTile} inside its parent tile, written into {@code uvOut} as
+     * {@code [u0, v0, u1, v1]}. Each axis covers exactly half the parent, so a missing finer tile
+     * can be covered by stretching the matching quadrant of the coarser texture.
+     */
+    public static void parentUv(
+        final int childTileX,
+        final int childTileZ,
+        final float[] uvOut
+    ) {
+        final float u0 = (childTileX & 1) * 0.5f;
+        final float v0 = (childTileZ & 1) * 0.5f;
+        uvOut[0] = u0;
+        uvOut[1] = v0;
+        uvOut[2] = u0 + 0.5f;
+        uvOut[3] = v0 + 0.5f;
+    }
+
     /** Whether two aligned LOD tiles overlap when expressed in LOD-0 tile coordinates. */
     public static boolean overlaps(
         final int firstLod,
