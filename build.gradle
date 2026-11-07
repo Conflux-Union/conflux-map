@@ -97,6 +97,11 @@ tasks.register('buildWebPredictor', Exec) {
         '-Wl,--export=cfxWebCanopyData',
         '-Wl,--export-memory', '-o', outFile.absolutePath,
     ] + webPredictorSources + ['-lm'])
+    doLast {
+        final String sha256 = java.security.MessageDigest.getInstance('SHA-256')
+            .digest(outFile.bytes).encodeHex().toString()
+        println "buildWebPredictor: predictor.wasm built (${outFile.length()} bytes, sha256: ${sha256})"
+    }
 }
 
 // N3 Fix: buildNativesHost only writes to build/natives/host/, NEVER pollutes native/prebuilt/
@@ -219,5 +224,14 @@ tasks.register('verifyMasterBaseline') {
             throw new GradleException("master_clean_impl.h missing master_cfxOverviewHeightsImpl implementation")
         }
         println "verifyMasterBaseline: Master snapshot anchor & content integrity verified against a966dcf1"
+    }
+}
+
+// 挂入子模块 check 流程进入自动化验证门禁
+subprojects {
+    afterEvaluate {
+        tasks.matching { it.name == 'check' }.configureEach {
+            dependsOn rootProject.tasks.named('verifyMasterBaseline')
+        }
     }
 }

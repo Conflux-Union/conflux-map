@@ -13,3 +13,10 @@
 | Linux aarch64 | `linux-aarch64/libconfluxnative.so` | `aarch64-linux-gnu.2.17` | `4135d6813d2bc91a8d5b3e36f51cc5647eb926f0653d4fb1676fd7ebd6aad4d6` | 1,343,264 bytes |
 | macOS x86_64 | `macos-x86_64/libconfluxnative.dylib` | `x86_64-macos` | `37f7311e943b7e707c8aa82965b9991541715f8ad16b938f3de30ba286fdd101` | 1,123,196 bytes |
 | macOS aarch64 | `macos-aarch64/libconfluxnative.dylib` | `aarch64-macos` | `8aaa0edca42e99037d91778d2fb1a7412c521b7fe84dbe4a1a283944e10a1ebf` | 1,098,888 bytes |
+
+## Web Map WASM Asset Provenance
+
+| Asset | Target Triple | Compiler Command | SHA-256 Checksum | Size |
+|---|---|---|---|---|
+| `common/src/main/resources/webmap/predictor.wasm` | `wasm32-wasi` | `zig cc -target wasm32-wasi -mexec-model=reactor -O3 -g0 -msimd128` | `c57862bcf602d30b2a08c28c06220c5b9b7e5433a736c20a1a3fa9158e37c546` | 1,399,363 bytes |
+
