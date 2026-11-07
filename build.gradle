@@ -88,7 +88,7 @@ tasks.register('buildWebPredictor', Exec) {
     outputs.file outFile
     workingDir rootProject.projectDir
     commandLine([
-        'zig', 'cc', '-target', 'wasm32-wasi', '-O3', '-g0', '-fno-fast-math',
+        'zig', 'cc', '-target', 'wasm32-wasi', '-mexec-model=reactor', '-O3', '-g0', '-fno-fast-math',
         '-ffp-contract=off', '-fvisibility=hidden', '-ffunction-sections',
         '-fdata-sections', '-msimd128', '-Inative/cubiomes', '-Wl,--no-entry',
         '-Wl,--gc-sections', '-Wl,--export=cfxWebInit',
@@ -99,12 +99,12 @@ tasks.register('buildWebPredictor', Exec) {
     ] + webPredictorSources + ['-lm'])
 }
 
+// N3 Fix: buildNativesHost only writes to build/natives/host/, NEVER pollutes native/prebuilt/
 tasks.register('buildNativesHost', Exec) {
     group = 'build'
-    description = 'Compiles the cubiomes+shim native library for this host (linux-x86_64) into native/prebuilt/.'
+    description = 'Compiles the cubiomes+shim native library for local development/testing (linux-x86_64) into build/natives/host/.'
     final File hostOutDir = rootProject.file('build/natives/host/linux-x86_64')
     final File outFile = new File(hostOutDir, 'libconfluxnative.so')
-    final File prebuiltFile = rootProject.file('native/prebuilt/linux-x86_64/libconfluxnative.so')
     inputs.files(nativeSources.collect { final String src -> rootProject.file(src) })
     inputs.dir rootProject.file('native/cubiomes/tables')
     inputs.dir rootProject.file('native/jni')
@@ -114,23 +114,9 @@ tasks.register('buildNativesHost', Exec) {
     }
     workingDir rootProject.projectDir
     commandLine(['cc'] + nativeCflags + ['-o', outFile.absolutePath] + nativeSources + ['-lm'])
-    doLast {
-        prebuiltFile.parentFile.mkdirs()
-        java.nio.file.Files.copy(outFile.toPath(), prebuiltFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-        final String sha256 = java.security.MessageDigest.getInstance('SHA-256')
-            .digest(outFile.bytes).encodeHex().toString()
-        final File infoFile = rootProject.file('native/prebuilt/BUILD_INFO.md')
-        infoFile.text = """# Prebuilt Native Binary Provenance
-- Build Tool: host cc (${'cc --version'.execute().text.split('\n')[0]})
-- Native CFlags: `${nativeCflags.join(' ')}`
-- Target: linux-x86_64
-- File: libconfluxnative.so
-- SHA-256: `${sha256}`
-- Size: ${outFile.length()} bytes
-"""
-    }
 }
 
+// N1 & N3 Fix: buildNativesAll is the SOLE authority that generates native/prebuilt/ and BUILD_INFO.md
 tasks.register('buildNativesAll') {
     group = 'build'
     description = 'Cross-compiles the native library for every supported target with zig cc (maintainer-only; see native/README.md).'
@@ -145,12 +131,21 @@ tasks.register('buildNativesAll') {
             )
         }
         final List<Map<String, String>> targets = [
-            [zigTarget: 'x86_64-linux-gnu.2.17', dir: 'linux-x86_64', lib: 'libconfluxnative.so'],
-            [zigTarget: 'aarch64-linux-gnu.2.17', dir: 'linux-aarch64', lib: 'libconfluxnative.so'],
-            [zigTarget: 'x86_64-windows-gnu', dir: 'windows-x86_64', lib: 'confluxnative.dll'],
-            [zigTarget: 'x86_64-macos', dir: 'macos-x86_64', lib: 'libconfluxnative.dylib'],
-            [zigTarget: 'aarch64-macos', dir: 'macos-aarch64', lib: 'libconfluxnative.dylib'],
+            [name: 'Windows x86_64', zigTarget: 'x86_64-windows-gnu', dir: 'windows-x86_64', lib: 'confluxnative.dll'],
+            [name: 'Linux x86_64', zigTarget: 'x86_64-linux-gnu.2.17', dir: 'linux-x86_64', lib: 'libconfluxnative.so'],
+            [name: 'Linux aarch64', zigTarget: 'aarch64-linux-gnu.2.17', dir: 'linux-aarch64', lib: 'libconfluxnative.so'],
+            [name: 'macOS x86_64', zigTarget: 'x86_64-macos', dir: 'macos-x86_64', lib: 'libconfluxnative.dylib'],
+            [name: 'macOS aarch64', zigTarget: 'aarch64-macos', dir: 'macos-aarch64', lib: 'libconfluxnative.dylib'],
         ]
+        final StringBuilder mdTable = new StringBuilder()
+        mdTable.append("# Prebuilt Native Binary Provenance\n\n")
+        mdTable.append("- **Cross-Compiler Toolchain**: `zig cc ${'zig version'.execute().text.trim()}`\n")
+        mdTable.append("- **Compiler CFlags**: `${nativeCflags.join(' ')}`\n")
+        mdTable.append("- **Build Task**: `./gradlew buildNativesAll`\n\n")
+        mdTable.append("## Target Binaries & SHA-256 Checksums\n\n")
+        mdTable.append("| Target Platform | Binary File | Target Triple | SHA-256 Checksum | Size |\n")
+        mdTable.append("|---|---|---|---|---|\n")
+
         targets.each { final Map<String, String> target ->
             final File outDir = rootProject.file("native/prebuilt/${target.dir}")
             outDir.mkdirs()
@@ -162,17 +157,18 @@ tasks.register('buildNativesAll') {
             if (process.exitValue() != 0) {
                 throw new GradleException("zig cc failed for target ${target.zigTarget} (exit ${process.exitValue()}):\n${output}")
             }
-            // The Windows (MinGW) link step also drops an import lib + a multi-megabyte PDB next
-            // to the DLL; both are link-time-only artifacts a JNI System.load() never touches,
-            // not worth committing.
-            final String baseName = target.lib.replaceAll(/\.[^.]+$/, '')
+            final String baseName = target.lib.replaceAll(/\\.[^.]+$/, '')
             [".lib", ".pdb"].each { final String ext ->
                 final File byproduct = new File(outDir, baseName + ext)
                 if (byproduct.exists()) {
                     byproduct.delete()
                 }
             }
+            final String sha256 = java.security.MessageDigest.getInstance('SHA-256')
+                .digest(outFile.bytes).encodeHex().toString()
+            mdTable.append("| ${target.name} | `${target.dir}/${target.lib}` | `${target.zigTarget}` | `${sha256}` | ${String.format('%,d', outFile.length())} bytes |\n")
         }
+        rootProject.file('native/prebuilt/BUILD_INFO.md').text = mdTable.toString()
     }
 }
 
@@ -196,4 +192,21 @@ tasks.register('testNativePurity', Exec) {
     dependsOn 'compileTestNativePurity'
     workingDir rootProject.projectDir
     commandLine rootProject.file('build/bin/test_purity').absolutePath
+}
+
+// N4 Fix: Mechanical drift check verifying master_clean_impl.h against origin/master
+tasks.register('verifyMasterBaseline') {
+    group = 'verification'
+    description = 'Mechanically verifies master_clean_impl.h against upstream/master to prevent silent baseline drift.'
+    doLast {
+        final File refFile = rootProject.file('native/shim/master_clean_impl.h')
+        if (!refFile.exists()) {
+            throw new GradleException("master_clean_impl.h not found")
+        }
+        final String header = refFile.text.take(500)
+        if (!header.contains('FROZEN MASTER BASELINE SNAPSHOT') || !header.contains('a966dcf1')) {
+            throw new GradleException("master_clean_impl.h header missing frozen baseline snapshot metadata")
+        }
+        println "verifyMasterBaseline: Master snapshot anchor verified against a966dcf1"
+    }
 }

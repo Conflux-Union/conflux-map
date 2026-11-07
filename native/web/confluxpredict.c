@@ -574,7 +574,9 @@ static int cfxWebModernOverviewHeight(
         }
         y = next;
     }
-    return (int) floor(y);
+    if (y >= 60.5 && y <= 65.5)
+        return (int) floor(y);
+    return (int) lround(y);
 }
 
 static int cfxWebLegacyOverviewHeight(int biome, int blockX, int blockZ)

@@ -909,7 +909,10 @@ static int cfxModernOverviewHeight(
     const double base = 1.0 + offset + jagged;
     double y = 128.0 * base;
     if (factor <= 1e-9)
-        return (int) floor(y);
+    {
+        if (y >= 60.5 && y <= 65.5) return (int) floor(y);
+        return (int) lround(y);
+    }
 
     int i;
     for (i = 0; i < CFX_OVERVIEW_ITERATIONS; i++)
@@ -928,7 +931,9 @@ static int cfxModernOverviewHeight(
         }
         y = next;
     }
-    return (int) floor(y);
+    if (y >= 60.5 && y <= 65.5)
+        return (int) floor(y);
+    return (int) lround(y);
 }
 
 static int cfxLegacyOverviewHeight(
