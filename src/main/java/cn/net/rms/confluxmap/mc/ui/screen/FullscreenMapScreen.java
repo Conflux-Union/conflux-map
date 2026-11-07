@@ -2140,6 +2140,15 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         return TileMath.lodForScale(scale, this.config.mapQuality);
     }
 
+    /**
+     * Test hook: snaps the view scale to an exact blocks-per-screen-pixel value, clamped to the
+     * same bounds as user zooming, so a gametest can pin the displayed LOD precisely; the next
+     * rendered frame reports the matching viewport to {@code PredictionTileService}.
+     */
+    public void setScaleForTest(final double blocksPerPixel) {
+        scale = MathHelper.clamp(blocksPerPixel, MIN_SCALE, MAX_SCALE);
+    }
+
     FullscreenMapBrowseService.Target viewTarget() {
         final SessionGuard.Session session = viewSession();
         return new FullscreenMapBrowseService.Target(session.world(), session.dimension());

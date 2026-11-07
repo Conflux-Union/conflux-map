@@ -1901,4 +1901,13 @@ class PredictionTileServiceTest {
         }
         assertTrue(service.isIdleForTest(), "prediction tile service never drained its queue in time");
     }
+
+    @Test
+    void backendLabelClassifiesPackedStageDeltas() {
+        assertEquals("none", PredictionTileService.backendLabel(0L), "no tracked stage ran");
+        assertEquals("none", PredictionTileService.backendLabel(-1L), "a rebuilt context must degrade to none");
+        assertEquals("cpu", PredictionTileService.backendLabel(3L), "(0 gpu, 3 tracked) packed");
+        assertEquals("gpu", PredictionTileService.backendLabel((3L << 32) | 3L), "(3 gpu, 3 tracked) packed");
+        assertEquals("mixed", PredictionTileService.backendLabel((1L << 32) | 4L), "(1 gpu, 4 tracked) packed");
+    }
 }

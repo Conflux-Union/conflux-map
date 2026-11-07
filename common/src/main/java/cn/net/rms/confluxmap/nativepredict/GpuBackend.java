@@ -21,6 +21,42 @@ public final class GpuBackend {
     private GpuBackend() {
     }
 
+    /** One read of the engine's process-global GPU state, for the debug backend snapshot log. */
+    public record GpuStats(int engineMode, String device, long dispatches, long heightDispatches) {
+    }
+
+    /**
+     * Current engine mode, probed OpenCL device name and successful dispatch counts, or
+     * {@code null} when there is no data (library not loaded, or it predates the stats export -
+     * see {@link CubiomesNative#cfxGetGpuStats}). Read-only and cheap; safe from any thread.
+     */
+    public static GpuStats stats() {
+        try {
+            final long[] out = new long[3];
+            final String device = CubiomesNative.cfxGetGpuStats(out);
+            if (device == null) {
+                return null;
+            }
+            return new GpuStats((int) out[0], device, out[1], out[2]);
+        } catch (final UnsatisfiedLinkError staleLibrary) {
+            return null;
+        }
+    }
+
+    /** Debug label for an engine mode value; see {@code GPU_MODE_*} in {@code native/cubiomes/gpu.h}. */
+    public static String engineModeLabel(final int engineMode) {
+        if (engineMode == CubiomesNative.GPU_MODE_OFF) {
+            return "off";
+        }
+        if (engineMode == CubiomesNative.GPU_MODE_AUTO) {
+            return "auto";
+        }
+        if (engineMode == CubiomesNative.GPU_MODE_FORCE) {
+            return "force";
+        }
+        return "unknown(" + engineMode + ")";
+    }
+
     /** Engine mode for a backend: {@code GPU_MODE_OFF} for CPU, {@code GPU_MODE_AUTO} for GPU. */
     public static int engineMode(final PredictionBackend backend) {
         return backend == PredictionBackend.GPU

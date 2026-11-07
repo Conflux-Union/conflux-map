@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.TileMath;
+import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import java.util.OptionalInt;
@@ -651,5 +652,48 @@ class PredictionNativeIntegrationTest {
             "overview height must solve for the 3D terrain noise, not just the offset spline;"
                 + " mean absolute error was " + mean + " blocks"
         );
+    }
+
+    @Test
+    void stageStatsAttributeTileSamplingBetweenGpuAndCpu() {
+        final NativeBaselineSampler sampler = new NativeBaselineSampler(
+            mc21(), SEED, PredictionDimensions.OVERWORLD, 0
+        );
+        final long before = sampler.gpuStageStats();
+        final BaselineGrid grid = LodSampling.sample(sampler, false, 2, 0, 0);
+        assertNotNull(grid, "native sampling must succeed");
+        final long delta = sampler.gpuStageStats() - before;
+        assertTrue(delta > 0, "an Overworld tile must run at least one tracked stage call");
+        final long gpu = delta >>> 32;
+        final long total = delta & 0xffffffffL;
+        assertTrue(gpu <= total, "GPU-served stages cannot exceed tracked stages: " + delta);
+        final String label = PredictionTileService.backendLabel(delta);
+        if (gpu == 0) {
+            assertEquals("cpu", label, "no GPU-served stage must label the tile cpu");
+        } else if (gpu == total) {
+            assertEquals("gpu", label, "fully GPU-served stages must label the tile gpu");
+        } else {
+            assertEquals("mixed", label, "partially GPU-served stages must label the tile mixed");
+        }
+
+        // Repeated sampling keeps accumulating the same thread's context counters.
+        final long secondBefore = sampler.gpuStageStats();
+        assertNotNull(LodSampling.sample(sampler, false, 2, 0, 0));
+        assertTrue(sampler.gpuStageStats() - secondBefore > 0, "the second tile must also be tracked");
+    }
+
+    @Test
+    void gpuStatsExposeEngineModeDeviceAndDispatchCounts() {
+        final GpuBackend.GpuStats stats = GpuBackend.stats();
+        assertNotNull(stats, "stats must be readable on a library carrying the export");
+        final String modeLabel = GpuBackend.engineModeLabel(stats.engineMode());
+        assertTrue(
+            modeLabel.equals("off") || modeLabel.equals("auto") || modeLabel.equals("force")
+                || modeLabel.startsWith("unknown("),
+            "engine mode " + stats.engineMode() + " must map to a known label, got " + modeLabel
+        );
+        assertNotNull(stats.device(), "device name is empty before first use, never null");
+        assertTrue(stats.dispatches() >= 0, "dispatch counts are unsigned totals");
+        assertTrue(stats.heightDispatches() >= 0, "dispatch counts are unsigned totals");
     }
 }

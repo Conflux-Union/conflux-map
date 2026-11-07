@@ -68,6 +68,13 @@ typedef struct {
     int netherNoiseReady;
     int mc;
     int dim;
+    /* Stage accounting for the debug backend annotation (see cfxStageStats):
+     * tracked overview/biome-stage calls whose shape the GPU path would
+     * attempt, and how many of those the GPU actually served. Per context
+     * (one per thread via CubiomesContexts), single-threaded by contract;
+     * uint32 wraparound is harmless because Java only reads deltas. */
+    uint32_t stageCalls;
+    uint32_t stageGpuCalls;
 } CfxContext;
 
 static CfxContext *cfxHandle(jlong handle) {
@@ -156,10 +163,13 @@ static int cfxGenerateBiomesStrided(
      * unsupported size, engine off/dead, no OpenCL loader, GPU error -
      * falls through to the per-row path, which re-enters the same engine
      * row by row through mapOverworldSurfaceBiome's transparent hook and
-     * from there the CPU. */
+     * from there the CPU. The shape gate below is what the stage
+     * accounting counts as a "GPU-attempted shape", same convention as
+     * the overview/biome hotspots. */
     if (ctx->dim == DIM_OVERWORLD && ctx->mc >= MC_1_18 && scale == 4
         && (int64_t) h * rawWidth64 <= CFX_MAX_CELLS)
     {
+        ctx->stageCalls += 1;
         int *rows = malloc(sizeof(int) * (size_t) h * (size_t) rawWidth64);
         if (rows != NULL)
         {
@@ -168,6 +178,7 @@ static int cfxGenerateBiomesStrided(
                     (int) rawWidth64, h, stride
                 ) == 0)
             {
+                ctx->stageGpuCalls += 1;
                 int j, i;
                 for (j = 0; j < h; j++)
                     for (i = 0; i < w; i++)
@@ -236,6 +247,45 @@ JNIEXPORT void JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
 #else
     (void) mode; /* GPU engine not compiled in: nothing to switch. */
 #endif
+}
+
+JNIEXPORT jstring JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxGetGpuStats(
+    JNIEnv *env, jclass clazz, jlongArray out
+) {
+    (void) clazz;
+    if (out == NULL || (*env)->GetArrayLength(env, out) < 3)
+        return NULL;
+    jlong stats[3];
+#ifdef CUBIOMES_ENABLE_GPU
+    stats[0] = (jlong) gpuGetMode();
+    stats[1] = (jlong) gpuDispatchCount();
+    stats[2] = (jlong) gpuHeightDispatchCount();
+#else
+    stats[0] = 0; /* engine not compiled in: nothing runs (GPU_MODE_OFF) */
+    stats[1] = 0;
+    stats[2] = 0;
+#endif
+    (*env)->SetLongArrayRegion(env, out, 0, 3, stats);
+    return (*env)->NewStringUTF(env,
+#ifdef CUBIOMES_ENABLE_GPU
+        gpuDeviceName()
+#else
+        ""
+#endif
+    );
+}
+
+JNIEXPORT jlong JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxStageStats(
+    JNIEnv *env, jclass clazz, jlong handle
+) {
+    (void) env;
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL)
+        return 0;
+    /* Packed (gpu-served << 32) | tracked stage calls; both counters are
+     * per-context and only ever read as deltas on the Java side. */
+    return ((jlong) ctx->stageGpuCalls << 32) | (jlong) ctx->stageCalls;
 }
 
 JNIEXPORT jlong JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxCreate(
@@ -1073,23 +1123,29 @@ static jint cfxOverviewHeightsImpl(
 
     if (ctx->mc >= MC_1_18)
     {
-#ifdef CUBIOMES_ENABLE_GPU
         /*
-         * Bit-exact GPU fast path for the solver below (same engine and
-         * guard discipline as the rest of the GPU executor). Any
-         * unsupported shape or engine problem falls through to the CPU
-         * loops; CUBIOMES_GPU=off never reaches the runtime at all.
+         * Shape data and the GPU-attempt gate shared by the accounting, the
+         * GPU fast path and the CPU loops below. A call counts as a tracked
+         * stage when its shape is one the GPU path would attempt; whether
+         * the attempt then succeeds decides the gpu counter (bit-exact
+         * kernels - see gpuCfxOverviewHeights). Any unsupported shape or
+         * engine problem falls through to the CPU loops; CUBIOMES_GPU=off
+         * never reaches the runtime at all.
          */
+        const int minX4 = floordiv(blockX, 4);
+        const int minZ4 = floordiv(blockZ, 4);
+        const int maxX4 = floordiv((int)lastX, 4) + 1;
+        const int maxZ4 = floordiv((int)lastZ, 4) + 1;
+        const int gridW = maxX4 - minX4 + 1;
+        const int gridH = maxZ4 - minZ4 + 1;
+        const int gpuEligible = (stride < 4 && gridW * gridH >= CFX_GPU_HEIGHT_MIN_CELLS)
+            || (stride % 4 == 0 && w * h >= CFX_GPU_HEIGHT_MIN_CELLS);
+        ctx->stageCalls += gpuEligible;
+#ifdef CUBIOMES_ENABLE_GPU
         int gpuServed = 0;
-        if (stride < 4)
+        if (gpuEligible)
         {
-            const int minX4 = floordiv(blockX, 4);
-            const int minZ4 = floordiv(blockZ, 4);
-            const int maxX4 = floordiv((int)lastX, 4) + 1;
-            const int maxZ4 = floordiv((int)lastZ, 4) + 1;
-            const int gridW = maxX4 - minX4 + 1;
-            const int gridH = maxZ4 - minZ4 + 1;
-            if (gridW * gridH >= CFX_GPU_HEIGHT_MIN_CELLS)
+            if (stride < 4)
             {
                 int *macro = malloc(sizeof(int) * (size_t)gridW * gridH);
                 if (macro != NULL
@@ -1104,15 +1160,14 @@ static jint cfxOverviewHeightsImpl(
                 }
                 free(macro);
             }
-        }
-        else if (stride % 4 == 0
-            && w * h >= CFX_GPU_HEIGHT_MIN_CELLS)
-        {
-            gpuServed = gpuCfxOverviewHeights(heights, &ctx->g.bn,
-                floordiv(blockX, 4), floordiv(blockZ, 4), w, h,
-                stride / 4, stride / 4,
-                detail->mainFirst, detail->minMaxFirst,
-                detail->truncated) == 0;
+            else
+            {
+                gpuServed = gpuCfxOverviewHeights(heights, &ctx->g.bn,
+                    minX4, minZ4, w, h, stride / 4, stride / 4,
+                    detail->mainFirst, detail->minMaxFirst,
+                    detail->truncated) == 0;
+            }
+            ctx->stageGpuCalls += gpuServed;
         }
         if (gpuServed)
         {
@@ -1123,12 +1178,6 @@ static jint cfxOverviewHeightsImpl(
 #endif
         if (stride < 4)
         {
-            const int minX4 = floordiv(blockX, 4);
-            const int minZ4 = floordiv(blockZ, 4);
-            const int maxX4 = floordiv((int)lastX, 4) + 1;
-            const int maxZ4 = floordiv((int)lastZ, 4) + 1;
-            const int gridW = maxX4 - minX4 + 1;
-            const int gridH = maxZ4 - minZ4 + 1;
             int *macro = malloc(sizeof(int) * (size_t)gridW * gridH);
             if (macro == NULL)
             {
@@ -1369,17 +1418,21 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         return CFX_ERR_BAD_SIZE;
     }
 
-#ifdef CUBIOMES_ENABLE_GPU
     /*
      * Bit-exact GPU fast path for the voronoi + sampleBiomeNoise loop (and
      * the stride<=2 nucleus memo below it, which returns exactly what the
      * plain loop returns). Dispatch overhead dominates tiny batches, so the
-     * lattice-refine 2x2 cells stay CPU-resident.
+     * lattice-refine 2x2 cells stay CPU-resident: the min-cell gate is what
+     * the stage accounting below counts as "GPU-attempted shape".
      */
-    if (cells >= CFX_GPU_BIOME_MIN_CELLS
+    const int gpuEligible = cells >= CFX_GPU_BIOME_MIN_CELLS;
+    ctx->stageCalls += gpuEligible;
+#ifdef CUBIOMES_ENABLE_GPU
+    if (gpuEligible
         && gpuCfxSurfaceBiomes(biomes, &ctx->g.bn, ctx->g.sha,
             blockX, blockZ, w, h, stride, terrainY) == 0)
     {
+        ctx->stageGpuCalls++;
         (*env)->SetIntArrayRegion(env, outBiomeIds, 0, cells, biomes);
         free(terrainY);
         free(biomes);

@@ -48,6 +48,30 @@ final class CubiomesNative {
     static native void cfxSetGpuMode(int mode);
 
     /**
+     * Debug snapshot of the GPU engine's process-global state. Fills {@code out} with
+     * {@code [engineMode, successfulSurfaceBiomeDispatches, successfulHeightDispatches]}
+     * ({@code GPU_MODE_*} values; counts are the engine's own {@code gpuDispatchCount()}/
+     * {@code gpuHeightDispatchCount()}) and returns the probed OpenCL device name (empty before
+     * first use or when no device is available). With the GPU engine not compiled into the
+     * library, reports the off mode and zero counts with an empty device name. A library
+     * predating this export throws {@link UnsatisfiedLinkError}; callers must treat that and a
+     * {@code null} return as "no data".
+     */
+    static native String cfxGetGpuStats(long[] out);
+
+    /**
+     * Packed per-context stage accounting for the debug backend annotation:
+     * {@code (gpuServedStages << 32) | trackedStageCalls}. A tracked stage is one
+     * {@code cfxOverviewHeights(/Coarse)} or {@code cfxSurfaceBiomes} call whose shape the GPU
+     * path would attempt (the same min-cell gates that decide the dispatch); {@code
+     * gpuServedStages} counts those where the GPU actually completed the call. Counters live on
+     * the context (one per thread via {@link CubiomesContexts}) and only make sense as deltas
+     * taken around one tile's sampling. A {@code 0} handle or a library predating this export
+     * (which throws {@link UnsatisfiedLinkError}) leaves the caller with no data.
+     */
+    static native long cfxStageStats(long handle);
+
+    /**
      * Windows-only CPU topology query used for worker-pool sizing; no other platform
      * reports data. Calling with a {@code null} array returns the total number of
      * logical processors (0 when unknown); calling with an array fills it with one

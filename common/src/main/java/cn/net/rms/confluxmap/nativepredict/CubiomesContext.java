@@ -320,6 +320,16 @@ public final class CubiomesContext implements AutoCloseable {
         return CubiomesNative.cfxStructureViable(handle, structType, blockX, blockZ) != 0;
     }
 
+    /**
+     * Packed stage accounting for this context's sampling so far - see {@link
+     * CubiomesNative#cfxStageStats}. Read before and after a tile's sampling and diff the two
+     * packed values; the context is thread-confined, so no other tile interleaves.
+     */
+    public long stageStats() {
+        requireOpen();
+        return CubiomesNative.cfxStageStats(handle);
+    }
+
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {

@@ -28,6 +28,23 @@ public final class NativeBaselineSampler implements BaselineSampler {
         this.flags = flags;
     }
 
+    /**
+     * Debug-only stage accounting of this sampler's (thread-cached) context - see {@link
+     * CubiomesNative#cfxStageStats}. Take one packed value before and one after a tile's
+     * sampling; the difference attributes that tile's overview/biome stages to GPU or CPU.
+     * Returns {@code 0} (no data) when the native library is unavailable or predates this
+     * export, so a stale library degrades to a {@code none} backend annotation instead of
+     * failing a debug path.
+     */
+    public long gpuStageStats() {
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);
+            return ctx == null ? 0L : ctx.stageStats();
+        } catch (final UnsatisfiedLinkError staleLibrary) {
+            return 0L;
+        }
+    }
+
     @Override
     public int terrainFreeBiomeScale() {
         if (dim != PredictionDimensions.OVERWORLD) {

@@ -25,12 +25,14 @@ import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.nativepredict.CubiomesContexts;
+import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
@@ -38,6 +40,8 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Predicted-underlay twin of {@code core.tile.TileService}: a synchronized dirty-tile queue
@@ -52,10 +56,16 @@ import java.util.function.LongSupplier;
  * no-op rather than an error anywhere in this class.
  */
 public final class PredictionTileService {
+    private static final Logger LOGGER = LogManager.getLogger("ConfluxMap/PredictionTiles");
+
     public enum LowerCoverageState {
         READY,
         PENDING,
         MISSING_OR_STALE
+    }
+
+    /** What the e2e gametest asserts about the last closed viewport load (debug timing only). */
+    public record ViewportLoadResult(boolean complete, int lod, int tiles, long wallNanos) {
     }
 
     /** Re-entry freshness window for corrections; expiry never schedules background polling. */
@@ -72,6 +82,17 @@ public final class PredictionTileService {
     private final TileService uploads;
     private final LongSupplier millisClock;
     private final int maxConcurrentCompositions;
+    /** Debug-gated viewport cold-load aggregation; consulted only while the timing flag is on. */
+    private final ViewportLoadTiming viewportTiming = new ViewportLoadTiming();
+    /**
+     * Debug-gated enqueue timestamps feeding the scheduling-delay stat; only ever populated
+     * while the timing flag is on, and pruned alongside the dirty queue.
+     */
+    private final Map<TileKey, Long> queuedAtNanos = new HashMap<>();
+    /** Debug-gated first-visible marker state: the marker logs once per open window. */
+    private boolean firstVisibleLogged;
+    /** Debug-gated outcome of the last closed viewport load; the e2e gametest asserts on it. */
+    private volatile ViewportLoadResult lastViewportLoadForTest;
 
     /** Dispatch tiers, lowest first: user-waited, visible viewport, padded ring, background. */
     private static final int TIER_URGENT = 0;
@@ -196,7 +217,7 @@ public final class PredictionTileService {
         if (requestedTiles.contains(key)) {
             staleRealCoverageTiles.add(key);
             if (viewport != null && viewport.contains(key)) {
-                dirty.put(key, token);
+                dirtyPut(key, token);
             }
         }
     }
@@ -234,7 +255,7 @@ public final class PredictionTileService {
                 && viewport.dimension().equals(session.dimension())) {
                 for (final TileKey key : staleViewModeTiles) {
                     if (viewport.contains(key)) {
-                        dirty.put(key, session.token());
+                        dirtyPut(key, session.token());
                     }
                 }
             }
@@ -686,6 +707,7 @@ public final class PredictionTileService {
             reloadGeneration++;
             lowerCoverageGeneration++;
             dirty.clear();
+            queuedAtNanos.clear();
             urgent.clear();
             requestedTiles.clear();
             staleViewModeTiles.clear();
@@ -710,6 +732,7 @@ public final class PredictionTileService {
             reloadGeneration++;
             lowerCoverageGeneration++;
             dirty.clear();
+            queuedAtNanos.clear();
             urgent.clear();
             staleViewModeTiles.clear();
             nonCacheableTiles.clear();
@@ -721,7 +744,7 @@ public final class PredictionTileService {
             if (session.active()) {
                 for (final TileKey key : inFlight) {
                     if (key.world().equals(session.world()) && key.dimension().equals(session.dimension())) {
-                        dirty.put(key, session.token());
+                        dirtyPut(key, session.token());
                     }
                 }
             }
@@ -749,7 +772,7 @@ public final class PredictionTileService {
             for (final TileKey key : requestedTiles) {
                 if (isCurrentNetherBiomeKey(key)) {
                     invalidateCachedTileAndAncestors(key);
-                    dirty.put(key, session.token());
+                    dirtyPut(key, session.token());
                 }
             }
         }
@@ -785,6 +808,7 @@ public final class PredictionTileService {
     ) {
         final ViewportRect rect = new ViewportRect(dimension, lod, minTileX, maxTileX, minTileZ, maxTileZ);
         final SessionGuard.Session session = sessionGuard.current();
+        ViewportLoadTiming.Summary closedViewportLoad = null;
         synchronized (this) {
             final boolean changed = !rect.equals(viewport);
             viewport = rect;
@@ -796,6 +820,17 @@ public final class PredictionTileService {
                 return true;
             });
             metadataTiles.keySet().removeIf(key -> !rect.containsPadded(key));
+            if (!queuedAtNanos.isEmpty()) {
+                queuedAtNanos.keySet().removeIf(key ->
+                    !dirty.containsKey(key) && !inFlight.contains(key));
+            }
+            if (debugTimingEnabled() && viewportTiming.active()) {
+                // A viewport move can leave the open window with nothing pending (its tiles
+                // pruned, none in flight) and no later finish to run the close check.
+                closedViewportLoad = viewportTiming.closeIfIdle(
+                    viewportTimingIdle(viewportTiming.windowRect()), System.nanoTime()
+                );
+            }
             if (changed && session.active() && dimension.equals(session.dimension()) && lod > 0) {
                 final MapLayer predictedLayer = PredictionDimensions.layer(dimension);
                 if (predictedLayer == null) {
@@ -809,7 +844,7 @@ public final class PredictionTileService {
                             lod, tileX, tileZ
                         );
                         if (mipCache.lowerCoverageValidatedAt(key, effectiveViewMode()) != PredictionMipCache.MISSING) {
-                            dirty.put(key, session.token());
+                            dirtyPut(key, session.token());
                         }
                     }
                 }
@@ -817,16 +852,17 @@ public final class PredictionTileService {
             if (changed && session.active() && dimension.equals(session.dimension())) {
                 for (final TileKey key : staleViewModeTiles) {
                     if (rect.contains(key)) {
-                        dirty.put(key, session.token());
+                        dirtyPut(key, session.token());
                     }
                 }
                 for (final TileKey key : staleRealCoverageTiles) {
                     if (rect.contains(key)) {
-                        dirty.put(key, session.token());
+                        dirtyPut(key, session.token());
                     }
                 }
             }
         }
+        logViewportLoad(closedViewportLoad);
         pump();
     }
 
@@ -882,7 +918,7 @@ public final class PredictionTileService {
                         || nonCacheableTiles.contains(key)) {
                         continue;
                     }
-                    dirty.put(key, session.token());
+                    dirtyPut(key, session.token());
                 }
             }
         }
@@ -1025,7 +1061,7 @@ public final class PredictionTileService {
             if (dirty.containsKey(key) || inFlight.contains(key)) {
                 return;
             }
-            dirty.put(key, session.token());
+            dirtyPut(key, session.token());
         }
         pump();
     }
@@ -1047,7 +1083,7 @@ public final class PredictionTileService {
             if (dirty.containsKey(key) || inFlight.contains(key)) {
                 return;
             }
-            dirty.put(key, session.token());
+            dirtyPut(key, session.token());
         }
         pump();
     }
@@ -1063,7 +1099,7 @@ public final class PredictionTileService {
 
     private void markDirty(final TileKey key, final long token) {
         synchronized (this) {
-            dirty.put(key, token);
+            dirtyPut(key, token);
             if (inFlight.contains(key)) {
                 return;
             }
@@ -1071,7 +1107,20 @@ public final class PredictionTileService {
         pump();
     }
 
+    /**
+     * Caller must hold the monitor. Every enqueue into the dirty queue goes through here so
+     * the debug scheduling-delay stat can stamp the enqueue time in one place; without the
+     * timing flag the map stays empty and dispatches report no scheduling delay.
+     */
+    private void dirtyPut(final TileKey key, final long token) {
+        dirty.put(key, token);
+        if (debugTimingEnabled()) {
+            queuedAtNanos.put(key, System.nanoTime());
+        }
+    }
+
     private void pump() {
+        final boolean timing = debugTimingEnabled();
         while (true) {
             final TileKey next;
             final long token;
@@ -1091,6 +1140,9 @@ public final class PredictionTileService {
                 netherGeneration = netherBiomeGeneration;
                 netherY = netherBiomeY;
                 inFlight.add(next);
+                if (timing) {
+                    noteTimingDispatch(next);
+                }
             }
             executors.workers().execute(() -> composeAndFinish(
                 next, token, generation, netherGeneration, netherY
@@ -1188,9 +1240,17 @@ public final class PredictionTileService {
         // it against the live field inside the monitor is the same staleness check comparing the
         // composition's mode used to be.
         final PredictionViewMode requestedMode = viewMode;
+        final boolean timing = debugTimingEnabled();
+        final long composeStartNanos = timing ? System.nanoTime() : 0L;
+        long composeNanos = 0L;
+        boolean submittedUpload = false;
+        ViewportLoadTiming.Summary closedViewportLoad = null;
         try {
             composition = composeTile(key, token, requestedMode, netherY);
         } finally {
+            if (composeStartNanos != 0L) {
+                composeNanos = System.nanoTime() - composeStartNanos;
+            }
             synchronized (this) {
                 if (composition != null && generation == reloadGeneration
                     && (!isCurrentNetherBiomeKey(key)
@@ -1210,12 +1270,244 @@ public final class PredictionTileService {
                     staleRealCoverageTiles.remove(key);
                     invalidateCachedAncestorsAndQueueVisible(key, token);
                     uploads.submitUpload(composition.update());
+                    submittedUpload = true;
                 }
                 inFlight.remove(key);
                 urgent.remove(key);
+                if (timing) {
+                    // Arguments evaluate before the call: the idle check reads the window the
+                    // finish is about to accumulate into (and possibly close).
+                    closedViewportLoad = viewportTiming.finished(
+                        key, composeNanos,
+                        composition == null ? null : composition.stageNanos(),
+                        composition == null ? 0L : composition.sampledPoints(),
+                        submittedUpload,
+                        viewportTimingIdle(viewportTiming.windowRect()),
+                        System.nanoTime()
+                    );
+                }
             }
             pump();
         }
+        if (timing) {
+            if (closedViewportLoad != null) {
+                logViewportLoad(closedViewportLoad);
+            }
+            if (composition != null) {
+                logTileTiming(
+                    key, composition.sampledPoints(), composition.stageGpuDelta(),
+                    composition.stageNanos(), composeNanos
+                );
+            }
+        }
+    }
+
+    /**
+     * Prediction tile-timing diagnostics switch: {@code -Dconfluxmap.debugPredictionTiming=true}
+     * or {@code CONFLUXMAP_DEBUG_TIMING=1} (Gradle launches inherit env vars, not -D flags).
+     * Public so the Fabric render side can gate its upload-completion reports without paying
+     * for them when timing is off.
+     */
+    public static boolean debugTimingEnabled() {
+        return Boolean.getBoolean("confluxmap.debugPredictionTiming")
+            || "1".equals(System.getenv("CONFLUXMAP_DEBUG_TIMING"));
+    }
+
+    /** Caller must hold the monitor and the debug-timing gate. */
+    private void noteTimingDispatch(final TileKey key) {
+        final ViewportRect rect = viewport;
+        if (rect == null || dispatchTier(key) != TIER_VISIBLE) {
+            return;
+        }
+        final Long queuedAt = queuedAtNanos.remove(key);
+        final long now = System.nanoTime();
+        final long schedNanos = queuedAt == null ? 0L : now - queuedAt;
+        final boolean windowWasActive = viewportTiming.active();
+        final ViewportLoadTiming.Summary superseded =
+            viewportTiming.dispatched(timingRect(rect), key, schedNanos, now);
+        if (superseded != null || !windowWasActive) {
+            firstVisibleLogged = false;
+        }
+        logViewportLoad(superseded);
+    }
+
+    /** Caller must hold the monitor and the debug-timing gate. */
+    private boolean viewportTimingIdle(final ViewportLoadTiming.Rect rect) {
+        if (rect == null) {
+            return true;
+        }
+        for (final TileKey key : dirty.keySet()) {
+            if (rect.contains(key)) {
+                return false;
+            }
+        }
+        for (final TileKey key : inFlight) {
+            if (rect.contains(key)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static ViewportLoadTiming.Rect timingRect(final ViewportRect rect) {
+        return new ViewportLoadTiming.Rect(
+            rect.dimension(), rect.lod(),
+            rect.minTileX(), rect.maxTileX(), rect.minTileZ(), rect.maxTileZ()
+        );
+    }
+
+    /**
+     * Debug log label for a packed stage-stats delta: {@code gpu} when every tracked stage call
+     * was GPU-served, {@code cpu} when none was, {@code mixed} when the GPU served only some
+     * (e.g. a dispatch refused mid-tile), and {@code none} when no tracked stage ran at all
+     * (cache hit, superflat, non-Overworld, stale library) or the context was rebuilt mid-tile.
+     */
+    static String backendLabel(final long stageGpuDelta) {
+        if (stageGpuDelta <= 0L) {
+            return "none";
+        }
+        final long gpu = stageGpuDelta >>> 32;
+        final long total = stageGpuDelta & 0xffffffffL;
+        if (gpu == 0L) {
+            return "cpu";
+        }
+        return gpu == total ? "gpu" : "mixed";
+    }
+
+    /** One finished composition's generation cost: identity, sampled workload, backend, stage split, wall time. */
+    private void logTileTiming(
+        final TileKey key,
+        final long points,
+        final long stageGpuDelta,
+        final long[] stageNanos,
+        final long composeNanos
+    ) {
+        LOGGER.info(String.format(Locale.ROOT,
+            "[predict-timing] tile dim=%s layer=%s lod=%d tile=(%d,%d) points=%d backend=%s"
+                + " gen=%.1fms%s ms=%.1f",
+            key.dimension().path(), key.layerId(), key.lod(),
+            key.tileX(), key.tileZ(), points, backendLabel(stageGpuDelta),
+            SampleStage.total(stageNanos) / 1.0e6,
+            formatStageBreakdown(stageNanos),
+            composeNanos / 1.0e6
+        ));
+    }
+
+    /**
+     * One viewport load's end-to-end aggregate: dispatch-to-display for the whole visible
+     * rect, with the generation stage split, composition total, scheduling delay, upload-queue
+     * wait, texture upload time, first-visible latency and wall clock. {@code complete=false}
+     * marks a window the viewport left behind; {@code attempts} appears when compositions
+     * finished inside the rect without their upload landing (stale or superseded).
+     */
+    private void logViewportLoad(final ViewportLoadTiming.Summary summary) {
+        if (summary == null) {
+            return;
+        }
+        logBackendSnapshot();
+        lastViewportLoadForTest = new ViewportLoadResult(
+            summary.complete(), summary.lod(), summary.tiles(), summary.wallNanos()
+        );
+        final long[] stageNanos = summary.stageNanos();
+        LOGGER.info(String.format(Locale.ROOT,
+            "[predict-e2e] %s dim=%s lod=%d rect=[%d..%d,%d..%d] tiles=%d%s pts=%d"
+                + " gen=%.1fms%s compose=%.1fms sched=%.1fms uploadWait=%.1fms upload=%.1fms"
+                + " first=%.1fms wall=%.1fms",
+            summary.complete() ? "done" : "abandoned",
+            summary.dimension().path(), summary.lod(),
+            summary.minTileX(), summary.maxTileX(), summary.minTileZ(), summary.maxTileZ(),
+            summary.tiles(),
+            summary.attempts() == summary.tiles()
+                ? "" : String.format(Locale.ROOT, " attempts=%d", summary.attempts()),
+            summary.points(),
+            SampleStage.total(stageNanos) / 1.0e6,
+            formatStageBreakdown(stageNanos),
+            summary.composeNanos() / 1.0e6,
+            summary.schedNanos() / 1.0e6,
+            summary.uploadWaitNanos() / 1.0e6,
+            summary.uploadNanos() / 1.0e6,
+            Math.max(0L, summary.firstUploadWallNanos()) / 1.0e6,
+            summary.wallNanos() / 1.0e6
+        ));
+    }
+
+    /**
+     * Nonzero sampler stages of a stage array as {@code (h=1.2 b=3.4)}, fixed enum order;
+     * empty when nothing was sampled natively (cache hits, superflat, non-counting paths).
+     */
+    private static String formatStageBreakdown(final long[] stageNanos) {
+        if (SampleStage.total(stageNanos) <= 0L) {
+            return "";
+        }
+        final StringBuilder stages = new StringBuilder("(");
+        for (final SampleStage stage : SampleStage.values()) {
+            final long nanos = stageNanos[stage.ordinal()];
+            if (nanos > 0L) {
+                if (stages.length() > 1) {
+                    stages.append(' ');
+                }
+                stages.append(stage.name().toLowerCase(Locale.ROOT))
+                    .append('=')
+                    .append(String.format(Locale.ROOT, "%.1f", nanos / 1.0e6));
+            }
+        }
+        return stages.append(')').toString();
+    }
+
+    /**
+     * Render thread, from the texture manager: a predicted tile's texture upload completed, so
+     * it is now displayed. Completes the tile's entry in the open window's upload set and may
+     * close the window; the first completion inside a window logs the first-visible marker.
+     */
+    public void onPredictedUploaded(final TileKey key, final long uploadNanos) {
+        if (!debugTimingEnabled()) {
+            return;
+        }
+        final ViewportLoadTiming.Summary closedWindow;
+        final long firstWallNanos;
+        final TileKey firstTile;
+        synchronized (this) {
+            closedWindow = viewportTiming.uploaded(
+                key, uploadNanos,
+                viewportTimingIdle(viewportTiming.windowRect()), System.nanoTime()
+            );
+            firstWallNanos = viewportTiming.firstUploadWallNanos();
+            firstTile = viewportTiming.firstUploadedTile();
+        }
+        if (closedWindow != null) {
+            logViewportLoad(closedWindow);
+            return;
+        }
+        if (!firstVisibleLogged && firstWallNanos >= 0L && firstTile != null) {
+            firstVisibleLogged = true;
+            LOGGER.info(String.format(Locale.ROOT,
+                "[predict-e2e] first dim=%s lod=%d tile=(%d,%d) wall=%.1fms",
+                firstTile.dimension().path(), firstTile.lod(),
+                firstTile.tileX(), firstTile.tileZ(), firstWallNanos / 1.0e6
+            ));
+        }
+    }
+
+    /**
+     * Engine-side GPU state beside a viewport aggregate: the engine's own mode, the probed OpenCL
+     * device and its successful dispatch count (surface-biome + height dispatches). Across two
+     * loads, a growing count is the GPU engaging; a flat count under {@code mode=auto} is the
+     * AUTO fallback quietly serving the CPU.
+     */
+    private void logBackendSnapshot() {
+        final GpuBackend.GpuStats stats = GpuBackend.stats();
+        if (stats == null) {
+            LOGGER.info(
+                "[predict-backend] mode=unknown device='' dispatches=-1"
+                    + " (native library missing or predates the stats export)"
+            );
+            return;
+        }
+        LOGGER.info(String.format(Locale.ROOT,
+            "[predict-backend] mode=%s device='%s' dispatches=%d",
+            GpuBackend.engineModeLabel(stats.engineMode()), stats.device(),
+            stats.dispatches() + stats.heightDispatches()
+        ));
     }
 
     /** A whole-dimension flat surface declares the same top material in every quadrant. */
@@ -1332,7 +1624,10 @@ public final class PredictionTileService {
                     biomeIds(cachedGrid, directCorrections, cachedGrid),
                     surfaceYs(cachedDerived, directCorrections, cachedDerived)
                 ),
-                reusable
+                reusable,
+                0L,
+                0L,
+                null
             );
         }
 
@@ -1340,14 +1635,28 @@ public final class PredictionTileService {
         final DerivedGrid derived;
         final QuadrantLayout quadrants = state.quadrantLayout(key.dimension());
         final QuadrantLayout.Mask quadrantMask;
+        final boolean timing = debugTimingEnabled();
+        CountingSampler counting = null;
+        long stageGpuDelta = 0L;
         if (lowerNetherBiome) {
-            final BaselineSampler sampler = new NativeBaselineSampler(
+            final NativeBaselineSampler nativeSampler = new NativeBaselineSampler(
                 state.mcVersion(), state.seed(), nativeDim,
                 state.cubiomesFlags(key.dimension())
             );
+            final BaselineSampler sampler;
+            if (timing) {
+                counting = new CountingSampler(nativeSampler);
+                sampler = counting;
+            } else {
+                sampler = nativeSampler;
+            }
+            final long stagesBefore = timing ? nativeSampler.gpuStageStats() : 0L;
             grid = LodSampling.sampleNetherBiomesAtY(
                 sampler, lod, tileOriginX, tileOriginZ, netherY
             );
+            if (timing) {
+                stageGpuDelta = nativeSampler.gpuStageStats() - stagesBefore;
+            }
             if (grid == null) {
                 return null;
             }
@@ -1367,11 +1676,19 @@ public final class PredictionTileService {
                 quadrantMask = flatQuadrantMask(key.dimension());
             } else {
                 final long seed = state.seed();
-                final BaselineSampler sampler = new NativeBaselineSampler(
+                final NativeBaselineSampler nativeSampler = new NativeBaselineSampler(
                     state.mcVersion(), seed, nativeDim, state.cubiomesFlags(key.dimension())
                 );
+                final BaselineSampler sampler;
+                if (timing) {
+                    counting = new CountingSampler(nativeSampler);
+                    sampler = counting;
+                } else {
+                    sampler = nativeSampler;
+                }
                 final boolean overworldBiomeView = BiomeTileKeys.isBiome(key)
                     && key.dimension().equals(DimensionId.OVERWORLD);
+                final long stagesBefore = timing ? nativeSampler.gpuStageStats() : 0L;
                 if (overworldBiomeView) {
                     // The biome-identity view never reads terrain: biomes come from the
                     // terrain-free sampler path, and the canopy (a terrain-map color pass) is
@@ -1379,6 +1696,9 @@ public final class PredictionTileService {
                     grid = LodSampling.sampleOverworldBiomes(
                         sampler, lod, tileOriginX, tileOriginZ
                     );
+                    if (timing) {
+                        stageGpuDelta = nativeSampler.gpuStageStats() - stagesBefore;
+                    }
                     if (grid == null) {
                         return null;
                     }
@@ -1391,6 +1711,9 @@ public final class PredictionTileService {
                     grid = key.dimension().equals(DimensionId.NETHER)
                         ? LodSampling.sampleNetherRoof(sampler, lod, tileOriginX, tileOriginZ)
                         : LodSampling.sample(sampler, end, lod, tileOriginX, tileOriginZ);
+                    if (timing) {
+                        stageGpuDelta = nativeSampler.gpuStageStats() - stagesBefore;
+                    }
                     if (grid == null) {
                         return null;
                     }
@@ -1439,7 +1762,10 @@ public final class PredictionTileService {
                 compositionMode, directHasServerState, directValidatedAt,
                 directCorrections == null
                     ? CorrectionProfile.LEGACY_V1 : directCorrections.correctionProfile()
-            )
+            ),
+            counting == null ? 0L : counting.points(),
+            stageGpuDelta,
+            counting == null ? null : counting.stageNanos()
         );
     }
 
@@ -1939,7 +2265,7 @@ public final class PredictionTileService {
             );
             mipCache.remove(ancestor);
             if (viewport != null && viewport.contains(ancestor)) {
-                dirty.put(ancestor, token);
+                dirtyPut(ancestor, token);
             }
         }
     }
@@ -2067,6 +2393,39 @@ public final class PredictionTileService {
             && lowerCoverageQueue.isEmpty() && lowerCoverageInFlight.isEmpty();
     }
 
+    /**
+     * Test-support only: the outcome of the last closed viewport load, or null while none has
+     * closed yet. Debug-timing data only - populated when the aggregate logs, so a null says
+     * "the window is still open", e.g. generation still settling.
+     */
+    public ViewportLoadResult lastViewportLoadForTest() {
+        return lastViewportLoadForTest;
+    }
+
+    /**
+     * Test-support only: the fullscreen viewport's predicted tile keys - the set the map screen
+     * binds every frame - empty when no viewport is set or the dimension has no predicted layer.
+     */
+    public synchronized Set<TileKey> viewportTilesForTest() {
+        final ViewportRect rect = viewport;
+        final SessionGuard.Session session = sessionGuard.current();
+        if (rect == null || !session.active()) {
+            return Set.of();
+        }
+        final MapLayer predictedLayer = PredictionDimensions.layer(rect.dimension());
+        if (predictedLayer == null) {
+            return Set.of();
+        }
+        final String layer = predictedLayer.cacheId() + PredictedTileKeys.SUFFIX;
+        final Set<TileKey> keys = new HashSet<>();
+        for (int tileZ = rect.minTileZ(); tileZ <= rect.maxTileZ(); tileZ++) {
+            for (int tileX = rect.minTileX(); tileX <= rect.maxTileX(); tileX++) {
+                keys.add(new TileKey(session.world(), rect.dimension(), layer, rect.lod(), tileX, tileZ));
+            }
+        }
+        return keys;
+    }
+
     private PixelLookup visiblePixelLookup(
         final DimensionId dimension,
         final int lod,
@@ -2115,15 +2474,22 @@ public final class PredictionTileService {
     }
 
     /**
-     * One finished composition: what to upload, the cursor metadata it published, and the planar
+     * One finished composition: what to upload, the cursor metadata it published, the planar
      * cache tile it produced or served - {@code null} when the tile is not planar-cacheable (see
-     * {@link #planarTile}). Every correction or styling plane a composition needs is either
+     * {@link #planarTile}) - the sampler query points it paid for (0 when served from a cache or
+     * sampled by a non-counting path), the packed stage-stats delta that attributes its
+     * sampling to GPU or CPU (see {@link NativeBaselineSampler#gpuStageStats}), and the
+     * per-{@link SampleStage} wall-time split of its native sampling (null on the same
+     * non-counting paths). Every correction or styling plane a composition needs is either
      * inside the tile or rebuilt locally by the path that produced it.
      */
     private record Composition(
         TileUpdate update,
         TileMetadata metadata,
-        PredictionMipCache.Tile tile
+        PredictionMipCache.Tile tile,
+        long sampledPoints,
+        long stageGpuDelta,
+        long[] stageNanos
     ) {
     }
 
