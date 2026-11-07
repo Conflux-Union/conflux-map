@@ -3,5 +3,5 @@
 - Native CFlags: `-shared -fPIC -O3 -g0 -fno-fast-math -ffp-contract=off -fvisibility=hidden -Wall -Wl,--no-undefined -Inative/jni -Inative/cubiomes`
 - Target: linux-x86_64
 - File: libconfluxnative.so
-- SHA-256: `07158775aeac03ec383efebefd0ead8a26e60eac98a05d6465a146ad147d97fe`
+- SHA-256: `ffa41842ebc720b61f8db5c065455c18ac78b46a0e3f15a332928ae2ca8479a0`
 - Size: 1569840 bytes

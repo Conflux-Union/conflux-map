@@ -172,10 +172,24 @@ tasks.register('buildNativesAll') {
     }
 }
 
+tasks.register('compileTestNativePurity', Exec) {
+    group = 'build'
+    description = 'Compiles native position purity test executable.'
+    dependsOn 'buildNativesHost'
+    final File binFile = rootProject.file('build/bin/test_purity')
+    outputs.file binFile
+    doFirst {
+        binFile.parentFile.mkdirs()
+    }
+    workingDir rootProject.projectDir
+    final List<String> cubiomesOnlySources = nativeSources.findAll { !it.contains('confluxnative.c') }
+    commandLine(['gcc', '-O2', '-g0', '-Inative/jni', '-Inative/cubiomes', '-Inative/shim'] + cubiomesOnlySources + ['native/test_dual_precision.c', '-lm', '-o', binFile.absolutePath])
+}
+
 tasks.register('testNativePurity', Exec) {
     group = 'verification'
-    description = 'Runs strict position-purity and multi-shape assertion test suite.'
-    dependsOn 'buildNativesHost'
+    description = 'Executes native position purity test assertions.'
+    dependsOn 'compileTestNativePurity'
     workingDir rootProject.projectDir
-    commandLine(['gcc', '-O2', '-g0', '-Inative/jni', '-Inative/cubiomes', '-Inative/shim'] + nativeSources + ['native/test_dual_precision.c', '-lm', '-o', 'build/test_purity'])
+    commandLine rootProject.file('build/bin/test_purity').absolutePath
 }
