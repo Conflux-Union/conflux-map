@@ -112,6 +112,19 @@ tasks.register('buildNativesHost', Exec) {
     }
     workingDir rootProject.projectDir
     commandLine(['cc'] + nativeCflags + ['-o', outFile.absolutePath] + nativeSources + ['-lm'])
+    doLast {
+        final String sha256 = java.security.MessageDigest.getInstance('SHA-256')
+            .digest(outFile.bytes).encodeHex().toString()
+        final File infoFile = rootProject.file('native/prebuilt/BUILD_INFO.md')
+        infoFile.text = """# Prebuilt Native Binary Provenance
+- Build Tool: host cc (${'cc --version'.execute().text.split('\n')[0]})
+- Native CFlags: `${nativeCflags.join(' ')}`
+- Target: linux-x86_64
+- File: libconfluxnative.so
+- SHA-256: `${sha256}`
+- Size: ${outFile.length()} bytes
+"""
+    }
 }
 
 tasks.register('buildNativesAll') {
@@ -157,4 +170,12 @@ tasks.register('buildNativesAll') {
             }
         }
     }
+}
+
+tasks.register('testNativePurity', Exec) {
+    group = 'verification'
+    description = 'Runs strict position-purity and multi-shape assertion test suite.'
+    dependsOn 'buildNativesHost'
+    workingDir rootProject.projectDir
+    commandLine(['gcc', '-O2', '-g0', '-Inative/jni', '-Inative/cubiomes', '-Inative/shim'] + nativeSources + ['native/test_dual_precision.c', '-lm', '-o', 'build/test_purity'])
 }

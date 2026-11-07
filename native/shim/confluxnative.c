@@ -1091,10 +1091,12 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
 }
 
 /*
- * Coarse-lattice variant of cfxOverviewHeights for the LOD2-4 anchor sweeps:
- * same geometry and validation, but terrain-noise octaves shorter than the
- * sampling stride are skipped (see CfxNoiseDetail). Waterline-band and
- * exact-residual callers must keep the full-detail entry above.
+ * Coarse-lattice variant of cfxOverviewHeights:
+ * same geometry and validation, sharing noise-detail octave truncation with
+ * modern overview passes. Note that in 1.18+, cfxOverviewHeights also employs
+ * adaptive macro grid refinement for high-throughput overview prediction.
+ * For exact, unapproximated ground-truth column evaluation, call cubiomes's
+ * mapOverworldSurfaceHeightBlocks directly.
  */
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxOverviewHeightsCoarse(
     JNIEnv *env, jclass clazz, jlong handle,
