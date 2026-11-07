@@ -18,4 +18,4 @@
 
 | Asset | Target Triple | Compiler Command | SHA-256 Checksum | Size |
 |---|---|---|---|---|
-| `common/src/main/resources/webmap/predictor.wasm` | `wasm32-wasi` | `zig cc -target wasm32-wasi -mexec-model=reactor -O3 -g0 -msimd128` | `a84c76c8442d00636eb426b574aeb78bc6caed86a9544aacd37234a85e79b298` | 1,399,397 bytes |
+| `common/src/main/resources/webmap/predictor.wasm` | `wasm32-wasi` | `zig cc -target wasm32-wasi -mexec-model=reactor -O3 -g0 -msimd128` | `e33ad0b8af8b008a14cafa164f3c78a72e18b35a9b72ad9c1ea53daf11ef1efa` | 1,399,422 bytes |

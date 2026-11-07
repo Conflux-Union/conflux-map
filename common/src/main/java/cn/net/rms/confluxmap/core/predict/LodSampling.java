@@ -1515,8 +1515,9 @@ public final class LodSampling {
             for (int sz = 0; sz < grid.subPerAxis; sz++) {
                 for (int sx = 0; sx < grid.subPerAxis; sx++) {
                     final int s = grid.subIndex(i, sx, sz);
+                    final boolean subSwampWater = BiomeTable.isSwamp(grid.subBiomeId[s]);
                     if (belowSeaLevel
-                        && (confidentFluid || BiomeTable.get(grid.subBiomeId[s]).waterBiome())) {
+                        && (confidentFluid || BiomeTable.get(grid.subBiomeId[s]).waterBiome() || subSwampWater)) {
                         grid.subBaseSurfaceY[s] = BaselineDeriver.WATER_LEVEL;
                         grid.subSurfaceFlags[s] = BaselineGrid.SURFACE_FLUID;
                     } else {

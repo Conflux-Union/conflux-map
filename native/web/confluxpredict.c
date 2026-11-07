@@ -1178,6 +1178,11 @@ static int cfxWebIsWaterBiome(int biome)
     }
 }
 
+static int cfxWebIsSwampBiome(int biome)
+{
+    return biome == 6 || biome == 134 || biome == 184;
+}
+
 static int cfxWebGenerateOverworld(int blockX, int blockZ, int lod, int exact)
 {
     const int blockStride = 1 << lod;
@@ -1252,7 +1257,8 @@ static int cfxWebGenerateOverworld(int blockX, int blockZ, int lod, int exact)
             const int fluid = lod == 0
                 ? fluidConfidence[i] >= 128
                 : heightData[i] < CFX_WEB_WATER_LEVEL - 1;
-            const int water = belowSea && (fluid || cfxWebIsWaterBiome(biomeData[i]));
+            const int swampWater = cfxWebIsSwampBiome(biomeData[i]);
+            const int water = belowSea && (fluid || cfxWebIsWaterBiome(biomeData[i]) || swampWater);
             int depth = water ? CFX_WEB_WATER_LEVEL - heightData[i] : 0;
             if (depth < 0) depth = 0;
             if (depth > 255) depth = 255;

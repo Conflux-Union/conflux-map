@@ -330,8 +330,9 @@ public final class BiomeTable {
         final int stoneGround = 0xFF656565;
         put(fixedGround(0.0, stoneGround), stone_shore);
 
-        // Swamp: murky tints (including its own water color), sparse trees. Its ponds are not
-        // modeled as water since cubiomes' isOceanic/river doesn't cover swamp - see this class's javadoc.
+        // Swamp: murky tints (including its own water color), sparse trees. While cubiomes'
+        // isOceanic/river does not cover swamp, its shallow ponds at or below sea-level ceiling
+        // (solidY <= 61) are gated as fluid to eliminate false-land artifacts.
         put(new Entry(
             SurfaceKind.LAND, false, 0.15, LAND_BASE, true, 0xFF6A7039,
             FOLIAGE_BASE, true, 0xFF6A7039, 0xFF617B64
