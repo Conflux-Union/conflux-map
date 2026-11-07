@@ -13,7 +13,6 @@ import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.tile.TileUpdate;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.TileMath;
-import cn.net.rms.confluxmap.core.util.TileMath;
 //#if MC<12105
 import com.mojang.blaze3d.platform.GlStateManager;
 //#endif
@@ -273,7 +272,7 @@ public final class TileTextureManager {
      * would throw on a {@code "!pred"} layer id, since {@code MapLayer.parse} doesn't know it.
      */
     public boolean bind(final TileKey key) {
-        if (!bindResident(key)) {
+        if (!bindIfResident(key)) {
             if (PredictedTileKeys.isPredicted(key)) {
                 predictionTiles.requestTile(key);
             } else {
@@ -282,15 +281,6 @@ public final class TileTextureManager {
             return false;
         }
         return true;
-    }
-
-    /**
-     * Whether the tile's texture is resident on the GPU. Read-only: unlike {@link #bind} it neither
-     * requests the tile nor touches the LRU order, so a fallback probe can never evict the very
-     * texture it hoped to draw, nor pull a tile into the upload queue just to cover a gap.
-     */
-    public boolean hasTexture(final TileKey key) {
-        return textures.containsKey(key);
     }
 
     /**
@@ -310,7 +300,7 @@ public final class TileTextureManager {
             TileMath.parentTile(key.tileX()),
             TileMath.parentTile(key.tileZ())
         );
-        if (!bindResident(parent)) {
+        if (!bindIfResident(parent)) {
             return false;
         }
         TileMath.parentUv(key.tileX(), key.tileZ(), uvOut);
@@ -318,11 +308,13 @@ public final class TileTextureManager {
     }
 
     /**
-     * Binds a tile that is already resident, without requesting it when absent. A hit still counts
-     * as a use, so a fallback texture that keeps covering the screen stays at the fresh end of the
-     * LRU exactly like a directly drawn one.
+     * Binds a tile that is already resident, without requesting it when absent. Unlike
+     * {@link #bind}, a miss is silent and leaves the manager untouched, so a fallback probe can
+     * never pull a tile into the upload queue just to cover a gap. A hit still counts as a use,
+     * so a fallback texture that keeps covering the screen stays at the fresh end of the LRU
+     * exactly like a directly drawn one.
      */
-    private boolean bindResident(final TileKey key) {
+    public boolean bindIfResident(final TileKey key) {
         final TileTexture entry = textures.get(key);
         if (entry == null) {
             return false;

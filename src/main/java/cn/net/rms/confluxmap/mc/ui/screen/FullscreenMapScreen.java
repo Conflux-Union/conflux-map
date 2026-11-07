@@ -2454,7 +2454,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     TileMath.childTile(key.tileX(), quadrantX),
                     TileMath.childTile(key.tileZ(), quadrantZ)
                 );
-                if (!source.hasTexture(child) || !source.bind(child)) {
+                if (!source.bindIfResident(child)) {
                     continue;
                 }
                 drawFallbackQuad(
