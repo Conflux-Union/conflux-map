@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.tile.TileUpdate;
 import cn.net.rms.confluxmap.core.util.Argb;
+import cn.net.rms.confluxmap.core.util.TileMath;
 //#if MC<12105
 import com.mojang.blaze3d.platform.GlStateManager;
 //#endif
@@ -271,13 +272,51 @@ public final class TileTextureManager {
      * would throw on a {@code "!pred"} layer id, since {@code MapLayer.parse} doesn't know it.
      */
     public boolean bind(final TileKey key) {
-        final TileTexture entry = textures.get(key);
-        if (entry == null) {
+        if (!bindIfResident(key)) {
             if (PredictedTileKeys.isPredicted(key)) {
                 predictionTiles.requestTile(key);
             } else {
                 tiles.requestTile(key);
             }
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Binds the parent tile one LOD coarser than {@code key} when it is resident, filling
+     * {@code uvOut} with the {@code [u0, v0, u1, v1]} quadrant of that parent covering {@code key}.
+     * Read-only on a miss: a missing parent is not requested, because the caller only wants it as a
+     * stand-in while {@code key} itself loads. Returns false (leaving {@code uvOut} untouched) when
+     * no coarser tile exists - at {@link TileMath#MAX_LOD}, or before that parent has uploaded.
+     */
+    public boolean bindFallbackParent(final TileKey key, final float[] uvOut) {
+        if (key.lod() >= TileMath.MAX_LOD) {
+            return false;
+        }
+        final TileKey parent = new TileKey(
+            key.world(), key.dimension(), key.layerId(),
+            key.lod() + 1,
+            TileMath.parentTile(key.tileX()),
+            TileMath.parentTile(key.tileZ())
+        );
+        if (!bindIfResident(parent)) {
+            return false;
+        }
+        TileMath.parentUv(key.tileX(), key.tileZ(), uvOut);
+        return true;
+    }
+
+    /**
+     * Binds a tile that is already resident, without requesting it when absent. Unlike
+     * {@link #bind}, a miss is silent and leaves the manager untouched, so a fallback probe can
+     * never pull a tile into the upload queue just to cover a gap. A hit still counts as a use,
+     * so a fallback texture that keeps covering the screen stays at the fresh end of the LRU
+     * exactly like a directly drawn one.
+     */
+    public boolean bindIfResident(final TileKey key) {
+        final TileTexture entry = textures.get(key);
+        if (entry == null) {
             return false;
         }
         //#if MC>=12108
