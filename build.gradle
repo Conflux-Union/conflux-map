@@ -162,7 +162,7 @@ tasks.register('buildNativesAll') {
             if (process.exitValue() != 0) {
                 throw new GradleException("zig cc failed for target ${target.zigTarget} (exit ${process.exitValue()}):\n${output}")
             }
-            final String baseName = target.lib.replaceAll(/\\.[^.]+$/, '')
+            final String baseName = target.lib.replaceAll(/\.[^.]+$/, '')
             [".lib", ".pdb"].each { final String ext ->
                 final File byproduct = new File(outDir, baseName + ext)
                 if (byproduct.exists()) {
@@ -223,7 +223,13 @@ tasks.register('verifyMasterBaseline') {
         if (!text.contains('master_cfxOverviewHeightsImpl(')) {
             throw new GradleException("master_clean_impl.h missing master_cfxOverviewHeightsImpl implementation")
         }
-        println "verifyMasterBaseline: Master snapshot anchor & content integrity verified against a966dcf1"
+        // 校验整文件 SHA-256 强一致性，防止正文任何静默篡改漂移
+        final String sha256 = java.security.MessageDigest.getInstance('SHA-256')
+            .digest(refFile.bytes).encodeHex().toString()
+        if (sha256 != 'c7fb3d1960743396c0184bfeec2ace6388353dc5ec6ba67ae296650a5aec97c4') {
+            throw new GradleException("master_clean_impl.h SHA-256 mismatch (expected c7fb3d19..., got ${sha256})")
+        }
+        println "verifyMasterBaseline: Master snapshot anchor & SHA-256 verified against a966dcf1"
     }
 }
 
@@ -232,6 +238,7 @@ subprojects {
     afterEvaluate {
         tasks.matching { it.name == 'check' }.configureEach {
             dependsOn rootProject.tasks.named('verifyMasterBaseline')
+            dependsOn rootProject.tasks.named('testNativePurity')
         }
     }
 }

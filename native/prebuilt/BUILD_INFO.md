@@ -8,15 +8,14 @@
 
 | Target Platform | Binary File | Target Triple | SHA-256 Checksum | Size |
 |---|---|---|---|---|
-| Windows x86_64 | `windows-x86_64/confluxnative.dll` | `x86_64-windows-gnu` | `5e0e595cb9ac444404242226dbb7bda63859cd370bb7667c93efdf41db800a4d` | 1,555,456 bytes |
-| Linux x86_64 | `linux-x86_64/libconfluxnative.so` | `x86_64-linux-gnu.2.17` | `74e5282f6b12e75ea13488d45fb98929fe2c9eca6a98b2e99fabefd950ec124f` | 1,441,512 bytes |
-| Linux aarch64 | `linux-aarch64/libconfluxnative.so` | `aarch64-linux-gnu.2.17` | `4135d6813d2bc91a8d5b3e36f51cc5647eb926f0653d4fb1676fd7ebd6aad4d6` | 1,343,264 bytes |
-| macOS x86_64 | `macos-x86_64/libconfluxnative.dylib` | `x86_64-macos` | `37f7311e943b7e707c8aa82965b9991541715f8ad16b938f3de30ba286fdd101` | 1,123,196 bytes |
-| macOS aarch64 | `macos-aarch64/libconfluxnative.dylib` | `aarch64-macos` | `8aaa0edca42e99037d91778d2fb1a7412c521b7fe84dbe4a1a283944e10a1ebf` | 1,098,888 bytes |
+| Windows x86_64 | `windows-x86_64/confluxnative.dll` | `x86_64-windows-gnu` | `0a715cb5226003592ecba5d6630b71c74685a521025fe29e35411a609d5b181f` | 1,554,944 bytes |
+| Linux x86_64 | `linux-x86_64/libconfluxnative.so` | `x86_64-linux-gnu.2.17` | `f244029f527c77eff22d7cdb9c094f94e3b9bc4f6aa98e27437c2f252e59369e` | 1,441,416 bytes |
+| Linux aarch64 | `linux-aarch64/libconfluxnative.so` | `aarch64-linux-gnu.2.17` | `20d242e901260780063e04c7aa8cb669a61504e9e707f740bb9de3473e674436` | 1,343,248 bytes |
+| macOS x86_64 | `macos-x86_64/libconfluxnative.dylib` | `x86_64-macos` | `dd7d738f4764699a160bf753cf0857d872f1220ca1249758ffa3a78a68d57c01` | 1,123,196 bytes |
+| macOS aarch64 | `macos-aarch64/libconfluxnative.dylib` | `aarch64-macos` | `b18c420ac84a911e9f9a1fe669310ceea24df873acc94174a15f870023194bf9` | 1,098,888 bytes |
 
 ## Web Map WASM Asset Provenance
 
 | Asset | Target Triple | Compiler Command | SHA-256 Checksum | Size |
 |---|---|---|---|---|
-| `common/src/main/resources/webmap/predictor.wasm` | `wasm32-wasi` | `zig cc -target wasm32-wasi -mexec-model=reactor -O3 -g0 -msimd128` | `c57862bcf602d30b2a08c28c06220c5b9b7e5433a736c20a1a3fa9158e37c546` | 1,399,363 bytes |
-
+| `common/src/main/resources/webmap/predictor.wasm` | `wasm32-wasi` | `zig cc -target wasm32-wasi -mexec-model=reactor -O3 -g0 -msimd128` | `a84c76c8442d00636eb426b574aeb78bc6caed86a9544aacd37234a85e79b298` | 1,399,397 bytes |

@@ -42,7 +42,7 @@
 #include "features/end_city.h"
 #include "terrain_features.h"
 
-#define CFX_ABI 15
+#define CFX_ABI 16
 #define CFX_NETHER_ROOF_Y 127
 
 #define CFX_OK              0
@@ -989,7 +989,9 @@ static jint cfxOverviewHeightsImpl(
 
     if (ctx->mc >= MC_1_18)
     {
-        if (stride <= 4)
+        /* Micro-queries (e.g. 1x1 waterline band solves) preserve the exact, full-detail point solve
+         * contract required by Java's resolveOverviewBand, avoiding unnecessary macro grid allocation. */
+        if (stride <= 4 && (w > 1 || h > 1))
         {
             const int minX4 = floordiv(blockX, 4);
             const int minZ4 = floordiv(blockZ, 4);
@@ -1004,7 +1006,13 @@ static jint cfxOverviewHeightsImpl(
                 return CFX_ERR_ALLOC;
             }
             CfxNoiseDetail macroDetail = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 4);
-            cfxEvaluateAdaptiveMacroGrid(ctx, macro, gridW, gridH, minX4, minZ4, &macroDetail);
+            int macroErr = cfxEvaluateAdaptiveMacroGrid(ctx, macro, gridW, gridH, minX4, minZ4, &macroDetail);
+            if (macroErr != CFX_OK)
+            {
+                free(macro);
+                free(heights);
+                return macroErr;
+            }
             int j, i;
             for (j = 0; j < h; j++)
             {

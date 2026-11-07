@@ -10,14 +10,14 @@
 // 4. 严格边界安全: 零越界, 零行串位 (ASan clean).
 // ==============================================================================
 
-static inline void cfxEvaluateAdaptiveMacroGrid(
+static inline int cfxEvaluateAdaptiveMacroGrid(
     const CfxContext *ctx, int *macro, int gridW, int gridH,
     int minX4, int minZ4, const CfxNoiseDetail *detail
 )
 {
     const int W = gridW;
     const int H = gridH;
-    if (W <= 0 || H <= 0) return;
+    if (W <= 0 || H <= 0) return CFX_OK;
 
     // 1. 世界坐标下以 4 为步长的大格子对齐原点与包含的格子总数
     const int startCellX = floordiv(minX4, 4);
@@ -32,7 +32,7 @@ static inline void cfxEvaluateAdaptiveMacroGrid(
     const int cornerH = numCellsZ + 1;
 
     int *corners = (int *)malloc(cornerW * cornerH * sizeof(int));
-    if (!corners) return;
+    if (!corners) return CFX_ERR_ALLOC;
 
     // 2. 计算所有世界对齐大格子的角点高度 (绝对世界坐标)
     for (int cz = 0; cz < cornerH; cz++) {
@@ -149,6 +149,7 @@ static inline void cfxEvaluateAdaptiveMacroGrid(
     }
 
     free(corners);
+    return CFX_OK;
 }
 
 #endif

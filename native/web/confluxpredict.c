@@ -579,14 +579,14 @@ static int cfxWebModernOverviewHeight(
     return (int) lround(y);
 }
 
-static inline void cfxWebEvaluateAdaptiveMacroGrid(
+static inline int cfxWebEvaluateAdaptiveMacroGrid(
     int *macro, int gridW, int gridH,
     int minX4, int minZ4, const CfxWebNoiseDetail *detail
 )
 {
     const int W = gridW;
     const int H = gridH;
-    if (W <= 0 || H <= 0) return;
+    if (W <= 0 || H <= 0) return CFX_WEB_OK;
 
     const int startCellX = floordiv(minX4, 4);
     const int endCellX   = floordiv(minX4 + W - 1, 4);
@@ -600,7 +600,7 @@ static inline void cfxWebEvaluateAdaptiveMacroGrid(
     const int cornerH = numCellsZ + 1;
 
     int *corners = (int *)malloc(cornerW * cornerH * sizeof(int));
-    if (!corners) return;
+    if (!corners) return CFX_WEB_ALLOC;
 
     for (int cz = 0; cz < cornerH; cz++) {
         int worldZ4 = (startCellZ + cz) * 4;
@@ -714,6 +714,7 @@ static inline void cfxWebEvaluateAdaptiveMacroGrid(
     }
 
     free(corners);
+    return CFX_WEB_OK;
 }
 
 static int cfxWebLegacyOverviewHeight(int biome, int blockX, int blockZ)
@@ -747,7 +748,7 @@ static int cfxWebOverviewHeightsImpl(
 {
     if (mc >= MC_1_18)
     {
-        if (stride <= 4)
+        if (stride <= 4 && (w > 1 || h > 1))
         {
             const int lastX = blockX + (w - 1) * stride;
             const int lastZ = blockZ + (h - 1) * stride;
@@ -761,7 +762,12 @@ static int cfxWebOverviewHeightsImpl(
             if (macro == NULL)
                 return CFX_WEB_ALLOC;
             const CfxWebNoiseDetail macroDetail = cfxWebNoiseDetailForStride(&generator.bn.terrain, 4);
-            cfxWebEvaluateAdaptiveMacroGrid(macro, gridW, gridH, minX4, minZ4, &macroDetail);
+            const int macroErr = cfxWebEvaluateAdaptiveMacroGrid(macro, gridW, gridH, minX4, minZ4, &macroDetail);
+            if (macroErr != CFX_WEB_OK)
+            {
+                free(macro);
+                return macroErr;
+            }
             int j, i;
             for (j = 0; j < h; j++)
             {
