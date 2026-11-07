@@ -74,8 +74,9 @@ static inline void cfxEvaluateAdaptiveMacroGrid(
             if (c11 > max_h) max_h = c11;
 
             const int drop = max_h - min_h;
+            const int is_waterline = (min_h <= 65 && max_h >= 61);
 
-            if (drop > 7) {
+            if (drop > 7 || is_waterline) {
                 // 计算中心点
                 int midX = cellWorldX4 + 2;
                 int midZ = cellWorldZ4 + 2;
@@ -109,7 +110,8 @@ static inline void cfxEvaluateAdaptiveMacroGrid(
                         if (qc11 < qmin) qmin = qc11;
                         if (qc11 > qmax) qmax = qc11;
 
-                        if (qmax - qmin > 5) {
+                        const int q_is_waterline = (qmin <= 64 && qmax >= 62);
+                        if (qmax - qmin > 5 || q_is_waterline) {
                             for (int lz = subZ0; lz < subZ1; lz++) {
                                 int worldZ4 = minZ4 + lz;
                                 for (int lx = subX0; lx < subX1; lx++) {

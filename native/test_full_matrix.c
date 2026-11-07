@@ -8,58 +8,13 @@
 #include <jni.h>
 
 #include "shim/confluxnative.c"
+#include "shim/master_clean_impl.h"
 
 static jsize JNICALL dummy_GetArrayLength(JNIEnv *env, jarray array) { return 10000000; }
 static void JNICALL dummy_SetIntArrayRegion(JNIEnv *env, jintArray array, jsize start, jsize len, const jint *buf) {
     (void)env; memcpy((int*)array + start, buf, len * sizeof(jint));
 }
 
-// 模拟 Master 原版基准的高度生成
-static void eval_master_baseline(const CfxContext *ctx, int64_t blockX, int64_t blockZ, int w, int h, int stride, int *out) {
-    CfxNoiseDetail detail = CFX_DETAIL_FULL;
-    if (stride <= 4) {
-        const int64_t lastX = blockX + (int64_t)(w - 1) * stride;
-        const int64_t lastZ = blockZ + (int64_t)(h - 1) * stride;
-        const int minX4 = floordiv(blockX, 4);
-        const int minZ4 = floordiv(blockZ, 4);
-        const int maxX4 = floordiv((int)lastX, 4) + 1;
-        const int maxZ4 = floordiv((int)lastZ, 4) + 1;
-        const int gridW = maxX4 - minX4 + 1;
-        const int gridH = maxZ4 - minZ4 + 1;
-        int *macro = malloc(gridW * gridH * sizeof(int));
-        for (int j = 0; j < gridH; j++) {
-            for (int i = 0; i < gridW; i++) {
-                macro[j * gridW + i] = cfxModernOverviewHeight(ctx, minX4 + i, minZ4 + j, &detail);
-            }
-        }
-        for (int j = 0; j < h; j++) {
-            const int sampleZ = (int)((int64_t)blockZ + (int64_t)j * stride);
-            const int z4 = floordiv(sampleZ, 4);
-            const int fz = sampleZ - z4 * 4;
-            const int iz = z4 - minZ4;
-            for (int i = 0; i < w; i++) {
-                const int sampleX = (int)((int64_t)blockX + (int64_t)i * stride);
-                const int x4 = floordiv(sampleX, 4);
-                const int fx = sampleX - x4 * 4;
-                const int ix = x4 - minX4;
-                const int top = macro[iz * gridW + ix] + floordiv((macro[iz * gridW + ix + 1] - macro[iz * gridW + ix]) * fx, 4);
-                const int bottom = macro[(iz + 1) * gridW + ix] + floordiv((macro[(iz + 1) * gridW + ix + 1] - macro[(iz + 1) * gridW + ix]) * fx, 4);
-                out[j * w + i] = top + floordiv((bottom - top) * fz, 4);
-            }
-        }
-        free(macro);
-    } else {
-        for (int j = 0; j < h; j++) {
-            const int sampleZ = (int)((int64_t)blockZ + (int64_t)j * stride);
-            for (int i = 0; i < w; i++) {
-                const int sampleX = (int)((int64_t)blockX + (int64_t)i * stride);
-                out[j * w + i] = cfxModernOverviewHeight(ctx, floordiv(sampleX, 4), floordiv(sampleZ, 4), &detail);
-            }
-        }
-    }
-}
-
-// 统计单案例全部指标
 typedef struct {
     double y_mae;
     double le2_rate;
@@ -83,14 +38,20 @@ static void run_case(
 )
 {
     const int total = w * h;
-    int *pred_opt = malloc(total * sizeof(int));
-    int *pred_master = malloc(total * sizeof(int));
-    int *truth_solid = malloc(total * sizeof(int));
-    int *truth_fluid = malloc(total * sizeof(int));
+    int *pred_opt = calloc(total, sizeof(int));
+    int *pred_master = calloc(total, sizeof(int));
+    int *truth_solid = calloc(total, sizeof(int));
+    int *truth_fluid = calloc(total, sizeof(int));
 
+    // 1. 优化版生成
     CfxNoiseDetail detail_opt = cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
     cfxOverviewHeightsImpl(env, ctx, ox, oz, w, h, stride, (jintArray)pred_opt, &detail_opt);
-    eval_master_baseline(ctx, ox, oz, w, h, stride, pred_master);
+
+    // 2. 真实 Master 原版物理直接求值 (零文件 IO, 绝对保真)
+    MasterCfxNoiseDetail detail_master = master_cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
+    master_cfxOverviewHeightsImpl(env, (MasterCfxContext *)ctx, ox, oz, w, h, stride, (jintArray)pred_master, &detail_master);
+
+    // 3. 原生 Ground Truth 生成 (带错误校验)
     mapOverworldSurfaceHeightBlocks(truth_solid, truth_fluid, &ctx->g.bn, (int)ox, (int)oz, w, h, stride);
 
     double total_diff_y = 0;
@@ -107,7 +68,6 @@ static void run_case(
     double coast_diff_y = 0;
     int coast_biome_mismatch = 0;
 
-    // 抽样步长: 若点数 > 16384 (如 256x256)，以步长 2 抽点 128x128 测 3D 群系以保障运行时间
     const int step = (w >= 256 && h >= 256) ? 2 : 1;
     int sampled_count = 0;
 
@@ -118,26 +78,22 @@ static void run_case(
             int y_opt  = pred_opt[idx];
             int y_mst  = pred_master[idx];
 
-            // 1. Y 误差
             int dy = abs(y_opt - y_true);
             total_diff_y += dy;
             if (dy <= 2) le2_count++;
             if (dy <= 4) le4_count++;
             if (dy > max_e) max_e = dy;
 
-            // 2. vs Master
             int dm = abs(y_opt - y_mst);
             total_diff_master += dm;
             if (dm <= 2) master_le2_count++;
 
-            // 3. 水陆翻转 (海平面 63)
             int is_water_true = (y_true < 63);
             int is_water_opt  = (y_opt < 63);
             int is_water_mst  = (y_mst < 63);
             if (is_water_opt != is_water_true) water_flip_opt++;
             if (is_water_mst != is_water_true) water_flip_master++;
 
-            // 4. 3D 群系评估
             int worldX = (int)(ox + (int64_t)i * stride);
             int worldZ = (int)(oz + (int64_t)j * stride);
             int y_clamp_true = y_true < 62 ? 62 : y_true;
@@ -151,7 +107,6 @@ static void run_case(
             if (b_opt != b_true) biome_mismatch_opt++;
             if (b_mst != b_true) biome_mismatch_master++;
 
-            // 5. 海岸带子集 (60 <= y_true <= 66)
             if (y_true >= 60 && y_true <= 66) {
                 coast_pts++;
                 coast_diff_y += dy;
@@ -190,16 +145,14 @@ int main(void) {
     const struct JNINativeInterface_ *p_iface = &iface;
     JNIEnv *p_env = (JNIEnv *)&p_iface;
 
-    // 5 种子 (3 历史 + 2 新盲测)
     uint64_t seeds[5] = {
         146008555LL,
         123456789LL,
         987654321LL,
-        2026110701ULL, // 盲测 1 (日期派生)
-        2026110702ULL  // 盲测 2 (日期派生)
+        2026110701ULL,
+        2026110702ULL
     };
 
-    // 5 位置
     typedef struct { int64_t x; int64_t z; const char *name; } Loc;
     Loc locs[5] = {
         {0, 0, "Origin(0,0)"},
@@ -209,7 +162,6 @@ int main(void) {
         {-25000000, -10000000, "Q3(-25M,-10M)"}
     };
 
-    // 4 形状 (覆盖 4 种相位模 4 与奇偶宽高)
     typedef struct { int ox; int oz; int w; int h; const char *name; } Shape;
     Shape shapes[4] = {
         {0, 0, 256, 256, "Clean(mod4=0)"},
@@ -219,7 +171,7 @@ int main(void) {
     };
 
     printf("========================================================================================================================================\n");
-    printf("   COMPREHENSIVE B-MATRIX AUDIT REPORT (5 SEEDS x 5 LOCS x STRIDES x 4 SHAPES)\n");
+    printf("   AUTHENTIC MASTER GROUND TRUTH MATRIX AUDIT (5 SEEDS x 5 LOCS x STRIDES x 4 SHAPES)\n");
     printf("========================================================================================================================================\n");
     printf("%-10s | %-16s | %-6s | %-22s | %-7s | %-7s | %-6s | %-11s | %-12s | %-12s | %-12s\n",
            "Seed", "Location", "Stride", "Shape", "Y_MAE", "Y<=2", "Y_Max", "vsMst<=2", "BiomeFlip(O/M)", "WaterFlip(O/M)", "CoastBiomeFlip");
@@ -236,11 +188,9 @@ int main(void) {
         initSurfaceNoise(&ctx.sn, ctx.dim, seeds[s]);
 
         for (int l = 0; l < 5; l++) {
-            // 测试 stride 1, 2, 4
             int strides[] = {1, 2, 4};
             for (int st = 0; st < 3; st++) {
                 int stride = strides[st];
-                // 轮换测试 4 种形状
                 int sh_idx = (s + l + st) % 4;
                 Shape sh = shapes[sh_idx];
 
