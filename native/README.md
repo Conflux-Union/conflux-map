@@ -15,7 +15,7 @@ for what it predicts; this file is only the build/maintenance side.
   [`Conflux-Union/cubiomes`](https://github.com/Conflux-Union/cubiomes) (a fork
   of the active [`xpple/cubiomes`](https://github.com/xpple/cubiomes) line, which
   continues [`Cubitect/cubiomes`](https://github.com/Cubitect/cubiomes)),
-  MIT-licensed. Pinned to commit `f75f0a3` via the submodule gitlink; the
+  MIT-licensed. Pinned to commit `1a3386c` via the submodule gitlink; the
   pinned commit and upstream URL are also recorded in `CUBIOMES_COMMIT` for
   readability. Only the files needed to link
   `setupGenerator`/`applySeed`/`genBiomes`/`mapApproxHeight`/
@@ -25,7 +25,9 @@ for what it predicts; this file is only the build/maintenance side.
   by `buildNativesHost`/`buildNativesAll` (`biomenoise`, `biomes`, `generator`,
   `layers`, `noise`, `terrainnoise`, `finders`, `terrain_features`,
   `features/end_city`, `features/fortress`, `features/abandoned_camp`,
-  `features/stronghold`, `util`, `rng.h`, `tables/`) - other upstream utilities
+  `features/stronghold`, `util`, `rng.h`, `tables/`, plus the fork's GPU
+  executor `gpu.c`/`opencl_host.c` with headers `gpu.h`/`gpu_cl_kernels.h`/
+  `opencl_host.h`) - other upstream utilities
   this project never calls (`quadbase.c/h`, `carver.c/h`, the loot library)
   ship in the submodule but are not compiled. To change
   cubiomes, commit on the fork and bump the
@@ -109,7 +111,8 @@ Zig target triples used, and the resulting file per OS:
 | macOS aarch64 | `aarch64-macos` | `libconfluxnative.dylib` |
 
 Both tasks use the same compile flags: `-shared -fPIC -O2 -g0 -fno-fast-math
--ffp-contract=off -fvisibility=hidden -Wall -Inative/jni -Inative/cubiomes`.
+-ffp-contract=off -fvisibility=hidden -Wall -DCUBIOMES_ENABLE_GPU
+-Wl,--no-undefined -Inative/jni -Inative/cubiomes`.
 `-g0` prevents compiler-version defaults from embedding debug information in
 release binaries. `-fno-fast-math`/`-ffp-contract=off` matter for determinism -
 predictions must be bit-identical run to run and peer
@@ -117,3 +120,21 @@ to peer, and both flags disable float reassociation/fused-multiply-add that
 would otherwise vary by codegen. `-fvisibility=hidden` keeps every cubiomes
 symbol private to the shared library; only the `Java_...` JNI entry points
 (explicitly `JNIEXPORT`) are exported (verified with `nm -D` after building).
+
+`-DCUBIOMES_ENABLE_GPU` compiles the GPU executor (`gpu.c`/`opencl_host.c`)
+and the transparent dispatch hooks into `biomenoise.c`'s
+`mapOverworldSurfaceBiome`/`mapOverworldTerrainHeight`. The host resolves the
+platform's OpenCL loader via dlopen (`libOpenCL.so.1` on Linux, the OpenCL
+framework on macOS, `OpenCL.dll` on Windows) at first use - there is no
+link-time OpenCL dependency, and a machine without a loader or GPU device
+latches the engine dead and silently serves the CPU path. Linux targets
+(same glibc 2.17 baseline as before) additionally link `-ldl -lpthread`;
+macOS resolves both through libSystem and Windows through kernel32, so
+neither wants the POSIX libs. GPU outputs are a float-precision
+approximation of the double-precision CPU reference with a bounded,
+coordinate-dependent drift - the drift budgets and mode handling live in the
+GPU section of the fork's README, and the engine mode is overridable at
+runtime via `CubiomesNative.cfxSetGpuMode` (library default: env
+`CUBIOMES_GPU`, auto when unset). The web predictor is deliberately compiled
+without the gate: WebAssembly has no dlopen, so its biomenoise hooks
+would be dead weight.

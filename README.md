@@ -50,7 +50,7 @@ The minimap, world map, waypoints, drawing, and export require only the client. 
 
 ### Map autofill
 
-Once the world seed is available, the Overworld, Nether roof, and End immediately display predicted terrain. Exploration progressively replaces the prediction with the real map, and a server with the companion installed also sends real-terrain corrections. Press `P` to cycle everywhere / generated-only / explored-only, and `F9` to force a refresh. A local seed can also be configured to produce a prediction map visible only to the local player.
+Once the world seed is available, the Overworld, Nether roof, and End immediately display predicted terrain. Exploration progressively replaces the prediction with the real map, and a server with the companion installed also sends real-terrain corrections. Press `P` to cycle everywhere / generated-only / explored-only, and `F9` to force a refresh. Predictions run on the GPU by default where one is available and fall back to the CPU otherwise; the backend is selectable in the map autofill settings. A local seed can also be configured to produce a prediction map visible only to the local player.
 
 ### Structure and biome search
 

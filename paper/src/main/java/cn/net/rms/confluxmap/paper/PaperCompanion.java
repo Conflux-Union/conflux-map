@@ -10,6 +10,7 @@ import cn.net.rms.confluxmap.core.store.ServerInstanceIdStore;
 import cn.net.rms.confluxmap.core.store.WorldIdStore;
 import cn.net.rms.confluxmap.core.update.GithubReleaseFetcher;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
+import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import cn.net.rms.confluxmap.server.ServerConfig;
 import cn.net.rms.confluxmap.server.DatapackLangService;
@@ -160,6 +161,7 @@ final class PaperCompanion implements Listener {
 
     void enable() {
         config = configIo.load();
+        GpuBackend.configure(config.predictionBackend);
         for (final World world : Bukkit.getWorlds()) {
             worlds.add(world);
         }

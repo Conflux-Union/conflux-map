@@ -63,12 +63,27 @@ final List<String> nativeSources = [
     // instead of a C-level error. -Wl,--no-undefined below keeps it that way.
     'native/cubiomes/util.c',
     'native/cubiomes/features/stronghold.c',
+    // The OpenCL GPU executor behind the transparent dispatch hooks that
+    // CUBIOMES_ENABLE_GPU compiles into biomenoise.c. opencl_host.c resolves
+    // the platform's OpenCL loader via dlopen/LoadLibrary at first use, so
+    // the library carries zero link-time OpenCL dependency and a machine
+    // without one degrades silently to the CPU path. The web predictor
+    // deliberately stays gate-free: WebAssembly has no dlopen.
+    'native/cubiomes/gpu.c',
+    'native/cubiomes/opencl_host.c',
 ]
 final List<String> nativeCflags = [
     '-shared', '-fPIC', '-O2', '-g0', '-fno-fast-math', '-ffp-contract=off', '-fvisibility=hidden', '-Wall',
+    '-DCUBIOMES_ENABLE_GPU',
     '-Wl,--no-undefined',
     '-Inative/jni', '-Inative/cubiomes',
 ]
+// gpu.c serializes its engine with pthreads and resolves the OpenCL loader
+// with dlopen; both live in libc since glibc 2.34 but are separate libraries
+// on the glibc 2.17 baseline the Linux cross-targets pin. Windows resolves
+// everything through kernel32 and macOS through libSystem, so neither wants
+// the POSIX dl/pthread libs.
+final List<String> nativeLinuxLibs = ['-ldl', '-lpthread']
 
 final List<String> webPredictorSources = [
     'native/web/confluxpredict.c',
@@ -111,7 +126,7 @@ tasks.register('buildNativesHost', Exec) {
         outFile.parentFile.mkdirs()
     }
     workingDir rootProject.projectDir
-    commandLine(['cc'] + nativeCflags + ['-o', outFile.absolutePath] + nativeSources + ['-lm'])
+    commandLine(['cc'] + nativeCflags + ['-o', outFile.absolutePath] + nativeSources + ['-lm'] + nativeLinuxLibs)
 }
 
 tasks.register('buildNativesAll') {
@@ -127,18 +142,18 @@ tasks.register('buildNativesAll') {
                 'See native/README.md for the target list.'
             )
         }
-        final List<Map<String, String>> targets = [
-            [zigTarget: 'x86_64-linux-gnu.2.17', dir: 'linux-x86_64', lib: 'libconfluxnative.so'],
-            [zigTarget: 'aarch64-linux-gnu.2.17', dir: 'linux-aarch64', lib: 'libconfluxnative.so'],
-            [zigTarget: 'x86_64-windows-gnu', dir: 'windows-x86_64', lib: 'confluxnative.dll'],
-            [zigTarget: 'x86_64-macos', dir: 'macos-x86_64', lib: 'libconfluxnative.dylib'],
-            [zigTarget: 'aarch64-macos', dir: 'macos-aarch64', lib: 'libconfluxnative.dylib'],
+        final List<Map<String, Object>> targets = [
+            [zigTarget: 'x86_64-linux-gnu.2.17', dir: 'linux-x86_64', lib: 'libconfluxnative.so', libs: nativeLinuxLibs],
+            [zigTarget: 'aarch64-linux-gnu.2.17', dir: 'linux-aarch64', lib: 'libconfluxnative.so', libs: nativeLinuxLibs],
+            [zigTarget: 'x86_64-windows-gnu', dir: 'windows-x86_64', lib: 'confluxnative.dll', libs: []],
+            [zigTarget: 'x86_64-macos', dir: 'macos-x86_64', lib: 'libconfluxnative.dylib', libs: []],
+            [zigTarget: 'aarch64-macos', dir: 'macos-aarch64', lib: 'libconfluxnative.dylib', libs: []],
         ]
-        targets.each { final Map<String, String> target ->
+        targets.each { final Map<String, Object> target ->
             final File outDir = rootProject.file("native/prebuilt/${target.dir}")
             outDir.mkdirs()
             final File outFile = new File(outDir, target.lib)
-            final List<String> command = ['zig', 'cc', '-target', target.zigTarget] + nativeCflags + ['-o', outFile.absolutePath] + nativeSources + ['-lm']
+            final List<String> command = ['zig', 'cc', '-target', target.zigTarget] + nativeCflags + ['-o', outFile.absolutePath] + nativeSources + ['-lm'] + (List<String>) target.libs
             final Process process = command.execute(null, rootProject.projectDir)
             final StringWriter output = new StringWriter()
             process.waitForProcessOutput(output, output)

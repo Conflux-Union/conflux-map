@@ -97,6 +97,7 @@ import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import cn.net.rms.confluxmap.mc.world.FullscreenMapBrowseService;
 import cn.net.rms.confluxmap.mc.world.McDaylightTracker;
 import cn.net.rms.confluxmap.mc.world.WorldSessionTracker;
+import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
@@ -198,6 +199,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
             ConfluxMapMod.LOGGER
         );
         config = configIo.load();
+        GpuBackend.configure(config.predictionBackend);
         surveyReminderNotifier = new SurveyReminderNotifier(client, config, configIo);
         unsupportedPlatformWarningNotifier = new UnsupportedPlatformWarningNotifier(
             client, config, configIo

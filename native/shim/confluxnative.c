@@ -42,7 +42,11 @@
 #include "features/end_city.h"
 #include "terrain_features.h"
 
-#define CFX_ABI 15
+#ifdef CUBIOMES_ENABLE_GPU
+#include "gpu.h"
+#endif
+
+#define CFX_ABI 16
 #define CFX_NETHER_ROOF_Y 127
 
 #define CFX_OK              0
@@ -143,6 +147,39 @@ static int cfxGenerateBiomesStrided(
         return CFX_OK;
     }
 
+#ifdef CUBIOMES_ENABLE_GPU
+    /* The 1.18+ Overworld surface path streams scale-4 rows at a fixed z
+     * stride; the batched GPU entry folds the whole row set into one
+     * dispatch instead of one per row. Rows are generated at the full
+     * subsampled width and then narrowed exactly like the CPU loop below,
+     * so the output point set (and layout) is unchanged. Any refusal -
+     * unsupported size, engine off/dead, no OpenCL loader, GPU error -
+     * falls through to the per-row path, which re-enters the same engine
+     * row by row through mapOverworldSurfaceBiome's transparent hook and
+     * from there the CPU. */
+    if (ctx->dim == DIM_OVERWORLD && ctx->mc >= MC_1_18 && scale == 4
+        && (int64_t) h * rawWidth64 <= CFX_MAX_CELLS)
+    {
+        int *rows = malloc(sizeof(int) * (size_t) h * (size_t) rawWidth64);
+        if (rows != NULL)
+        {
+            if (gpuMapOverworldSurfaceBiomeRows(
+                    rows, &ctx->g.bn, ctx->g.sha, scale, x, z,
+                    (int) rawWidth64, h, stride
+                ) == 0)
+            {
+                int j, i;
+                for (j = 0; j < h; j++)
+                    for (i = 0; i < w; i++)
+                        sampled[j*w+i] = rows[(size_t) j * rawWidth64 + i*stride];
+                free(rows);
+                return CFX_OK;
+            }
+            free(rows);
+        }
+    }
+#endif
+
     int j;
     for (j = 0; j < h; j++)
     {
@@ -185,6 +222,20 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     (void) env;
     (void) clazz;
     return CFX_ABI;
+}
+
+JNIEXPORT void JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxSetGpuMode(
+    JNIEnv *env, jclass clazz, jint mode
+) {
+    (void) env;
+    (void) clazz;
+#ifdef CUBIOMES_ENABLE_GPU
+    /* Invalid values are ignored inside the engine, so the Java side can
+     * forward an unmapped enum ordinal without a pre-check. */
+    gpuSetMode((int) mode);
+#else
+    (void) mode; /* GPU engine not compiled in: nothing to switch. */
+#endif
 }
 
 JNIEXPORT jlong JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxCreate(
@@ -875,6 +926,47 @@ static double cfxModernTerrainNoise(
 /** Fixed-point rounds solving slopedCheese(y) = 0; 2 converges, 3 adds nothing. */
 #define CFX_OVERVIEW_ITERATIONS 2
 
+/*
+ * GPU dispatch thresholds for the two hot stages (bit-exact double kernels,
+ * see gpuCfxOverviewHeights/gpuCfxSurfaceBiomes). Below these the kernel
+ * launch overhead outweighs the CPU loops, so the lattice-refine 2x2 cells
+ * and other tiny queries stay CPU-resident.
+ */
+#define CFX_GPU_HEIGHT_MIN_CELLS 256
+#define CFX_GPU_BIOME_MIN_CELLS 1024
+
+/*
+ * Bilinear quart-macro reconstruction: the same floordiv ladder the CPU
+ * macro path runs, applied to whichever lattice (GPU or CPU) produced the
+ * macro heights.
+ */
+static void cfxInterpolateMacro(
+    int *heights, const int *macro,
+    int blockX, int blockZ, int w, int h, int stride,
+    int minX4, int minZ4, int gridW
+) {
+    int j, i;
+    for (j = 0; j < h; j++)
+    {
+        const int sampleZ = (int)((int64_t)blockZ + (int64_t)j*stride);
+        const int z4 = floordiv(sampleZ, 4);
+        const int fz = sampleZ - z4*4;
+        const int iz = z4 - minZ4;
+        for (i = 0; i < w; i++)
+        {
+            const int sampleX = (int)((int64_t)blockX + (int64_t)i*stride);
+            const int x4 = floordiv(sampleX, 4);
+            const int fx = sampleX - x4*4;
+            const int ix = x4 - minX4;
+            const int top = macro[iz*gridW+ix]
+                + floordiv((macro[iz*gridW+ix+1] - macro[iz*gridW+ix])*fx, 4);
+            const int bottom = macro[(iz+1)*gridW+ix]
+                + floordiv((macro[(iz+1)*gridW+ix+1] - macro[(iz+1)*gridW+ix])*fx, 4);
+            heights[j*w+i] = top + floordiv((bottom-top)*fz, 4);
+        }
+    }
+}
+
 static int cfxModernOverviewHeight(
     const CfxContext *ctx, int x4, int z4, const CfxNoiseDetail *detail
 )
@@ -981,6 +1073,54 @@ static jint cfxOverviewHeightsImpl(
 
     if (ctx->mc >= MC_1_18)
     {
+#ifdef CUBIOMES_ENABLE_GPU
+        /*
+         * Bit-exact GPU fast path for the solver below (same engine and
+         * guard discipline as the rest of the GPU executor). Any
+         * unsupported shape or engine problem falls through to the CPU
+         * loops; CUBIOMES_GPU=off never reaches the runtime at all.
+         */
+        int gpuServed = 0;
+        if (stride < 4)
+        {
+            const int minX4 = floordiv(blockX, 4);
+            const int minZ4 = floordiv(blockZ, 4);
+            const int maxX4 = floordiv((int)lastX, 4) + 1;
+            const int maxZ4 = floordiv((int)lastZ, 4) + 1;
+            const int gridW = maxX4 - minX4 + 1;
+            const int gridH = maxZ4 - minZ4 + 1;
+            if (gridW * gridH >= CFX_GPU_HEIGHT_MIN_CELLS)
+            {
+                int *macro = malloc(sizeof(int) * (size_t)gridW * gridH);
+                if (macro != NULL
+                    && gpuCfxOverviewHeights(macro, &ctx->g.bn,
+                        minX4, minZ4, gridW, gridH, 1, 1,
+                        detail->mainFirst, detail->minMaxFirst,
+                        detail->truncated) == 0)
+                {
+                    cfxInterpolateMacro(heights, macro,
+                        blockX, blockZ, w, h, stride, minX4, minZ4, gridW);
+                    gpuServed = 1;
+                }
+                free(macro);
+            }
+        }
+        else if (stride % 4 == 0
+            && w * h >= CFX_GPU_HEIGHT_MIN_CELLS)
+        {
+            gpuServed = gpuCfxOverviewHeights(heights, &ctx->g.bn,
+                floordiv(blockX, 4), floordiv(blockZ, 4), w, h,
+                stride / 4, stride / 4,
+                detail->mainFirst, detail->minMaxFirst,
+                detail->truncated) == 0;
+        }
+        if (gpuServed)
+        {
+            (*env)->SetIntArrayRegion(env, outTerrainY, 0, cells, heights);
+            free(heights);
+            return CFX_OK;
+        }
+#endif
         if (stride < 4)
         {
             const int minX4 = floordiv(blockX, 4);
@@ -1001,25 +1141,8 @@ static jint cfxOverviewHeightsImpl(
                     macro[j*gridW+i] = cfxModernOverviewHeight(
                         ctx, minX4+i, minZ4+j, detail
                     );
-            for (j = 0; j < h; j++)
-            {
-                const int sampleZ = (int)((int64_t)blockZ + (int64_t)j*stride);
-                const int z4 = floordiv(sampleZ, 4);
-                const int fz = sampleZ - z4*4;
-                const int iz = z4 - minZ4;
-                for (i = 0; i < w; i++)
-                {
-                    const int sampleX = (int)((int64_t)blockX + (int64_t)i*stride);
-                    const int x4 = floordiv(sampleX, 4);
-                    const int fx = sampleX - x4*4;
-                    const int ix = x4 - minX4;
-                    const int top = macro[iz*gridW+ix]
-                        + floordiv((macro[iz*gridW+ix+1] - macro[iz*gridW+ix])*fx, 4);
-                    const int bottom = macro[(iz+1)*gridW+ix]
-                        + floordiv((macro[(iz+1)*gridW+ix+1] - macro[(iz+1)*gridW+ix])*fx, 4);
-                    heights[j*w+i] = top + floordiv((bottom-top)*fz, 4);
-                }
-            }
+            cfxInterpolateMacro(heights, macro,
+                blockX, blockZ, w, h, stride, minX4, minZ4, gridW);
             free(macro);
         }
         else
@@ -1245,6 +1368,24 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         free(biomes);
         return CFX_ERR_BAD_SIZE;
     }
+
+#ifdef CUBIOMES_ENABLE_GPU
+    /*
+     * Bit-exact GPU fast path for the voronoi + sampleBiomeNoise loop (and
+     * the stride<=2 nucleus memo below it, which returns exactly what the
+     * plain loop returns). Dispatch overhead dominates tiny batches, so the
+     * lattice-refine 2x2 cells stay CPU-resident.
+     */
+    if (cells >= CFX_GPU_BIOME_MIN_CELLS
+        && gpuCfxSurfaceBiomes(biomes, &ctx->g.bn, ctx->g.sha,
+            blockX, blockZ, w, h, stride, terrainY) == 0)
+    {
+        (*env)->SetIntArrayRegion(env, outBiomeIds, 0, cells, biomes);
+        free(terrainY);
+        free(biomes);
+        return CFX_OK;
+    }
+#endif
 
     if (cfxSurfaceBiomesMemoized(
             ctx, blockX, blockZ, w, h, stride, terrainY, biomes, cells))

@@ -32,6 +32,21 @@ final class CubiomesNative {
     /** Returns the shim's {@code CFX_ABI} constant, so Java can detect a stale/mismatched native build. */
     static native int cfxAbi();
 
+    /** GPU engine execution modes for {@link #cfxSetGpuMode}; mirror {@code GPU_MODE_*} in {@code native/cubiomes/gpu.h}. */
+    static final int GPU_MODE_OFF = 0;
+    /** Same value as the engine's own default (env {@code CUBIOMES_GPU} or auto when unset). */
+    static final int GPU_MODE_AUTO = 1;
+    static final int GPU_MODE_FORCE = 2;
+
+    /**
+     * Overrides the GPU execution mode of the 1.18+ Overworld surface dispatch. The engine
+     * defaults to env-var driven behavior ({@code CUBIOMES_GPU}, auto when unset) and this
+     * class never calls the setter itself, so a library that Java leaves alone behaves exactly
+     * like the stock engine. Invalid values are ignored by the engine. A library predating
+     * this export throws {@link UnsatisfiedLinkError}.
+     */
+    static native void cfxSetGpuMode(int mode);
+
     /**
      * Windows-only CPU topology query used for worker-pool sizing; no other platform
      * reports data. Calling with a {@code null} array returns the total number of

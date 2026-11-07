@@ -1,12 +1,14 @@
 upstream: https://github.com/Cubitect/cubiomes (active line: xpple/cubiomes master)
 fork:     https://github.com/Conflux-Union/cubiomes (this project's fork)
-commit:   07f8282995189c3e9ea9197acb236452434ada70
-commit date: 2026-10-29T11:25:17+08:00
+commit:   1a3386c8295ca06247ef5aa5dc8f4362a5db2ace
+commit date: 2026-11-07T16:17:38+08:00
 pinned via: native/cubiomes git submodule (converted from a vendored copy on 2026-07-17)
 license: MIT (see native/cubiomes/LICENSE)
 
 Merge state: fork master = upstream xpple/master (5815e4f "Add 26.3 support
-(#29)") merged on top of our feature line. Upstream changes folded in:
+(#29)") merged on top of our feature line; the pin sits on the pushed
+feat/gpu-opencl branch (same feature line, ten GPU commits on top of
+07f8282). Upstream changes folded in:
 the renderpearl-independent C-side terrain refactor (terrainnoise/carver
 split, uint8_t block columns), loot salt configs, the ctest suite, and
 MC_26_3 (btree263 biome tree, abandoned camps).
@@ -26,6 +28,20 @@ Fork contents kept on top of upstream master:
     density cells on demand from the top and start the surface search a
     fixed band below the noise-free density-zero crossing; pre-1.18
     generators keep their original path.
+  - feat/gpu-opencl (02b70a1..1a3386c, ten commits) "OpenCL GPU executor
+    for 1.18+ Overworld surface biomes and terrain overview heights":
+    gpu.c/gpu.h/gpu_cl_kernels.h + opencl_host.c/h behind the compile-time
+    gate CUBIOMES_ENABLE_GPU, which turns mapOverworldSurfaceBiome /
+    mapOverworldTerrainHeight into transparent try-GPU-then-CPU dispatches.
+    The host dlopens the platform OpenCL loader (no link-time dependency);
+    absence degrades silently to the CPU path. GPU outputs are a float
+    approximation of the double CPU reference, gated by the drift-budget
+    harness (make gpu-test in the submodule: per-distance-bucket biome-flip
+    and height/climate budgets plus exact query-shape-invariance and
+    mode-handling checks). Batched z-stride entries
+    (gpuMapOverworldSurfaceBiomeRows / gpuMapOverworldTerrainHeightRows)
+    fold streamed overview-row sets into one dispatch. Default mode is
+    env-driven (CUBIOMES_GPU, auto); gpuSetMode() overrides.
   - Nether fossils: upstream 32f6624 now ships its own terrain-validated
     fossil model, so the fork keeps only what upstream lacks - the
     getFeaturePos routing in getStructurePos (upstream leaves fossils
@@ -36,16 +52,21 @@ Fork contents kept on top of upstream master:
     pins the same ordinals.
 
 Verification for this pin:
-  - upstream ctest suite (test_biomes/structures/loot/pieces/carvers),
-    the fork's feature_tests harness, and C smoke of MC_26_3 biome
-    sampling, nether-fossil locate+viability, and abandoned-camp locate
-    were run at the f75f0a3 merge base (2026-09-18); 07f8282 adds only
-    the lazy-column commit above and changes no biome or structure
-    lookup.
-  - conflux-map :common:test (1395 tests incl. the native oracle suite
-    against this pin's prebuilt linux-x86_64 library) and the
-    :common:benchmark visual corpus (rendered 1.21.4 tiles vs the
-    pre-change baseline) pass, 2026-10-29.
+  - The CPU side is unchanged from the 07f8282 pin (whose verification
+    stands: upstream ctest suite, the fork's feature_tests harness, C
+    smoke of MC_26_3 biome sampling / nether-fossil locate+viability /
+    abandoned-camp locate, and conflux-map :common:test with the native
+    oracle suite plus the :common:benchmark visual corpus, 2026-10-29);
+    feat/gpu-opencl touches only the gated GPU module and the
+    #ifdef-guarded hook call sites in biomenoise.c, and the GPU drift
+    harness (`make gpu-test`, default parity matrix) is green against the
+    CPU reference under the per-bucket budgets.
+  - conflux-map integration (2026-11-07): buildNativesHost and
+    buildNativesAll (all 5 zig targets) rebuild with
+    -DCUBIOMES_ENABLE_GPU and the two GPU sources; engine/JNI symbols
+    verified present in every rebuilt artifact (nm -D Linux .so / .dll
+    export table / Mach-O symtab); :common:test and :1.17.1:test pass
+    against the rebuilt linux-x86_64 library.
 
 Files compiled from this commit by buildNativesHost/buildNativesAll
 (selected subset):
@@ -53,6 +74,7 @@ Files compiled from this commit by buildNativesHost/buildNativesAll
   terrainnoise.c/h, finders.c/h, terrain_features.c/h, util.c/h, rng.h,
   features/end_city.c/h, features/fortress.c/h,
   features/abandoned_camp.c/h, features/stronghold.c/h,
+  gpu.c/h, gpu_cl_kernels.h, opencl_host.c/h,
   tables/btree18.h, tables/btree192.h, tables/btree19.h,
   tables/btree20.h, tables/btree21wd.h, tables/btree215.h,
   tables/btree262.h, tables/btree263.h

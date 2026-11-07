@@ -11,6 +11,8 @@ import cn.net.rms.confluxmap.core.portal.PortalKind;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.nativepredict.GpuBackend;
+import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -741,6 +743,15 @@ final class ConfigRows {
                         ConfluxMapClient.get().predictionTileService().setViewMode(v);
                     }, ConfigValueLabels::predictionViewModeKey,
                     underlayReason == null, underlayReason
+                );
+                y = addEnumRow(
+                    y, "confluxmap.config.prediction.backend", PredictionBackend.values(),
+                    () -> config.predictionBackend,
+                    v -> {
+                        config.predictionBackend = v;
+                        GpuBackend.configure(v);
+                    }, ConfigValueLabels::predictionBackendKey,
+                    true, null
                 );
                 y = addIntSliderRow(
                     y, "confluxmap.config.prediction.debounce", 100, 2000,

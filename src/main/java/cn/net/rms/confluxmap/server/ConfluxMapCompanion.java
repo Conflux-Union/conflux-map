@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.core.predict.QuadrantLayout;
 import cn.net.rms.confluxmap.core.store.ServerInstanceIdStore;
 import cn.net.rms.confluxmap.core.update.GithubReleaseFetcher;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
+import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointIo;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointNetworking;
@@ -135,6 +136,7 @@ public final class ConfluxMapCompanion {
     private void onServerStarting(final MinecraftServer server) {
         ServerChunkDirtyHandler.bind(null);
         config = configIo.load();
+        GpuBackend.configure(config.predictionBackend);
         runtime.deactivate();
         summaries = null;
         quadraLayouts = Map.of();

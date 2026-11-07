@@ -8,6 +8,7 @@ import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
+import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -23,6 +24,32 @@ import org.junit.jupiter.api.io.TempDir;
 class ConfigIoTest {
 
     private static final Logger LOGGER = LogManager.getLogger("ConfigIoTest");
+
+    @Test
+    void predictionBackendDefaultsToGpuAndRoundTrips(@TempDir final Path tmp)
+        throws IOException {
+        final Path file = tmp.resolve("config.json");
+        final ConfigIo io = new ConfigIo(file, LOGGER);
+
+        assertEquals(PredictionBackend.GPU, new ConfluxConfig().predictionBackend);
+
+        final ConfluxConfig config = new ConfluxConfig();
+        config.predictionBackend = PredictionBackend.CPU;
+        io.save(config);
+        assertEquals(PredictionBackend.CPU, io.load().predictionBackend);
+
+        // A stale file without the field upgrades to the default; an explicit null
+        // (hand-edited) is restored by normalize() instead of sticking as null.
+        Files.writeString(file, "{\"schemaVersion\":8}", StandardCharsets.UTF_8);
+        assertEquals(PredictionBackend.GPU, io.load().predictionBackend);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":8,\"predictionBackend\":null}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(PredictionBackend.GPU, io.load().predictionBackend);
+    }
 
     @Test
     void radarDisplayModeDefaultsToPortraitsAndRoundTrips(@TempDir final Path tmp)
