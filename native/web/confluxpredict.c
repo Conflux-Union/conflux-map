@@ -24,7 +24,7 @@
 #define CFX_WEB_OVERVIEW_INTERPOLATION_MIN (CFX_WEB_WATER_LEVEL + 18)
 #define CFX_WEB_OVERVIEW_INTERPOLATION_MAX_WATER (CFX_WEB_WATER_LEVEL - 6)
 #define CFX_WEB_OVERVIEW_BIOME_GATE (CFX_WEB_WATER_LEVEL + 2)
-#define CFX_WEB_DETAIL_MIN_STRIDE 8
+#define CFX_WEB_DETAIL_MIN_STRIDE 4
 #define CFX_WEB_JAGGED_KEEP_OCTAVES 4
 #define CFX_WEB_CANOPY_SALT UINT64_C(0x27220A5FA9A9A797)
 #define CFX_WEB_CLEARING_SALT UINT64_C(0x6A09E667F3BCC909)
@@ -567,7 +567,7 @@ static int cfxWebModernOverviewHeight(
         const double above = 128.0 * (base + terrain / factor);
         const double below = 128.0 * (base + terrain / (4.0 * factor));
         const double next = above >= 128.0 * base ? above : below;
-        if (fabs(next - y) < 0.5)
+        if (fabs(next - y) < 1.5)
         {
             y = next;
             break;

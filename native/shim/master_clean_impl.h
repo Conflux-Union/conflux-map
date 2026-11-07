@@ -1,4 +1,10 @@
 /*
+ * FROZEN MASTER BASELINE SNAPSHOT
+ * Source: origin/master commit a966dcf124fbfb26234f82570f710e728e946d93 (native/shim/confluxnative.c)
+ * Generated via prefix-isolation for bit-exact in-memory reference parity testing.
+ * Do NOT edit manually. If origin/master modifies overview logic, re-extract this snapshot.
+ */
+/*
  * confluxnative - flat handle-based JNI shim around vendored cubiomes.
  *
  * This file is Conflux Map's own code (GPL-3.0), NOT part of the vendored

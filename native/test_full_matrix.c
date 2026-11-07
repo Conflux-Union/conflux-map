@@ -10,6 +10,10 @@
 #include "shim/confluxnative.c"
 #include "shim/master_clean_impl.h"
 
+// 静态验证两个编译快照结构体同构，防止类型双关读取脏数据
+_Static_assert(sizeof(CfxContext) == sizeof(MasterCfxContext), "Context size mismatch between opt and master");
+_Static_assert(sizeof(CfxNoiseDetail) == sizeof(MasterCfxNoiseDetail), "NoiseDetail size mismatch");
+
 static jsize JNICALL dummy_GetArrayLength(JNIEnv *env, jarray array) { return 10000000; }
 static void JNICALL dummy_SetIntArrayRegion(JNIEnv *env, jintArray array, jsize start, jsize len, const jint *buf) {
     (void)env; memcpy((int*)array + start, buf, len * sizeof(jint));

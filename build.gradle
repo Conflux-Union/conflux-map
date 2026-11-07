@@ -102,17 +102,21 @@ tasks.register('buildWebPredictor', Exec) {
 tasks.register('buildNativesHost', Exec) {
     group = 'build'
     description = 'Compiles the cubiomes+shim native library for this host (linux-x86_64) into native/prebuilt/.'
-    final File outFile = rootProject.file('native/prebuilt/linux-x86_64/libconfluxnative.so')
+    final File hostOutDir = rootProject.file('build/natives/host/linux-x86_64')
+    final File outFile = new File(hostOutDir, 'libconfluxnative.so')
+    final File prebuiltFile = rootProject.file('native/prebuilt/linux-x86_64/libconfluxnative.so')
     inputs.files(nativeSources.collect { final String src -> rootProject.file(src) })
     inputs.dir rootProject.file('native/cubiomes/tables')
     inputs.dir rootProject.file('native/jni')
     outputs.file outFile
     doFirst {
-        outFile.parentFile.mkdirs()
+        hostOutDir.mkdirs()
     }
     workingDir rootProject.projectDir
     commandLine(['cc'] + nativeCflags + ['-o', outFile.absolutePath] + nativeSources + ['-lm'])
     doLast {
+        prebuiltFile.parentFile.mkdirs()
+        java.nio.file.Files.copy(outFile.toPath(), prebuiltFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
         final String sha256 = java.security.MessageDigest.getInstance('SHA-256')
             .digest(outFile.bytes).encodeHex().toString()
         final File infoFile = rootProject.file('native/prebuilt/BUILD_INFO.md')

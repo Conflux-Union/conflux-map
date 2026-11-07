@@ -876,12 +876,10 @@ static double cfxModernTerrainNoise(
 /** Fixed-point rounds solving slopedCheese(y) = 0; 2 converges, 3 adds nothing. */
 #define CFX_OVERVIEW_ITERATIONS 2
 
-static long long g_real_calls = 0;
 static int cfxModernOverviewHeight(
     const CfxContext *ctx, int x4, int z4, const CfxNoiseDetail *detail
 )
 {
-    g_real_calls++;
     const BiomeNoise *bn = &ctx->g.bn;
     float values[4];
     cfxTerrainParameters(bn, x4, z4, values);
