@@ -756,9 +756,10 @@ static void cfxTerrainParameters(const BiomeNoise *bn, int cellX, int cellZ, flo
  * >= stride/4): the strict cut measured 0.38% ocean-to-land flips on the
  * visual corpus against a 0.3% gate - one block of ripple moves real
  * shorelines - while this cut measures 0.15%. Truncation deliberately changes
- * results at strides >= 8 only; the per-pixel full-detail entry keeps LOD0-1
- * overviews, the waterline-band solves and the exact-residual anchors at
- * today's values bit-for-bit.
+ * results at strides >= 4 in modern overviews (macro grid evaluation uses stride 4);
+ * the fixed-point convergence threshold is set to 1.5 blocks. LOD0-2 use world-aligned
+ * adaptive macro grid refinement (16x16 -> 8x8 -> 4x4) maintaining strict position purity
+ * across arbitrary tile shapes. Pre-1.18 paths remain bit-for-bit identical.
  */
 typedef struct {
     int mainFirst;   /* first octmain octave evaluated */
@@ -875,10 +876,12 @@ static double cfxModernTerrainNoise(
 /** Fixed-point rounds solving slopedCheese(y) = 0; 2 converges, 3 adds nothing. */
 #define CFX_OVERVIEW_ITERATIONS 2
 
+static long long g_real_calls = 0;
 static int cfxModernOverviewHeight(
     const CfxContext *ctx, int x4, int z4, const CfxNoiseDetail *detail
 )
 {
+    g_real_calls++;
     const BiomeNoise *bn = &ctx->g.bn;
     float values[4];
     cfxTerrainParameters(bn, x4, z4, values);
@@ -920,7 +923,7 @@ static int cfxModernOverviewHeight(
         const double above = 128.0 * (base + noise / factor);
         const double below = 128.0 * (base + noise / (4.0 * factor));
         const double next = above >= 128.0 * base ? above : below;
-        if (fabs(next - y) < 1.0)
+        if (fabs(next - y) < 1.5)
         {
             y = next;
             break;

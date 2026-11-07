@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <math.h>
 #include <string.h>
+#include <assert.h>
 #include <jni.h>
 
 #include "shim/confluxnative.c"
@@ -11,6 +12,54 @@
 static jsize JNICALL dummy_GetArrayLength(JNIEnv *env, jarray array) { return 10000000; }
 static void JNICALL dummy_SetIntArrayRegion(JNIEnv *env, jintArray array, jsize start, jsize len, const jint *buf) {
     (void)env; memcpy((int*)array + start, buf, len * sizeof(jint));
+}
+
+// 1. 位置纯性属性测试 (Position Purity Property Test)
+void test_position_purity(JNIEnv *env, CfxContext *ctx) {
+    printf("--- Running Position Purity Property Assertions ---\n");
+    // 形状 A: 干净大瓦片 (0, 0, 512, 512, stride 1)
+    const int wA = 512, hA = 512;
+    int *bufA = malloc(wA * hA * sizeof(int));
+    CfxNoiseDetail detailA = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 1);
+    cfxOverviewHeightsImpl(env, ctx, 0, 0, wA, hA, 1, (jintArray)bufA, &detailA);
+
+    // 形状 B: 标准生产瓦片 (-1, -1, 258, 258, stride 1)
+    const int oxB = -1, ozB = -1, wB = 258, hB = 258;
+    int *bufB = malloc(wB * hB * sizeof(int));
+    CfxNoiseDetail detailB = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 1);
+    cfxOverviewHeightsImpl(env, ctx, oxB, ozB, wB, hB, 1, (jintArray)bufB, &detailB);
+
+    // 形状 C: 异相位瓦片 (+2, +3, 258, 258, stride 1)
+    const int oxC = 2, ozC = 3, wC = 258, hC = 258;
+    int *bufC = malloc(wC * hC * sizeof(int));
+    CfxNoiseDetail detailC = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 1);
+    cfxOverviewHeightsImpl(env, ctx, oxC, ozC, wC, hC, 1, (jintArray)bufC, &detailC);
+
+    int mismatch_BA = 0;
+    for (int z = 0; z < 256; z++) {
+        for (int x = 0; x < 256; x++) {
+            if (bufA[z * wA + x] != bufB[(z - ozB) * wB + (x - oxB)])
+                mismatch_BA++;
+        }
+    }
+    printf("  Assert Standard Tile vs Clean Grid: Mismatches = %d / 65536\n", mismatch_BA);
+    assert(mismatch_BA == 0 && "FATAL: Position purity violated on standard tile geometry!");
+
+    int mismatch_CA = 0;
+    for (int z = ozC; z < ozC + wC && z < 256; z++) {
+        for (int x = oxC; x < oxC + wC && x < 256; x++) {
+            if (bufA[z * wA + x] != bufC[(z - ozC) * wC + (x - oxC)])
+                mismatch_CA++;
+        }
+    }
+    printf("  Assert Off-phase Tile vs Clean Grid: Mismatches = %d / 64262\n", mismatch_CA);
+    assert(mismatch_CA == 0 && "FATAL: Position purity violated on off-phase geometry!");
+
+    printf("  ===> All Position Purity Assertions PASSED (100%% Bit-Identical Across Shapes)\n\n");
+
+    free(bufA);
+    free(bufB);
+    free(bufC);
 }
 
 void eval_comprehensive_accuracy(JNIEnv *env, CfxContext *ctx, int stride, int64_t ox, int64_t oz) {
@@ -55,11 +104,20 @@ int main(void) {
     uint64_t seeds[] = {146008555LL, 123456789LL, 987654321LL};
 
     printf("=====================================================================================\n");
-    printf("   COMPREHENSIVE MULTI-SEED & MULTI-STRIDE GROUND TRUTH PRECISION AUDIT\n");
+    printf("   COMPREHENSIVE MULTI-SEED & MULTI-STRIDE GROUND TRUTH & PURITY AUDIT\n");
     printf("=====================================================================================\n");
 
+    CfxContext pCtx;
+    memset(&pCtx, 0, sizeof(pCtx));
+    pCtx.mc = MC_1_21_1;
+    pCtx.dim = DIM_OVERWORLD;
+    setupGenerator(&pCtx.g, pCtx.mc, 0);
+    applySeed(&pCtx.g, pCtx.dim, seeds[0]);
+    initSurfaceNoise(&pCtx.sn, pCtx.dim, seeds[0]);
+    test_position_purity(p_env, &pCtx);
+
     for (int s = 0; s < 3; s++) {
-        printf("\n>>> Evaluating Seed: %llu <<<\n", (unsigned long long)seeds[s]);
+        printf(">>> Evaluating Seed: %llu <<<\n", (unsigned long long)seeds[s]);
         fflush(stdout);
         CfxContext ctx;
         memset(&ctx, 0, sizeof(ctx));
