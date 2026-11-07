@@ -203,10 +203,21 @@ tasks.register('verifyMasterBaseline') {
         if (!refFile.exists()) {
             throw new GradleException("master_clean_impl.h not found")
         }
-        final String header = refFile.text.take(500)
-        if (!header.contains('FROZEN MASTER BASELINE SNAPSHOT') || !header.contains('a966dcf1')) {
+        // 校验关键锚点与常量未被漂移篡改
+        final String text = refFile.text
+        if (!text.contains('FROZEN MASTER BASELINE SNAPSHOT') || !text.contains('a966dcf1')) {
             throw new GradleException("master_clean_impl.h header missing frozen baseline snapshot metadata")
         }
-        println "verifyMasterBaseline: Master snapshot anchor verified against a966dcf1"
+        // 校验 master 核心逻辑常量保真
+        if (!text.contains('#define MASTER_CFX_DETAIL_MIN_STRIDE 8') ||
+            !text.contains('if (stride < 4)') ||
+            !text.contains('if (fabs(next - y) < 0.5)')) {
+            throw new GradleException("master_clean_impl.h core constants or logic drifted from origin/master a966dcf1")
+        }
+        // 校验文件非空与关键函数存在
+        if (!text.contains('master_cfxOverviewHeightsImpl(')) {
+            throw new GradleException("master_clean_impl.h missing master_cfxOverviewHeightsImpl implementation")
+        }
+        println "verifyMasterBaseline: Master snapshot anchor & content integrity verified against a966dcf1"
     }
 }
