@@ -217,6 +217,62 @@ final class CubiomesNative {
         int[] outBiomeIds
     );
 
+    /**
+     * Batched coarse-lattice overview heights for a wave of tiles: the parallel
+     * {@code blockX}/{@code blockZ}/{@code w}/{@code h}/{@code stride} arrays describe
+     * {@code n} tiles, {@code outTerrainY} is caller-sized flat storage holding each tile's
+     * {@code w*h} plane at its running-sum offset, and {@code failMask} is a length-1 array
+     * receiving the per-tile failure bitmap (bit {@code i} = tile {@code i} left untouched
+     * for the caller to repair through {@link #cfxOverviewHeightsCoarse}). Returns 0 when
+     * the batch was attempted (check {@code failMask}); nonzero when the caller must
+     * dispatch its tiles individually. Tiles past the engine's per-dispatch point cap are
+     * chunked internally and the bitmap merged; {@code n} is capped at the engine's
+     * 32-block batch limit.
+     */
+    static native int cfxOverviewHeightsCoarseBatch(
+        long handle,
+        int[] blockX,
+        int[] blockZ,
+        int[] w,
+        int[] h,
+        int[] stride,
+        int n,
+        int[] outTerrainY,
+        int[] failMask
+    );
+
+    /**
+     * Batched Overworld surface biomes: same flat-array contract as
+     * {@link #cfxOverviewHeightsCoarseBatch}, with {@code terrainY} the caller-filled flat
+     * input holding each tile's raw {@code w*h} height plane at the same running-sum
+     * offsets (the shim clamps at 62 like the single entry). {@code sha} must be the
+     * handle's own voronoi sha - the batch shares one packed engine state, so a probe from
+     * a different generator refuses instead of borrowing it.
+     */
+    static native int cfxSurfaceBiomesBatch(
+        long handle,
+        long sha,
+        int[] blockX,
+        int[] blockZ,
+        int[] w,
+        int[] h,
+        int[] stride,
+        int[] terrainY,
+        int n,
+        int[] outBiomeIds,
+        int[] failMask
+    );
+
+    /**
+     * Reads the context's stored voronoi sha ({@code Generator.sha}, the value cubiomes'
+     * {@code getVoronoiSHA} derives at setup) without recomputing it: the probe {@link
+     * #cfxSurfaceBiomesBatch} validates its {@code sha} argument against, so a wave leader
+     * reads it from its own context instead of re-deriving it in Java. A {@code 0} handle
+     * returns 0; a library predating this export throws {@link UnsatisfiedLinkError} and
+     * callers degrade to per-tile dispatch.
+     */
+    static native long cfxVoronoiSHA(long handle);
+
     /** Strided 1:4 Overworld heights; adjacent output cells are {@code stride} native cells apart. */
     static native int cfxHeightsStrided(long handle, int x4, int z4, int w, int h, int stride, int[] outY, int[] outIds);
 

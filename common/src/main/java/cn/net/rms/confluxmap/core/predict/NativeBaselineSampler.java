@@ -255,6 +255,70 @@ public final class NativeBaselineSampler implements BaselineSampler {
         }
     }
 
+    /**
+     * Batched coarse-lattice overview heights for a wave of tiles, resolved on the calling
+     * thread's cached context - see {@link CubiomesNative#cfxOverviewHeightsCoarseBatch} for
+     * the flat-array contract and the per-tile failure bitmap. Returns 0 when the batch was
+     * attempted (repair the {@code failMask} set bits through {@link #overviewHeightsCoarse});
+     * nonzero when the caller must dispatch its tiles individually, which is also what an
+     * unavailable context or a latched fault returns.
+     */
+    public int overviewHeightsCoarseBatch(
+        final int[] blockX,
+        final int[] blockZ,
+        final int[] w,
+        final int[] h,
+        final int[] stride,
+        final int n,
+        final int[] outTerrainY,
+        final int[] failMask
+    ) {
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);
+            return ctx == null
+                ? 1
+                : ctx.overviewHeightsCoarseBatch(
+                    blockX, blockZ, w, h, stride, n, outTerrainY, failMask
+                );
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return 1;
+        }
+    }
+
+    /**
+     * Batched surface biomes from flat caller-filled terrain planes, resolved on the calling
+     * thread's cached context - see {@link CubiomesNative#cfxSurfaceBiomesBatch} for the
+     * flat-array contract. {@code sha} is cubiomes' voronoi sha for the seed (cubiomes'
+     * {@code getVoronoiSHA}); a probe from a different generator refuses the batch. Returns 0
+     * when the batch was attempted (repair the {@code failMask} set bits through
+     * {@link #surfaceBiomes}); nonzero when the caller must dispatch its tiles individually.
+     */
+    public int surfaceBiomesBatch(
+        final long sha,
+        final int[] blockX,
+        final int[] blockZ,
+        final int[] w,
+        final int[] h,
+        final int[] stride,
+        final int[] terrainY,
+        final int n,
+        final int[] outBiomeIds,
+        final int[] failMask
+    ) {
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);
+            return ctx == null
+                ? 1
+                : ctx.surfaceBiomesBatch(
+                    sha, blockX, blockZ, w, h, stride, terrainY, n, outBiomeIds, failMask
+                );
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return 1;
+        }
+    }
+
     @Override
     public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
         try {

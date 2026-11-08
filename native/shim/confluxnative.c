@@ -37,6 +37,7 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <math.h>
+#include <string.h>
 
 #include "finders.h"
 #include "features/end_city.h"
@@ -1468,6 +1469,513 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     free(terrainY);
     free(biomes);
     return CFX_OK;
+}
+
+/*
+ * Batch variants of the two entries above (gpuCfxOverviewHeightsBatch /
+ * gpuCfxSurfaceBiomesBatch): one native submission per wave of tiles instead
+ * of one per tile. Every tile is validated up front against the same gates
+ * the single entries apply before their GPU attempt; a tile outside them gets
+ * its failMask bit and is skipped, so the caller repairs exactly those tiles
+ * through the single entries. The rest is fed to the native batch in chunks
+ * bounded by the engine's per-dispatch points cap - and, for heights, by one
+ * shared CfxNoiseDetail (part of the chunk key because
+ * cfxNoiseDetailForStride varies with the sampling stride) - with the
+ * per-chunk failure bitmaps ORed together. Results are written straight into
+ * the caller's flat Java arrays through GetPrimitiveArrayCritical: the
+ * staging malloc/SetIntArrayRegion round trip of the single entries is
+ * exactly the per-call overhead batching removes, and the stride < 4 macro
+ * lattices are interpolated out of their slice through one reusable staging
+ * buffer. A 0 return means the batch was attempted: failMaskOut[0] carries
+ * the per-tile failures and every other slice is filled bit-exactly.
+ * Nonzero refuses the whole batch before any output write (GPU compiled out,
+ * mode off, dead engine, a chunk refused; reported negative as
+ * -CFX_ERR_GENERATION) and the caller dispatches its tiles individually,
+ * exactly like today's per-tile path. Caller-argument problems return the
+ * same positive CFX_ERR_* codes as the single entries. n is capped at the
+ * engine's 32-block batch limit, so only the points cap chunks.
+ */
+
+/* The engine's batch caps (gpu.c's GPU_BATCH_MAX / GPU_MAX_POINTS); gpu.h
+ * exports no cap constants, so mirror them here and keep them in sync. */
+#define CFX_BATCH_MAX_BLOCKS 32
+#define CFX_BATCH_MAX_POINTS (1 << 20)
+
+/* Macro-lattice geometry of a stride < 4 tile, mirroring the derivation in
+ * cfxOverviewHeightsImpl. */
+static void cfxMacroLattice(
+    int blockX, int blockZ, int w, int h, int stride,
+    int *minX4, int *minZ4, int *gridW, int *gridH
+) {
+    const int64_t lastX = (int64_t) blockX + (int64_t) (w - 1) * stride;
+    const int64_t lastZ = (int64_t) blockZ + (int64_t) (h - 1) * stride;
+    *minX4 = floordiv(blockX, 4);
+    *minZ4 = floordiv(blockZ, 4);
+    *gridW = floordiv((int) lastX, 4) - *minX4 + 2;
+    *gridH = floordiv((int) lastZ, 4) - *minZ4 + 2;
+}
+
+/* The per-tile GPU shape gate of cfxOverviewHeightsImpl: *cellsOut receives
+ * the lattice cost the native batch charges for an eligible tile (grid cells
+ * for macro tiles, sample cells otherwise), or -1 when the tile cannot be
+ * served by the batch kernels and the caller must repair it per tile. */
+static void cfxBatchHeightCells(
+    const int blockX, const int blockZ, const int w, const int h,
+    const int stride, int *cellsOut
+) {
+    int cells = -1;
+    if (cfxValidCells(w, h) && stride > 0)
+    {
+        const int64_t lastX = (int64_t) blockX + (int64_t) (w - 1) * stride;
+        const int64_t lastZ = (int64_t) blockZ + (int64_t) (h - 1) * stride;
+        if (lastX >= INT32_MIN && lastX <= INT32_MAX
+            && lastZ >= INT32_MIN && lastZ <= INT32_MAX)
+        {
+            int minX4, minZ4, gridW, gridH;
+            cfxMacroLattice(blockX, blockZ, w, h, stride,
+                &minX4, &minZ4, &gridW, &gridH);
+            if (stride < 4)
+            {
+                /* The lattice is solved into the tile's own output slice
+                 * before the host-side interpolation overwrites it, so it
+                 * must fit there. */
+                if ((int64_t) gridW * gridH >= CFX_GPU_HEIGHT_MIN_CELLS
+                    && (int64_t) gridW * gridH <= (int64_t) w * h)
+                    cells = gridW * gridH;
+            }
+            else if (stride % 4 == 0
+                && (int64_t) w * h >= CFX_GPU_HEIGHT_MIN_CELLS)
+            {
+                cells = w * h;
+            }
+        }
+    }
+    *cellsOut = cells;
+}
+
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxOverviewHeightsCoarseBatch(
+    JNIEnv *env, jclass clazz, jlong handle,
+    jintArray blockXArray, jintArray blockZArray, jintArray wArray,
+    jintArray hArray, jintArray strideArray, jint n,
+    jintArray outTerrainYArray, jintArray failMaskArray
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL)
+        return CFX_ERR_BAD_HANDLE;
+    if (ctx->dim != DIM_OVERWORLD)
+        return CFX_ERR_WRONG_DIM;
+    if (ctx->mc < MC_1_18)
+        return CFX_ERR_BAD_ARGS;
+    if (n <= 0 || n > CFX_BATCH_MAX_BLOCKS
+        || (*env)->GetArrayLength(env, blockXArray) < n
+        || (*env)->GetArrayLength(env, blockZArray) < n
+        || (*env)->GetArrayLength(env, wArray) < n
+        || (*env)->GetArrayLength(env, hArray) < n
+        || (*env)->GetArrayLength(env, strideArray) < n
+        || (*env)->GetArrayLength(env, failMaskArray) < 1)
+        return CFX_ERR_BAD_SIZE;
+#ifndef CUBIOMES_ENABLE_GPU
+    /* No engine in this build: refuse and let the caller run its per-tile
+     * path (the single entries serve CPU there), same as a dead engine. */
+    return -CFX_ERR_GENERATION;
+#else
+    int *in = malloc(sizeof(int) * (size_t) n * 5);
+    int *nativeCells = malloc(sizeof(int) * (size_t) n);
+    int *detailPack = malloc(sizeof(int) * (size_t) n);
+    if (in == NULL || nativeCells == NULL || detailPack == NULL)
+    {
+        free(in);
+        free(nativeCells);
+        free(detailPack);
+        return CFX_ERR_ALLOC;
+    }
+    int *bx = in, *bz = in + n, *bw = in + 2 * n, *bh = in + 3 * n, *bs = in + 4 * n;
+    (*env)->GetIntArrayRegion(env, blockXArray, 0, n, bx);
+    (*env)->GetIntArrayRegion(env, blockZArray, 0, n, bz);
+    (*env)->GetIntArrayRegion(env, wArray, 0, n, bw);
+    (*env)->GetIntArrayRegion(env, hArray, 0, n, bh);
+    (*env)->GetIntArrayRegion(env, strideArray, 0, n, bs);
+    if ((*env)->ExceptionCheck(env))
+    {
+        free(in);
+        free(nativeCells);
+        free(detailPack);
+        return CFX_ERR_BAD_SIZE;
+    }
+
+    int64_t totalOut = 0;
+    int64_t maxMacroCells = 0;
+    int eligibleCount = 0;
+    int i;
+    for (i = 0; i < n; i++)
+    {
+        int cells = -1;
+        cfxBatchHeightCells(bx[i], bz[i], bw[i], bh[i], bs[i], &cells);
+        if (cells > 0)
+        {
+            const CfxNoiseDetail detail =
+                cfxNoiseDetailForStride(&ctx->g.bn.terrain, bs[i]);
+            if (detail.mainFirst > 7 || detail.minMaxFirst > 15)
+                cells = -1; /* outside the kernel's octave-argument range */
+            else
+                detailPack[i] = (detail.mainFirst << 6)
+                    | (detail.minMaxFirst << 1) | detail.truncated;
+        }
+        nativeCells[i] = cells;
+        if (cells > 0)
+        {
+            eligibleCount++;
+            if (bs[i] < 4 && cells > maxMacroCells)
+                maxMacroCells = cells;
+        }
+        totalOut += (int64_t) bw[i] * bh[i];
+    }
+
+    if ((int64_t) (*env)->GetArrayLength(env, outTerrainYArray) < totalOut)
+    {
+        free(in);
+        free(nativeCells);
+        free(detailPack);
+        return CFX_ERR_BAD_SIZE;
+    }
+
+    int *macroTmp = NULL;
+    if (maxMacroCells > 0)
+    {
+        macroTmp = malloc(sizeof(int) * (size_t) maxMacroCells);
+        if (macroTmp == NULL)
+        {
+            /* Without staging memory the macro lattices cannot be turned
+             * into tile heights; leave those tiles to the caller's repair. */
+            eligibleCount = 0;
+            for (i = 0; i < n; i++)
+            {
+                if (nativeCells[i] > 0)
+                {
+                    if (bs[i] < 4)
+                        nativeCells[i] = -1;
+                    else
+                        eligibleCount++;
+                }
+            }
+        }
+    }
+
+    int *outTerrainY = NULL;
+    int *failMaskOut = NULL;
+    jint status = CFX_OK;
+    if (eligibleCount > 0)
+        outTerrainY = (*env)->GetPrimitiveArrayCritical(env, outTerrainYArray, NULL);
+    failMaskOut = (*env)->GetPrimitiveArrayCritical(env, failMaskArray, NULL);
+    if ((eligibleCount > 0 && outTerrainY == NULL) || failMaskOut == NULL)
+    {
+        status = CFX_ERR_ALLOC;
+    }
+    else
+    {
+        jint failMask = 0;
+        int64_t outOff = 0;
+        int j = 0;
+        while (j < n)
+        {
+            if (nativeCells[j] <= 0)
+            {
+                failMask |= (jint) (1u << j);
+                outOff += (int64_t) bw[j] * bh[j];
+                j++;
+                continue;
+            }
+            /* Greedy chunk bounded by the points cap and one shared detail. */
+            int cx4[CFX_BATCH_MAX_BLOCKS], cz4[CFX_BATCH_MAX_BLOCKS];
+            int cgw[CFX_BATCH_MAX_BLOCKS], cgh[CFX_BATCH_MAX_BLOCKS];
+            int csx[CFX_BATCH_MAX_BLOCKS], csz[CFX_BATCH_MAX_BLOCKS];
+            long cflat[CFX_BATCH_MAX_BLOCKS];
+            int cmember[CFX_BATCH_MAX_BLOCKS];
+            const int chunkDetail = detailPack[j];
+            int count = 0;
+            int64_t points = 0;
+            while (j < n)
+            {
+                const int64_t sliceCells = (int64_t) bw[j] * bh[j];
+                if (nativeCells[j] > 0)
+                {
+                    if (count == CFX_BATCH_MAX_BLOCKS
+                        || points + nativeCells[j] > CFX_BATCH_MAX_POINTS
+                        || detailPack[j] != chunkDetail)
+                        break;
+                    if (bs[j] < 4)
+                    {
+                        cfxMacroLattice(bx[j], bz[j], bw[j], bh[j], bs[j],
+                            &cx4[count], &cz4[count], &cgw[count], &cgh[count]);
+                        csx[count] = 1;
+                        csz[count] = 1;
+                    }
+                    else
+                    {
+                        cx4[count] = floordiv(bx[j], 4);
+                        cz4[count] = floordiv(bz[j], 4);
+                        cgw[count] = bw[j];
+                        cgh[count] = bh[j];
+                        csx[count] = bs[j] / 4;
+                        csz[count] = bs[j] / 4;
+                    }
+                    cflat[count] = (long) outOff;
+                    cmember[count] = j;
+                    count++;
+                    points += nativeCells[j];
+                }
+                else
+                {
+                    failMask |= (jint) (1u << j);
+                }
+                outOff += sliceCells;
+                j++;
+            }
+            int chunkFail = 0;
+            if (gpuCfxOverviewHeightsBatch(&chunkFail, outTerrainY, cflat,
+                    &ctx->g.bn, cx4, cz4, cgw, cgh, csx, csz, count,
+                    chunkDetail >> 6, (chunkDetail >> 1) & 0xF,
+                    chunkDetail & 1) != 0)
+            {
+                status = -CFX_ERR_GENERATION;
+                break;
+            }
+            failMask |= (jint) chunkFail;
+            ctx->stageCalls += count;
+            int k;
+            for (k = 0; k < count; k++)
+            {
+                const int t = cmember[k];
+                if (chunkFail & (int) (1u << k))
+                    continue;
+                ctx->stageGpuCalls++;
+                if (bs[t] < 4)
+                {
+                    int minX4, minZ4, gridW, gridH;
+                    cfxMacroLattice(bx[t], bz[t], bw[t], bh[t], bs[t],
+                        &minX4, &minZ4, &gridW, &gridH);
+                    int *slice = outTerrainY + cflat[k];
+                    memcpy(macroTmp, slice,
+                        sizeof(int) * (size_t) gridW * (size_t) gridH);
+                    cfxInterpolateMacro(slice, macroTmp,
+                        bx[t], bz[t], bw[t], bh[t], bs[t], minX4, minZ4, gridW);
+                }
+            }
+        }
+        if (status == CFX_OK)
+            *failMaskOut = failMask;
+    }
+    if (outTerrainY != NULL)
+        (*env)->ReleasePrimitiveArrayCritical(env, outTerrainYArray, outTerrainY, 0);
+    if (failMaskOut != NULL)
+        (*env)->ReleasePrimitiveArrayCritical(env, failMaskArray, failMaskOut, 0);
+    free(macroTmp);
+    free(detailPack);
+    free(nativeCells);
+    free(in);
+    return status;
+#endif
+}
+
+/* The per-tile GPU gate of cfxSurfaceBiomes: *cellsOut receives the flat
+ * slice size of an eligible tile, or -1 when it cannot be served by the
+ * batch kernels and the caller must repair it per tile. */
+static void cfxBatchBiomeCells(
+    const int blockX, const int blockZ, const int w, const int h,
+    const int stride, int *cellsOut
+) {
+    int cells = -1;
+    if (cfxValidCells(w, h) && stride > 0
+        && (int64_t) w * h >= CFX_GPU_BIOME_MIN_CELLS)
+    {
+        const int64_t lastX = (int64_t) blockX + (int64_t) (w - 1) * stride;
+        const int64_t lastZ = (int64_t) blockZ + (int64_t) (h - 1) * stride;
+        if (lastX >= INT32_MIN && lastX <= INT32_MAX
+            && lastZ >= INT32_MIN && lastZ <= INT32_MAX)
+            cells = w * h;
+    }
+    *cellsOut = cells;
+}
+
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxSurfaceBiomesBatch(
+    JNIEnv *env, jclass clazz, jlong handle, jlong sha,
+    jintArray blockXArray, jintArray blockZArray, jintArray wArray,
+    jintArray hArray, jintArray strideArray, jintArray terrainYArray, jint n,
+    jintArray outBiomeIdsArray, jintArray failMaskArray
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL)
+        return CFX_ERR_BAD_HANDLE;
+    if (ctx->dim != DIM_OVERWORLD)
+        return CFX_ERR_WRONG_DIM;
+    if (ctx->mc < MC_1_18)
+        return CFX_ERR_BAD_ARGS;
+    /* The voronoi salt is baked into the packed engine state, so a caller
+     * probing a different generator must not borrow this handle's. */
+    if ((uint64_t) sha != ctx->g.sha)
+        return CFX_ERR_BAD_ARGS;
+    if (n <= 0 || n > CFX_BATCH_MAX_BLOCKS
+        || (*env)->GetArrayLength(env, blockXArray) < n
+        || (*env)->GetArrayLength(env, blockZArray) < n
+        || (*env)->GetArrayLength(env, wArray) < n
+        || (*env)->GetArrayLength(env, hArray) < n
+        || (*env)->GetArrayLength(env, strideArray) < n
+        || (*env)->GetArrayLength(env, failMaskArray) < 1)
+        return CFX_ERR_BAD_SIZE;
+#ifndef CUBIOMES_ENABLE_GPU
+    return -CFX_ERR_GENERATION;
+#else
+    int *in = malloc(sizeof(int) * (size_t) n * 5);
+    int *nativeCells = malloc(sizeof(int) * (size_t) n);
+    if (in == NULL || nativeCells == NULL)
+    {
+        free(in);
+        free(nativeCells);
+        return CFX_ERR_ALLOC;
+    }
+    int *bx = in, *bz = in + n, *bw = in + 2 * n, *bh = in + 3 * n, *bs = in + 4 * n;
+    (*env)->GetIntArrayRegion(env, blockXArray, 0, n, bx);
+    (*env)->GetIntArrayRegion(env, blockZArray, 0, n, bz);
+    (*env)->GetIntArrayRegion(env, wArray, 0, n, bw);
+    (*env)->GetIntArrayRegion(env, hArray, 0, n, bh);
+    (*env)->GetIntArrayRegion(env, strideArray, 0, n, bs);
+    if ((*env)->ExceptionCheck(env))
+    {
+        free(in);
+        free(nativeCells);
+        return CFX_ERR_BAD_SIZE;
+    }
+
+    int64_t totalOut = 0;
+    int eligibleCount = 0;
+    int i;
+    for (i = 0; i < n; i++)
+    {
+        int cells = -1;
+        cfxBatchBiomeCells(bx[i], bz[i], bw[i], bh[i], bs[i], &cells);
+        nativeCells[i] = cells;
+        if (cells > 0)
+            eligibleCount++;
+        totalOut += (int64_t) bw[i] * bh[i];
+    }
+
+    if ((int64_t) (*env)->GetArrayLength(env, terrainYArray) < totalOut
+        || (int64_t) (*env)->GetArrayLength(env, outBiomeIdsArray) < totalOut)
+    {
+        free(in);
+        free(nativeCells);
+        return CFX_ERR_BAD_SIZE;
+    }
+
+    int *terrainY = NULL;
+    int *outBiomeIds = NULL;
+    int *failMaskOut = NULL;
+    jint status = CFX_OK;
+    if (eligibleCount > 0)
+    {
+        /* The flat terrainY planes upload through one EnqueueWriteBuffer per
+         * native chunk, so they pin for the whole dispatch like the output. */
+        terrainY = (*env)->GetPrimitiveArrayCritical(env, terrainYArray, NULL);
+        outBiomeIds = (*env)->GetPrimitiveArrayCritical(env, outBiomeIdsArray, NULL);
+    }
+    failMaskOut = (*env)->GetPrimitiveArrayCritical(env, failMaskArray, NULL);
+    if ((eligibleCount > 0 && (terrainY == NULL || outBiomeIds == NULL))
+        || failMaskOut == NULL)
+    {
+        status = CFX_ERR_ALLOC;
+    }
+    else
+    {
+        jint failMask = 0;
+        int64_t outOff = 0;
+        int j = 0;
+        while (j < n)
+        {
+            if (nativeCells[j] <= 0)
+            {
+                failMask |= (jint) (1u << j);
+                outOff += (int64_t) bw[j] * bh[j];
+                j++;
+                continue;
+            }
+            /* Greedy chunk bounded by the points cap. */
+            int cbx[CFX_BATCH_MAX_BLOCKS], cbz[CFX_BATCH_MAX_BLOCKS];
+            int cw[CFX_BATCH_MAX_BLOCKS], crows[CFX_BATCH_MAX_BLOCKS];
+            int cst[CFX_BATCH_MAX_BLOCKS];
+            long cflat[CFX_BATCH_MAX_BLOCKS];
+            int count = 0;
+            int64_t points = 0;
+            while (j < n)
+            {
+                const int64_t sliceCells = (int64_t) bw[j] * bh[j];
+                if (nativeCells[j] > 0)
+                {
+                    if (count == CFX_BATCH_MAX_BLOCKS
+                        || points + nativeCells[j] > CFX_BATCH_MAX_POINTS)
+                        break;
+                    cbx[count] = bx[j];
+                    cbz[count] = bz[j];
+                    cw[count] = bw[j];
+                    crows[count] = bh[j];
+                    cst[count] = bs[j];
+                    cflat[count] = (long) outOff;
+                    count++;
+                    points += nativeCells[j];
+                }
+                else
+                {
+                    failMask |= (jint) (1u << j);
+                }
+                outOff += sliceCells;
+                j++;
+            }
+            int chunkFail = 0;
+            if (gpuCfxSurfaceBiomesBatch(&chunkFail, outBiomeIds, cflat,
+                    &ctx->g.bn, (uint64_t) sha, cbx, cbz, cw, crows, cst,
+                    terrainY, count) != 0)
+            {
+                status = -CFX_ERR_GENERATION;
+                break;
+            }
+            failMask |= (jint) chunkFail;
+            ctx->stageCalls += count;
+            int k;
+            for (k = 0; k < count; k++)
+            {
+                if ((chunkFail & (int) (1u << k)) == 0)
+                    ctx->stageGpuCalls++;
+            }
+        }
+        if (status == CFX_OK)
+            *failMaskOut = failMask;
+    }
+    if (terrainY != NULL)
+        (*env)->ReleasePrimitiveArrayCritical(env, terrainYArray, terrainY, JNI_ABORT);
+    if (outBiomeIds != NULL)
+        (*env)->ReleasePrimitiveArrayCritical(env, outBiomeIdsArray, outBiomeIds, 0);
+    if (failMaskOut != NULL)
+        (*env)->ReleasePrimitiveArrayCritical(env, failMaskArray, failMaskOut, 0);
+    free(nativeCells);
+    free(in);
+    return status;
+#endif
+}
+
+/* The voronoi salt the batch biome entry validates its caller probe against,
+ * read straight out of the context's generator - no recomputation here. The
+ * Java wave leader probes its own context once and passes the value with the
+ * batch, so a stale probe from another generator is refused, never borrowed. */
+JNIEXPORT jlong JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxVoronoiSHA(
+    JNIEnv *env, jclass clazz, jlong handle
+) {
+    (void) env;
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL)
+        return 0;
+    return (jlong) ctx->g.sha;
 }
 
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxHeightsStrided(

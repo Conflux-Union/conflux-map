@@ -696,75 +696,177 @@ public final class LodSampling {
         }
     }
 
-    private static boolean sampleOverworld(
-        final BaselineSampler sampler,
-        final int lod,
-        final int tileOriginX,
-        final int tileOriginZ,
-        final BaselineGrid grid
+    /**
+     * One overworld sampling stage, in execution order. {@link #runOverworldStage} runs one
+     * stage for one tile, so a driver may interleave other work between stages but must keep
+     * this order. Lattice LODs (2-4, opting-in samplers) run the coarse stages in dependency
+     * order: anchor heights (H_LATTICE), then the biome anchor sweep (ANCHOR_BIOMES; it reads
+     * only even anchor-pixel heights, so it may run while band pixels still hold reconstruction
+     * values), then the waterline band resolution (BAND) - which consults the biome anchors to
+     * skip quads that are provably waterline-irrelevant - and finally the cell copy/refine loop
+     * (CELLS), whose guards read the now-final band pixel heights. A failed anchor query leaves
+     * the band ungated (every crossing pixel solves exactly) and the biome stage on its own
+     * fallbacks. EXACT_COLUMNS drops out on its own from the LOD where the exact residual pass
+     * no longer runs.
+     */
+    enum OverworldStage {
+        /** Solves and reconstructs the overview anchor lattice, or fills dense overview heights. */
+        H_LATTICE,
+        /** Solves the sub-biome corner anchors over the lattice cells (lattice path only). */
+        ANCHOR_BIOMES,
+        /** Re-solves waterline-band pixels exactly, gated by the biome anchors (lattice path only). */
+        BAND,
+        /** Applies the sparse exact residual correction and fills the anchor fluid confidence. */
+        EXACT_COLUMNS,
+        /** Fills biomes via the cell copy/refine sweep or the per-pixel fallbacks. */
+        CELLS,
+        /** Classifies each column as water or land into the grid's surface planes. */
+        COMPOSE
+    }
+
+    /**
+     * Per-tile mutable state carried across the overworld stages; one instance per sampling
+     * run, or one per wave member when stages are driven tile by tile. Fields are populated and
+     * consumed only by the stage functions behind {@link #runOverworldStage}.
+     */
+    static final class OverworldStageState {
+        final int lod;
+        final int tileOriginX;
+        final int tileOriginZ;
+        final int blocksPerPixel;
+        final BaselineGrid grid;
+        /** Anchor aquifer confidence per output pixel; filled by EXACT_COLUMNS, read by COMPOSE. */
+        final int[] fluidConfidence;
+        /** Overview anchor lattice; null when the tile takes the dense overview path. */
+        OverviewLattice lattice;
+        /** Sub-biome corner anchors; null unless the lattice path produced them. */
+        int[] biomeAnchors;
+
+        OverworldStageState(
+            final int lod,
+            final int tileOriginX,
+            final int tileOriginZ,
+            final BaselineGrid grid
+        ) {
+            this.lod = lod;
+            this.tileOriginX = tileOriginX;
+            this.tileOriginZ = tileOriginZ;
+            this.blocksPerPixel = 1 << lod;
+            this.grid = grid;
+            this.fluidConfidence = new int[grid.terrainY.length];
+        }
+    }
+
+    /**
+     * Runs one {@link OverworldStage} for one tile against the sampler. Returns false when the
+     * tile failed and must be dropped; the remaining stages must then not run.
+     */
+    static boolean runOverworldStage(
+        final OverworldStage stage,
+        final OverworldStageState state,
+        final BaselineSampler sampler
     ) {
-        final int blocksPerPixel = 1 << lod;
-        final int[] fluidConfidence = new int[grid.terrainY.length];
-        /*
-         * Lattice LODs (2-4, opting-in samplers) run the coarse stages in dependency order:
-         * anchor heights, then the biome anchor sweep (it reads only even anchor-pixel
-         * heights, so it may run while band pixels still hold reconstruction values), then the
-         * waterline band resolution - which consults the biome anchors to skip quads that are
-         * provably waterline-irrelevant - and finally the cell copy/refine loop, whose guards
-         * read the now-final band pixel heights. A failed anchor query leaves the band ungated
-         * (every crossing pixel solves exactly) and the biome stage on its own fallbacks.
-         */
-        OverviewLattice lattice = null;
-        int[] biomeAnchors = null;
+        return switch (stage) {
+            case H_LATTICE -> runLatticeStage(state, sampler);
+            case ANCHOR_BIOMES -> runAnchorBiomesStage(state, sampler);
+            case BAND -> runBandStage(state, sampler);
+            case EXACT_COLUMNS -> runExactColumnsStage(state, sampler);
+            case CELLS -> runCellsStage(state, sampler);
+            case COMPOSE -> runComposeStage(state, sampler);
+        };
+    }
+
+    private static boolean runLatticeStage(
+        final OverworldStageState state,
+        final BaselineSampler sampler
+    ) {
+        final int lod = state.lod;
+        final int tileOriginX = state.tileOriginX;
+        final int tileOriginZ = state.tileOriginZ;
+        final int blocksPerPixel = state.blocksPerPixel;
         if (lod >= OVERVIEW_ANCHOR_MIN_LOD && sampler.interpolatableOverviewHeights()) {
-            lattice = solveOverviewLattice(
+            state.lattice = solveOverviewLattice(
                 sampler, lod, tileOriginX, tileOriginZ,
                 P_MIN, P_MIN, BaselineGrid.SIZE, BaselineGrid.SIZE
             );
-            if (lattice != null) {
+            if (state.lattice != null) {
                 reconstructOverviewLattice(
                     P_MIN, P_MIN, BaselineGrid.SIZE, BaselineGrid.SIZE,
-                    lattice, grid.terrainY
+                    state.lattice, state.grid.terrainY
                 );
-                biomeAnchors = solveSubBiomeAnchors(
-                    sampler, lod, tileOriginX, tileOriginZ, grid.subPerAxis,
-                    0, 0, LATTICE_CELL_COUNT, LATTICE_CELL_COUNT,
-                    grid.terrainY, 0, 0, BaselineGrid.SIZE
-                );
-                if (!resolveOverviewBand(
-                    sampler, lod, tileOriginX, tileOriginZ,
-                    P_MIN, P_MIN, BaselineGrid.SIZE, BaselineGrid.SIZE,
-                    lattice, grid.terrainY, biomeAnchors,
-                    LATTICE_CELL_COUNT + 1, LATTICE_CELL_COUNT + 1, 0, 0
-                )) {
-                    return false;
-                }
             }
         }
-        if (lattice == null
+        if (state.lattice == null
             && !sampler.overviewHeights(
                 tileOriginX + P_MIN * blocksPerPixel,
                 tileOriginZ + P_MIN * blocksPerPixel,
-                BaselineGrid.SIZE, BaselineGrid.SIZE, blocksPerPixel, grid.terrainY
+                BaselineGrid.SIZE, BaselineGrid.SIZE, blocksPerPixel, state.grid.terrainY
             )) {
             return false;
         }
-        if (lod <= MAX_EXACT_RESIDUAL_LOD && !applyExactResiduals(
-            sampler, lod, tileOriginX, tileOriginZ, blocksPerPixel, grid,
-            fluidConfidence
+        return true;
+    }
+
+    private static boolean runAnchorBiomesStage(
+        final OverworldStageState state,
+        final BaselineSampler sampler
+    ) {
+        if (state.lattice != null) {
+            state.biomeAnchors = solveSubBiomeAnchors(
+                sampler, state.lod, state.tileOriginX, state.tileOriginZ, state.grid.subPerAxis,
+                0, 0, LATTICE_CELL_COUNT, LATTICE_CELL_COUNT,
+                state.grid.terrainY, 0, 0, BaselineGrid.SIZE
+            );
+        }
+        return true;
+    }
+
+    private static boolean runBandStage(
+        final OverworldStageState state,
+        final BaselineSampler sampler
+    ) {
+        if (state.lattice != null && !resolveOverviewBand(
+            sampler, state.lod, state.tileOriginX, state.tileOriginZ,
+            P_MIN, P_MIN, BaselineGrid.SIZE, BaselineGrid.SIZE,
+            state.lattice, state.grid.terrainY, state.biomeAnchors,
+            LATTICE_CELL_COUNT + 1, LATTICE_CELL_COUNT + 1, 0, 0
         )) {
             return false;
         }
+        return true;
+    }
+
+    private static boolean runExactColumnsStage(
+        final OverworldStageState state,
+        final BaselineSampler sampler
+    ) {
+        if (state.lod <= MAX_EXACT_RESIDUAL_LOD && !applyExactResiduals(
+            sampler, state.lod, state.tileOriginX, state.tileOriginZ, state.blocksPerPixel,
+            state.grid, state.fluidConfidence
+        )) {
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean runCellsStage(
+        final OverworldStageState state,
+        final BaselineSampler sampler
+    ) {
+        final BaselineGrid grid = state.grid;
+        final int lod = state.lod;
+        final int tileOriginX = state.tileOriginX;
+        final int tileOriginZ = state.tileOriginZ;
         // The lattice cell sweep answers the plain per-pixel table at LOD2-4 directly, so no
         // separate centre pass runs: cell copies and exact samples reproduce what a dense
         // per-pixel query returns. A supersampled grid would scatter the sweep into the dormant
         // sub-sample planes instead. Samplers without the lattice keep the old order.
-        final int[] subRaw = biomeAnchors != null
+        final int[] subRaw = state.biomeAnchors != null
             ? runSubBiomeCells(
                 sampler, lod, tileOriginX, tileOriginZ, grid.subPerAxis,
                 0, 0, LATTICE_CELL_COUNT, LATTICE_CELL_COUNT,
                 grid.terrainY, 0, 0, BaselineGrid.SIZE,
-                biomeAnchors, LATTICE_CELL_COUNT + 1, 0, 0
+                state.biomeAnchors, LATTICE_CELL_COUNT + 1, 0, 0
             )
             : sampleSubBiomeRaw(sampler, lod, tileOriginX, tileOriginZ, grid);
         if (subRaw != null) {
@@ -780,8 +882,32 @@ public final class LodSampling {
             }
             sampleSubBiomes(sampler, lod, tileOriginX, tileOriginZ, grid);
         }
-        resolveOverviewFluids(grid, lod, fluidConfidence);
         return true;
+    }
+
+    private static boolean runComposeStage(
+        final OverworldStageState state,
+        final BaselineSampler sampler
+    ) {
+        resolveOverviewFluids(state.grid, state.lod, state.fluidConfidence);
+        return true;
+    }
+
+    /** Drives every overworld stage in order for one tile. */
+    private static boolean sampleOverworld(
+        final BaselineSampler sampler,
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final BaselineGrid grid
+    ) {
+        final OverworldStageState state = new OverworldStageState(lod, tileOriginX, tileOriginZ, grid);
+        return runOverworldStage(OverworldStage.H_LATTICE, state, sampler)
+            && runOverworldStage(OverworldStage.ANCHOR_BIOMES, state, sampler)
+            && runOverworldStage(OverworldStage.BAND, state, sampler)
+            && runOverworldStage(OverworldStage.EXACT_COLUMNS, state, sampler)
+            && runOverworldStage(OverworldStage.CELLS, state, sampler)
+            && runOverworldStage(OverworldStage.COMPOSE, state, sampler);
     }
 
     /** Overview anchor lattice over even tile-local pixels for one LOD2-4 window. */
