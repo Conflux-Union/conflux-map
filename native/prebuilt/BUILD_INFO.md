@@ -8,14 +8,8 @@
 
 | Target Platform | Binary File | Target Triple | SHA-256 Checksum | Size |
 |---|---|---|---|---|
-| Windows x86_64 | `windows-x86_64/confluxnative.dll` | `x86_64-windows-gnu` | `c366978d5976ee66d1657ce67eb85764b229157e39053cf2bf5cb938cafa9003` | 1,555,968 bytes |
-| Linux x86_64 | `linux-x86_64/libconfluxnative.so` | `x86_64-linux-gnu.2.17` | `618143ce8d4ddb0b23cbf39486f4d5a6eb9e49ddfc46203a5d2a32a3b625beca` | 1,442,104 bytes |
-| Linux aarch64 | `linux-aarch64/libconfluxnative.so` | `aarch64-linux-gnu.2.17` | `822e9ee48720d3a67db811a8519738740ccd0d91ae902848f90195e418836753` | 1,343,424 bytes |
-| macOS x86_64 | `macos-x86_64/libconfluxnative.dylib` | `x86_64-macos` | `e68920f26e2def21e4aa92b0f1b020760db5c2f27d66a0bf15efb3b9c5c1340a` | 1,123,196 bytes |
-| macOS aarch64 | `macos-aarch64/libconfluxnative.dylib` | `aarch64-macos` | `5e5d034ac839cb589866a0c3fd00ef52d36d2acf4a735442c2e734d952508c83` | 1,098,888 bytes |
-
-## Web Predictor WASM & SHA-256 Checksum
-
-| Target Platform | Binary File | Target Triple | SHA-256 Checksum | Size |
-|---|---|---|---|---|
-| Web (WASM) | `predictor.wasm` | `wasm32-wasi` | `c8c36b686b23974ad5325ad4214fc65e5ee0b0aba502178c7ca489a754940770` | 1,399,904 bytes |
+| Windows x86_64 | `windows-x86_64/confluxnative.dll` | `x86_64-windows-gnu` | `681abe917417a69a0765bb04ec17e2284efa65b858158e994ba9df015316319c` | 1,555,968 bytes |
+| Linux x86_64 | `linux-x86_64/libconfluxnative.so` | `x86_64-linux-gnu.2.17` | `d6d70ae8beab298538f0d4077094c4b535216d162e815b2170e6e3a49f9a92cf` | 1,442,168 bytes |
+| Linux aarch64 | `linux-aarch64/libconfluxnative.so` | `aarch64-linux-gnu.2.17` | `65a9a1e142d4c567153e07c6738e933358173c887e7b32066616aea97f3737ad` | 1,343,488 bytes |
+| macOS x86_64 | `macos-x86_64/libconfluxnative.dylib` | `x86_64-macos` | `e41bb2ac5c6d7a2854a42fe8231c0137a4642eb6467d6e4f768ec9a7930676bd` | 1,123,196 bytes |
+| macOS aarch64 | `macos-aarch64/libconfluxnative.dylib` | `aarch64-macos` | `159ab17496a381c27b237d5329c2f76a5cf080efc57f97594077c251e3433bc3` | 1,098,888 bytes |

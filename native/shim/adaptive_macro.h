@@ -10,6 +10,26 @@
 // 4. 严格边界安全: 零越界, 零行串位 (ASan clean).
 // ==============================================================================
 
+// 二阶拉普拉斯弯曲与马鞍面对角畸变能量判据 (纯整数位运算，零额外噪声开销)
+static inline int cfxEvaluateCurvatureEnergy(int c00, int c10, int c01, int c11, int cMid) {
+    int min_h = c00, max_h = c00;
+    if (c10 < min_h) min_h = c10; if (c10 > max_h) max_h = c10;
+    if (c01 < min_h) min_h = c01; if (c01 > max_h) max_h = c01;
+    if (c11 < min_h) min_h = c11; if (c11 > max_h) max_h = c11;
+    if (cMid < min_h) min_h = cMid; if (cMid > max_h) max_h = cMid;
+    const int drop = max_h - min_h;
+
+    // 二阶拉普拉斯弯曲能: 衡量中心凸出/凹陷程度
+    const int laplacian = abs(4 * cMid - (c00 + c10 + c01 + c11));
+    // 马鞍面对角畸变能: 衡量双向对角翘曲程度
+    const int saddle = abs((c00 + c11) - (c10 + c01));
+
+    int energy = drop;
+    if (((laplacian + 1) >> 1) > energy) energy = (laplacian + 1) >> 1;
+    if (saddle > energy) energy = saddle;
+    return energy;
+}
+
 static inline int cfxEvaluateAdaptiveMacroGrid(
     const CfxContext *ctx, int *macro, int gridW, int gridH,
     int minX4, int minZ4, const CfxNoiseDetail *detail
@@ -79,10 +99,10 @@ static inline int cfxEvaluateAdaptiveMacroGrid(
             if (cMid < min_h) min_h = cMid;
             if (cMid > max_h) max_h = cMid;
 
-            const int drop = max_h - min_h;
             const int is_waterline = (min_h <= 65 && max_h >= 61);
+            const int energy = cfxEvaluateCurvatureEnergy(c00, c10, c01, c11, cMid);
 
-            if (drop > 4 || is_waterline) {
+            if (energy > 4 || is_waterline) {
                 int cTop   = (c00 + c10 + 1) >> 1;
                 int cBot   = (c01 + c11 + 1) >> 1;
                 int cLeft  = (c00 + c01 + 1) >> 1;
