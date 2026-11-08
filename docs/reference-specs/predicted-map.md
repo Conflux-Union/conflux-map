@@ -51,8 +51,17 @@ small horizontal temperature-noise offset: Y=95 for mountain/stone-shore familie
 taiga/giant-spruce families, and Y=155 for giant-tree taiga.
 Frozen-ocean surface ice uses Vanilla's fixed temperature-noise mask; deep frozen ocean keeps its
 ordinary water surface because its visible ice comes from placed iceberg features.
-Every supported Overworld version uses the same overview pipeline. Cubiomes first returns a cheap
-height at every output pixel. A globally aligned exact surface grid, one anchor per 8 output pixels
+Every supported Overworld version uses the same overview pipeline. In 1.18+ modern density terrain,
+the native overview height solver employs a globally aligned two-tier spatial-adaptive macro grid
+(16-block macro cells with 8-block sub-quadrants) to accelerate CPU solve throughput by ~4.8x.
+To prevent isolated relief features from escaping coarse macro corners, the primary tier uses a 5-point
+cross detection scheme (four corners plus the cell center `cMid`) coupled with discrete Laplacian curvature
+and saddle-energy evaluation. Cells with curvature or height drop exceeding 4 blocks, as well as cells
+spanning the waterline transition band (Y=61..65), are dynamically refined into sub-quadrants, which in turn
+fall back to exact point solves whenever local gradient exceeds 5 blocks. All intermediate macro expansions
+and non-waterline height decodings use unbiased symmetric rounding (`floordiv(val + half, divisor)`) to
+eliminate systematic negative truncation drift. Micro-queries (such as 1x1 probes) bypass the macro grid
+and resolve directly against the point solver. A globally aligned exact surface grid, one anchor per 8 output pixels
 at LOD0 and per 16 at LOD1-4, then corrects the overview by bilinearly expanding only the
 exact-minus-overview residual. This keeps the high-frequency overview detail visible at LOD3-4
 instead of interpolating one raw height across a 4x4 texel square. LOD0 uses a denser 34x34 exact
