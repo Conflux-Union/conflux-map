@@ -631,6 +631,10 @@ static inline int cfxWebEvaluateAdaptiveMacroGrid(
             int c01 = corners[(cz + 1) * cornerW + cx];
             int c11 = corners[(cz + 1) * cornerW + (cx + 1)];
 
+            int midX = cellWorldX4 + 2;
+            int midZ = cellWorldZ4 + 2;
+            int cMid = cfxWebModernOverviewHeight(midX, midZ, detail);
+
             int min_h = c00, max_h = c00;
             if (c10 < min_h) min_h = c10;
             if (c10 > max_h) max_h = c10;
@@ -638,14 +642,13 @@ static inline int cfxWebEvaluateAdaptiveMacroGrid(
             if (c01 > max_h) max_h = c01;
             if (c11 < min_h) min_h = c11;
             if (c11 > max_h) max_h = c11;
+            if (cMid < min_h) min_h = cMid;
+            if (cMid > max_h) max_h = cMid;
 
             const int drop = max_h - min_h;
             const int is_waterline = (min_h <= 65 && max_h >= 61);
 
             if (drop > 4 || is_waterline) {
-                int midX = cellWorldX4 + 2;
-                int midZ = cellWorldZ4 + 2;
-                int cMid = cfxWebModernOverviewHeight(midX, midZ, detail);
                 int cTop   = (c00 + c10 + 1) >> 1;
                 int cBot   = (c01 + c11 + 1) >> 1;
                 int cLeft  = (c00 + c01 + 1) >> 1;

@@ -8,14 +8,14 @@
 
 | Target Platform | Binary File | Target Triple | SHA-256 Checksum | Size |
 |---|---|---|---|---|
-| Windows x86_64 | `windows-x86_64/confluxnative.dll` | `x86_64-windows-gnu` | `8493131ab77f457bba5c89820d8d029dbc42a418a294e141b8999fc755c79419` | 1,555,968 bytes |
-| Linux x86_64 | `linux-x86_64/libconfluxnative.so` | `x86_64-linux-gnu.2.17` | `b0ac8b07da5f12cb969807d8346cfd3789dfd0612e42fd5091b9b30a4aa6881a` | 1,442,120 bytes |
-| Linux aarch64 | `linux-aarch64/libconfluxnative.so` | `aarch64-linux-gnu.2.17` | `c973a4549121a8b2c4eff29c457c0ade166ffa65374540ba59fd624baa47e7a0` | 1,343,392 bytes |
-| macOS x86_64 | `macos-x86_64/libconfluxnative.dylib` | `x86_64-macos` | `24f029ef50634758978eaa8bfb35467b18068e4fee9c6201a3ef1d77955666d5` | 1,123,196 bytes |
-| macOS aarch64 | `macos-aarch64/libconfluxnative.dylib` | `aarch64-macos` | `d1fb754d8f4ca2d1b7884ee6c3d81a8f2e30460529f69aaeee7f29ddbf865684` | 1,098,888 bytes |
+| Windows x86_64 | `windows-x86_64/confluxnative.dll` | `x86_64-windows-gnu` | `c366978d5976ee66d1657ce67eb85764b229157e39053cf2bf5cb938cafa9003` | 1,555,968 bytes |
+| Linux x86_64 | `linux-x86_64/libconfluxnative.so` | `x86_64-linux-gnu.2.17` | `618143ce8d4ddb0b23cbf39486f4d5a6eb9e49ddfc46203a5d2a32a3b625beca` | 1,442,104 bytes |
+| Linux aarch64 | `linux-aarch64/libconfluxnative.so` | `aarch64-linux-gnu.2.17` | `822e9ee48720d3a67db811a8519738740ccd0d91ae902848f90195e418836753` | 1,343,424 bytes |
+| macOS x86_64 | `macos-x86_64/libconfluxnative.dylib` | `x86_64-macos` | `e68920f26e2def21e4aa92b0f1b020760db5c2f27d66a0bf15efb3b9c5c1340a` | 1,123,196 bytes |
+| macOS aarch64 | `macos-aarch64/libconfluxnative.dylib` | `aarch64-macos` | `5e5d034ac839cb589866a0c3fd00ef52d36d2acf4a735442c2e734d952508c83` | 1,098,888 bytes |
 
 ## Web Predictor WASM & SHA-256 Checksum
 
 | Target Platform | Binary File | Target Triple | SHA-256 Checksum | Size |
 |---|---|---|---|---|
-| Web (WASM) | `predictor.wasm` | `wasm32-wasi` | `1eee6fd990925acfc8a2e737cf08a40d0db3471fd15f44bb3a01881cc5b916cd` | 1,399,880 bytes |
+| Web (WASM) | `predictor.wasm` | `wasm32-wasi` | `c8c36b686b23974ad5325ad4214fc65e5ee0b0aba502178c7ca489a754940770` | 1,399,904 bytes |
