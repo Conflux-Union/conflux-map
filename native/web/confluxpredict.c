@@ -691,9 +691,9 @@ static inline int cfxWebEvaluateAdaptiveMacroGrid(
                                 int dz = (minZ4 + lz) - qWorldZ4;
                                 for (int lx = subX0; lx < subX1; lx++) {
                                     int dx = (minX4 + lx) - qWorldX4;
-                                    int top = qc00 + floordiv((qc10 - qc00) * dx, 2);
-                                    int bot = qc01 + floordiv((qc11 - qc01) * dx, 2);
-                                    macro[lz * W + lx] = top + floordiv((bot - top) * dz, 2);
+                                    int top = qc00 + floordiv((qc10 - qc00) * dx + 1, 2);
+                                    int bot = qc01 + floordiv((qc11 - qc01) * dx + 1, 2);
+                                    macro[lz * W + lx] = top + floordiv((bot - top) * dz + 1, 2);
                                 }
                             }
                         }
@@ -704,9 +704,9 @@ static inline int cfxWebEvaluateAdaptiveMacroGrid(
                     int dz = (minZ4 + lz) - cellWorldZ4;
                     for (int lx = clampX0; lx < clampX1; lx++) {
                         int dx = (minX4 + lx) - cellWorldX4;
-                        int top = c00 + floordiv((c10 - c00) * dx, 4);
-                        int bot = c01 + floordiv((c11 - c01) * dx, 4);
-                        macro[lz * W + lx] = top + floordiv((bot - top) * dz, 4);
+                        int top = c00 + floordiv((c10 - c00) * dx + 2, 4);
+                        int bot = c01 + floordiv((c11 - c01) * dx + 2, 4);
+                        macro[lz * W + lx] = top + floordiv((bot - top) * dz + 2, 4);
                     }
                 }
             }
@@ -782,10 +782,10 @@ static int cfxWebOverviewHeightsImpl(
                     const int fx = sampleX - x4 * 4;
                     const int ix = x4 - minX4;
                     const int top = macro[iz*gridW+ix]
-                        + floordiv((macro[iz*gridW+ix+1] - macro[iz*gridW+ix])*fx, 4);
+                        + floordiv((macro[iz*gridW+ix+1] - macro[iz*gridW+ix])*fx + 2, 4);
                     const int bottom = macro[(iz+1)*gridW+ix]
-                        + floordiv((macro[(iz+1)*gridW+ix+1] - macro[(iz+1)*gridW+ix])*fx, 4);
-                    out[j*w+i] = top + floordiv((bottom-top)*fz, 4);
+                        + floordiv((macro[(iz+1)*gridW+ix+1] - macro[(iz+1)*gridW+ix])*fx + 2, 4);
+                    out[j*w+i] = top + floordiv((bottom-top)*fz + 2, 4);
                 }
             }
             free(macro);

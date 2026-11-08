@@ -126,9 +126,9 @@ static inline int cfxEvaluateAdaptiveMacroGrid(
                                 int dz = (minZ4 + lz) - qWorldZ4; // 0..1
                                 for (int lx = subX0; lx < subX1; lx++) {
                                     int dx = (minX4 + lx) - qWorldX4; // 0..1
-                                    int top = qc00 + floordiv((qc10 - qc00) * dx, 2);
-                                    int bot = qc01 + floordiv((qc11 - qc01) * dx, 2);
-                                    macro[lz * W + lx] = top + floordiv((bot - top) * dz, 2);
+                                    int top = qc00 + floordiv((qc10 - qc00) * dx + 1, 2);
+                                    int bot = qc01 + floordiv((qc11 - qc01) * dx + 1, 2);
+                                    macro[lz * W + lx] = top + floordiv((bot - top) * dz + 1, 2);
                                 }
                             }
                         }
@@ -139,9 +139,9 @@ static inline int cfxEvaluateAdaptiveMacroGrid(
                     int dz = (minZ4 + lz) - cellWorldZ4; // 0..3
                     for (int lx = clampX0; lx < clampX1; lx++) {
                         int dx = (minX4 + lx) - cellWorldX4; // 0..3
-                        int top = c00 + floordiv((c10 - c00) * dx, 4);
-                        int bot = c01 + floordiv((c11 - c01) * dx, 4);
-                        macro[lz * W + lx] = top + floordiv((bot - top) * dz, 4);
+                        int top = c00 + floordiv((c10 - c00) * dx + 2, 4);
+                        int bot = c01 + floordiv((c11 - c01) * dx + 2, 4);
+                        macro[lz * W + lx] = top + floordiv((bot - top) * dz + 2, 4);
                     }
                 }
             }

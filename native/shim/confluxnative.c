@@ -1027,10 +1027,10 @@ static jint cfxOverviewHeightsImpl(
                     const int fx = sampleX - x4*4;
                     const int ix = x4 - minX4;
                     const int top = macro[iz*gridW+ix]
-                        + floordiv((macro[iz*gridW+ix+1] - macro[iz*gridW+ix])*fx, 4);
+                        + floordiv((macro[iz*gridW+ix+1] - macro[iz*gridW+ix])*fx + 2, 4);
                     const int bottom = macro[(iz+1)*gridW+ix]
-                        + floordiv((macro[(iz+1)*gridW+ix+1] - macro[(iz+1)*gridW+ix])*fx, 4);
-                    heights[j*w+i] = top + floordiv((bottom-top)*fz, 4);
+                        + floordiv((macro[(iz+1)*gridW+ix+1] - macro[(iz+1)*gridW+ix])*fx + 2, 4);
+                    heights[j*w+i] = top + floordiv((bottom-top)*fz + 2, 4);
                 }
             }
             free(macro);
