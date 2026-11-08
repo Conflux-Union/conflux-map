@@ -7,6 +7,9 @@
 #include <assert.h>
 #include <time.h>
 #include <jni.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 #include "shim/confluxnative.c"
 #include "shim/master_clean_impl.h"
@@ -19,6 +22,10 @@ static jsize JNICALL dummy_GetArrayLength(JNIEnv *env, jarray array) { return 10
 static void JNICALL dummy_SetIntArrayRegion(JNIEnv *env, jintArray array, jsize start, jsize len, const jint *buf) {
     (void)env; memcpy((int*)array + start, buf, len * sizeof(jint));
 }
+static void JNICALL dummy_GetIntArrayRegion(JNIEnv *env, jintArray array, jsize start, jsize len, jint *buf) {
+    (void)env; memcpy(buf, (int*)array + start, len * sizeof(jint));
+}
+static jboolean JNICALL dummy_ExceptionCheck(JNIEnv *env) { (void)env; return JNI_FALSE; }
 
 typedef struct {
     double y_mae;
@@ -39,9 +46,40 @@ typedef struct {
 } CaseResult;
 
 static double get_time_ms(void) {
+#ifdef _WIN32
+    LARGE_INTEGER ticks, frequency;
+    QueryPerformanceCounter(&ticks);
+    QueryPerformanceFrequency(&frequency);
+    return (double)ticks.QuadPart * 1000.0 / (double)frequency.QuadPart;
+#else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+#endif
+}
+
+/* Match cfxSurfaceBiomes: block coordinates select a Voronoi quart nucleus. */
+static int surface_biome_at_height(const CfxContext *ctx, int blockX, int blockZ, int terrainY) {
+    const int surfaceY = terrainY < 62 ? 62 : terrainY;
+    int x4, y4, z4;
+    voronoiAccess3D(ctx->g.sha, blockX, surfaceY, blockZ, &x4, &y4, &z4);
+    return sampleBiomeNoise(&ctx->g.bn, NULL, x4, y4, z4, NULL, 0);
+}
+
+static void test_surface_biome_sampling(JNIEnv *env, CfxContext *ctx) {
+    const int origins[][2] = {{0, 0}, {1, 3}, {-4099, 8193}, {5000001, 5000003}, {-25000003, -10000001}};
+    const int heights[] = {32, 62, 128, 224};
+    for (size_t p = 0; p < sizeof(origins) / sizeof(origins[0]); p++) {
+        for (size_t y = 0; y < sizeof(heights) / sizeof(heights[0]); y++) {
+            int terrainY = heights[y];
+            int expected = -1;
+            assert(Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxSurfaceBiomes(
+                env, NULL, (jlong)(intptr_t)ctx, origins[p][0], origins[p][1], 1, 1, 1,
+                (jintArray)&terrainY, (jintArray)&expected) == CFX_OK);
+            assert(surface_biome_at_height(ctx, origins[p][0], origins[p][1], terrainY) == expected);
+        }
+    }
+    puts("Surface-biome audit sampling matches the production JNI entry at 20 columns.");
 }
 
 static void run_case(
@@ -114,13 +152,9 @@ static void run_case(
 
             int worldX = (int)(ox + (int64_t)i * stride);
             int worldZ = (int)(oz + (int64_t)j * stride);
-            int y_clamp_true = y_true < 62 ? 62 : y_true;
-            int y_clamp_opt  = y_opt < 62 ? 62 : y_opt;
-            int y_clamp_mst  = y_mst < 62 ? 62 : y_mst;
-
-            int b_true = sampleBiomeNoise(&ctx->g.bn, 0, worldX, floordiv(y_clamp_true, 4), worldZ, 0, 0);
-            int b_opt  = sampleBiomeNoise(&ctx->g.bn, 0, worldX, floordiv(y_clamp_opt, 4), worldZ, 0, 0);
-            int b_mst  = sampleBiomeNoise(&ctx->g.bn, 0, worldX, floordiv(y_clamp_mst, 4), worldZ, 0, 0);
+            int b_true = surface_biome_at_height(ctx, worldX, worldZ, y_true);
+            int b_opt = surface_biome_at_height(ctx, worldX, worldZ, y_opt);
+            int b_mst = surface_biome_at_height(ctx, worldX, worldZ, y_mst);
 
             if (b_opt != b_true) biome_mismatch_opt++;
             if (b_mst != b_true) biome_mismatch_master++;
@@ -155,11 +189,13 @@ static void run_case(
     free(truth_fluid);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
     struct JNINativeInterface_ iface;
     memset(&iface, 0, sizeof(iface));
     iface.GetArrayLength = dummy_GetArrayLength;
     iface.SetIntArrayRegion = dummy_SetIntArrayRegion;
+    iface.GetIntArrayRegion = dummy_GetIntArrayRegion;
+    iface.ExceptionCheck = dummy_ExceptionCheck;
     const struct JNINativeInterface_ *p_iface = &iface;
     JNIEnv *p_env = (JNIEnv *)&p_iface;
 
@@ -204,6 +240,9 @@ int main(void) {
         setupGenerator(&ctx.g, ctx.mc, 0);
         applySeed(&ctx.g, ctx.dim, seeds[s]);
         initSurfaceNoise(&ctx.sn, ctx.dim, seeds[s]);
+        test_surface_biome_sampling(p_env, &ctx);
+        if (argc > 1 && strcmp(argv[1], "--sampling-only") == 0)
+            return 0;
 
         for (int l = 0; l < 5; l++) {
             int strides[] = {1, 2, 4};
