@@ -213,6 +213,12 @@ static void cfxWebGenerateCanopy(int blockX, int blockZ, int lod)
  * cell solves its pixels exactly, each with its own pixel's height -
  * value-for-value what a dense sweep returns.
  */
+static inline int cfxWebWaterFreezeClass(int biomeId) {
+    if (biomeId == 10 || biomeId == 11) return 1;
+    if (biomeId == 50) return 2;
+    return 0;
+}
+
 static void cfxWebRunSubBiomeCells(
     int blockX, int blockZ, int lod,
     const int *anchorBiomes, int anchorsW
@@ -245,10 +251,16 @@ static void cfxWebRunSubBiomeCells(
             }
             else
             {
+                const int b10 = anchorBiomes[cz*anchorsW+cx+1];
+                const int b01 = anchorBiomes[(cz+1)*anchorsW+cx];
+                const int b11 = anchorBiomes[(cz+1)*anchorsW+cx+1];
                 copyable = cfxWebIsWaterBiome(corner)
-                    && cfxWebIsWaterBiome(anchorBiomes[cz*anchorsW+cx+1])
-                    && cfxWebIsWaterBiome(anchorBiomes[(cz+1)*anchorsW+cx])
-                    && cfxWebIsWaterBiome(anchorBiomes[(cz+1)*anchorsW+cx+1]);
+                    && cfxWebIsWaterBiome(b10)
+                    && cfxWebIsWaterBiome(b01)
+                    && cfxWebIsWaterBiome(b11)
+                    && (cfxWebWaterFreezeClass(corner) == cfxWebWaterFreezeClass(b10))
+                    && (cfxWebWaterFreezeClass(corner) == cfxWebWaterFreezeClass(b01))
+                    && (cfxWebWaterFreezeClass(corner) == cfxWebWaterFreezeClass(b11));
                 if (copyable)
                 {
                     int j, i;
@@ -1055,9 +1067,14 @@ static int cfxWebOverviewHeightsAnchored(
                 if (!oddX && !oddZ)
                     continue;
                 const int h00 = macro[kz*count+kx];
-                const int h10 = macro[kz*count+kx+1];
-                int lowest = h00 < h10 ? h00 : h10;
-                int highest = h00 > h10 ? h00 : h10;
+                int lowest = h00;
+                int highest = h00;
+                if (oddX)
+                {
+                    const int h10 = macro[kz*count+kx+1];
+                    if (h10 < lowest) lowest = h10;
+                    if (h10 > highest) highest = h10;
+                }
                 if (oddZ)
                 {
                     const int h01 = macro[(kz+1)*count+kx];
@@ -1214,11 +1231,6 @@ static int cfxWebIsWaterBiome(int biome)
     }
 }
 
-static int cfxWebIsSwampBiome(int biome)
-{
-    return biome == 6 || biome == 134 || biome == 184;
-}
-
 static int cfxWebGenerateOverworld(int blockX, int blockZ, int lod, int exact)
 {
     const int blockStride = 1 << lod;
@@ -1293,8 +1305,7 @@ static int cfxWebGenerateOverworld(int blockX, int blockZ, int lod, int exact)
             const int fluid = lod == 0
                 ? fluidConfidence[i] >= 128
                 : heightData[i] < CFX_WEB_WATER_LEVEL - 1;
-            const int swampWater = cfxWebIsSwampBiome(biomeData[i]);
-            const int water = belowSea && (fluid || cfxWebIsWaterBiome(biomeData[i]) || swampWater);
+            const int water = belowSea && (fluid || cfxWebIsWaterBiome(biomeData[i]));
             int depth = water ? CFX_WEB_WATER_LEVEL - heightData[i] : 0;
             if (depth < 0) depth = 0;
             if (depth > 255) depth = 255;

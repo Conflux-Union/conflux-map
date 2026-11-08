@@ -939,9 +939,13 @@ public final class LodSampling {
                     continue;
                 }
                 final int h00 = lattice.heights[anchorZ * lattice.w + anchorX];
-                final int h10 = lattice.heights[anchorZ * lattice.w + anchorX + 1];
-                int lowest = Math.min(h00, h10);
-                int highest = Math.max(h00, h10);
+                int lowest = h00;
+                int highest = h00;
+                if (oddX != 0) {
+                    final int h10 = lattice.heights[anchorZ * lattice.w + anchorX + 1];
+                    lowest = Math.min(lowest, h10);
+                    highest = Math.max(highest, h10);
+                }
                 if (oddZ != 0) {
                     final int h01 = lattice.heights[(anchorZ + 1) * lattice.w + anchorX];
                     lowest = Math.min(lowest, h01);
@@ -1081,13 +1085,36 @@ public final class LodSampling {
     }
 
     /** Whether all four corner anchors of one lattice cell are water biomes. */
+    private static int waterFreezeClass(final int biomeId) {
+        if (biomeId == 10 || biomeId == 11) {
+            return 1; // frozen ocean / frozen river (surface ice)
+        }
+        if (biomeId == 50) {
+            return 2; // deep frozen ocean
+        }
+        return 0; // standard non-frozen water
+    }
+
     private static boolean allAnchorsWater(
         final int[] anchorBiomes, final int anchorsW, final int localKx, final int localKz
     ) {
-        return BiomeTable.get(anchorBiomes[localKz * anchorsW + localKx]).waterBiome()
-            && BiomeTable.get(anchorBiomes[localKz * anchorsW + localKx + 1]).waterBiome()
-            && BiomeTable.get(anchorBiomes[(localKz + 1) * anchorsW + localKx]).waterBiome()
-            && BiomeTable.get(anchorBiomes[(localKz + 1) * anchorsW + localKx + 1]).waterBiome();
+        final int b00 = anchorBiomes[localKz * anchorsW + localKx];
+        final int b10 = anchorBiomes[localKz * anchorsW + localKx + 1];
+        final int b01 = anchorBiomes[(localKz + 1) * anchorsW + localKx];
+        final int b11 = anchorBiomes[(localKz + 1) * anchorsW + localKx + 1];
+
+        if (!BiomeTable.get(b00).waterBiome()
+            || !BiomeTable.get(b10).waterBiome()
+            || !BiomeTable.get(b01).waterBiome()
+            || !BiomeTable.get(b11).waterBiome()) {
+            return false;
+        }
+
+        // Must preserve identical freeze semantics across all four corners
+        final int fClass = waterFreezeClass(b00);
+        return fClass == waterFreezeClass(b10)
+            && fClass == waterFreezeClass(b01)
+            && fClass == waterFreezeClass(b11);
     }
 
     /** Whether all four pixel heights of one lattice cell sit under the fluid-decides band. */
