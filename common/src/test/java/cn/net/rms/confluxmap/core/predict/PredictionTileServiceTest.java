@@ -39,11 +39,13 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -164,6 +166,63 @@ class PredictionTileServiceTest {
             awaitIdle(predictionTiles);
         } finally {
             releaseWorkers.countDown();
+            executors.shutdown(2000L);
+        }
+    }
+
+    /**
+     * Service-level wave-formation pin: staged tiles admitted with room to spare must compose
+     * as ONE wave through the batch seam, not silently fall back to per-tile compositions. The
+     * 1x1 lod-2 viewport's padded ring is exactly eight tiles, so one preload pump with eight
+     * free slots admits one capped wave - and the injected recording sampler proves the batch
+     * entries actually ran. Without this pin a regression that never forms waves (e.g. the
+     * staged-eligibility gate always refusing) leaves every existing scenario green.
+     */
+    @Test
+    void stagedTilesFormOneWaveThroughTheBatchSeam() throws InterruptedException {
+        // The staged-eligibility gate consults PredictionState#predictable, which requires the
+        // native predictor; without it every tile stays legacy and the pin could never observe
+        // a wave. The wave itself runs on the injected fake - no native sampling below.
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        sessionGuard.begin(WORLD, DIM);
+        final MapExecutors executors = new MapExecutors(8);
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.DEFAULT, WorldPreset.DEFAULT);
+        state.setSeed(146008555L, McVersions.toCubiomes("1.17").orElseThrow());
+        final PredictionTileService predictionTiles = newService(sessionGuard, state, executors, uploads);
+        final RecordingWaveSampler sampler = new RecordingWaveSampler();
+        predictionTiles.waveSamplerFactoryForTest = (mcVersion, seed, nativeDim, flags) -> sampler;
+
+        final Set<TileKey> ring = new HashSet<>();
+        for (int tileX = -1; tileX <= 1; tileX++) {
+            for (int tileZ = -1; tileZ <= 1; tileZ++) {
+                if (tileX != 0 || tileZ != 0) {
+                    ring.add(new TileKey(WORLD, DIM, "surface!pred", 2, tileX, tileZ));
+                }
+            }
+        }
+
+        try {
+            predictionTiles.setViewport(DIM, 2, 0, 0, 0, 0);
+            predictionTiles.preloadViewportPaddedRing();
+            awaitIdle(predictionTiles, 10_000L);
+
+            assertEquals(
+                List.of("heights:8", "biomes:8"),
+                sampler.batchCalls,
+                "the eight staged ring tiles must compose as one capped wave through both batch entries"
+            );
+            final Set<TileKey> uploaded = uploads.drainUploads(64).stream()
+                .map(TileUpdate::key)
+                .collect(Collectors.toSet());
+            final Set<TileKey> missing = new HashSet<>(ring);
+            missing.removeAll(uploaded);
+            assertTrue(missing.isEmpty(), "every wave member must compose and upload; missing: " + missing);
+        } finally {
             executors.shutdown(2000L);
         }
     }

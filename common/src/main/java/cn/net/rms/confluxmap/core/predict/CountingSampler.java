@@ -37,6 +37,16 @@ final class CountingSampler implements BaselineSampler {
         return stageNanos;
     }
 
+    /**
+     * Attributes a wave's shared batch dispatch to one member: the member's own query cells plus
+     * an even share of the batch's wall nanos, into one stage bucket. The batch entries are not
+     * {@link BaselineSampler} methods, so a counting wrapper never sees them on its own.
+     */
+    void credit(final long points, final long nanos, final SampleStage stage) {
+        this.points += points;
+        stageNanos[stage.ordinal()] += nanos;
+    }
+
     @Override
     public int terrainFreeBiomeScale() {
         return delegate.terrainFreeBiomeScale();

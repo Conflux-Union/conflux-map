@@ -946,6 +946,52 @@ public final class LodSampling {
         final int width,
         final int height
     ) {
+        final OverviewLatticePlan plan = planOverviewLattice(
+            lod, tileOriginX, tileOriginZ, minPixelX, minPixelZ, width, height
+        );
+        final int[] anchors = new int[plan.anchorW * plan.anchorH];
+        if (!sampler.overviewHeightsCoarse(
+            plan.blockX, plan.blockZ, plan.anchorW, plan.anchorH, plan.stride, anchors
+        )) {
+            return null;
+        }
+        return new OverviewLattice(anchors, plan.anchorMinKx, plan.anchorMinKz, plan.anchorW, plan.anchorH);
+    }
+
+    /** Anchor-lattice query geometry for one pixel window; the single source both the per-tile
+     * solve and a wave's batched H_LATTICE dispatch build their queries from. */
+    private static final class OverviewLatticePlan {
+        final int blockX;
+        final int blockZ;
+        final int anchorW;
+        final int anchorH;
+        final int stride;
+        final int anchorMinKx;
+        final int anchorMinKz;
+
+        OverviewLatticePlan(
+            final int blockX, final int blockZ, final int anchorW, final int anchorH, final int stride,
+            final int anchorMinKx, final int anchorMinKz
+        ) {
+            this.blockX = blockX;
+            this.blockZ = blockZ;
+            this.anchorW = anchorW;
+            this.anchorH = anchorH;
+            this.stride = stride;
+            this.anchorMinKx = anchorMinKx;
+            this.anchorMinKz = anchorMinKz;
+        }
+    }
+
+    private static OverviewLatticePlan planOverviewLattice(
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final int minPixelX,
+        final int minPixelZ,
+        final int width,
+        final int height
+    ) {
         final int blocksPerPixel = 1 << lod;
         final int anchorMinKx = Math.floorDiv(minPixelX, 2);
         final int anchorMinKz = Math.floorDiv(minPixelZ, 2);
@@ -953,15 +999,97 @@ public final class LodSampling {
         final int maxPixelZ = minPixelZ + height - 1;
         final int anchorW = Math.floorDiv(maxPixelX, 2) + (maxPixelX & 1) - anchorMinKx + 1;
         final int anchorH = Math.floorDiv(maxPixelZ, 2) + (maxPixelZ & 1) - anchorMinKz + 1;
-        final int[] anchors = new int[anchorW * anchorH];
-        if (!sampler.overviewHeightsCoarse(
+        return new OverviewLatticePlan(
             tileOriginX + 2 * anchorMinKx * blocksPerPixel,
             tileOriginZ + 2 * anchorMinKz * blocksPerPixel,
-            anchorW, anchorH, 2 * blocksPerPixel, anchors
-        )) {
+            anchorW, anchorH, 2 * blocksPerPixel, anchorMinKx, anchorMinKz
+        );
+    }
+
+    /** One wave member's native query for a batchable stage, in the batch entries' flat contract. */
+    static final class StageQuery {
+        final int blockX;
+        final int blockZ;
+        final int w;
+        final int h;
+        final int stride;
+        /** Gathered terrain plane ({@code w*h}) feeding ANCHOR_BIOMES; null for H_LATTICE. */
+        final int[] terrainY;
+
+        StageQuery(
+            final int blockX, final int blockZ, final int w, final int h, final int stride, final int[] terrainY
+        ) {
+            this.blockX = blockX;
+            this.blockZ = blockZ;
+            this.w = w;
+            this.h = h;
+            this.stride = stride;
+            this.terrainY = terrainY;
+        }
+    }
+
+    /** Allocates the grid the staged overworld path composes into, supersampling identical to {@link #sample}. */
+    static BaselineGrid newOverworldGrid(final int lod, final int tileOriginX, final int tileOriginZ) {
+        return new BaselineGrid(lod, tileOriginX, tileOriginZ, BIOME_SUB_PER_AXIS[lod]);
+    }
+
+    /**
+     * Plans member {@code state}'s H_LATTICE native query: the anchor-lattice geometry on the
+     * interpolation path, the dense overview rectangle otherwise (the same choice
+     * {@link #runLatticeStage} makes per tile).
+     */
+    static StageQuery planLatticeQuery(final OverworldStageState state, final BaselineSampler sampler) {
+        if (state.lod >= OVERVIEW_ANCHOR_MIN_LOD && sampler.interpolatableOverviewHeights()) {
+            final OverviewLatticePlan plan = planOverviewLattice(
+                state.lod, state.tileOriginX, state.tileOriginZ,
+                P_MIN, P_MIN, BaselineGrid.SIZE, BaselineGrid.SIZE
+            );
+            return new StageQuery(plan.blockX, plan.blockZ, plan.anchorW, plan.anchorH, plan.stride, null);
+        }
+        return new StageQuery(
+            state.tileOriginX + P_MIN * state.blocksPerPixel,
+            state.tileOriginZ + P_MIN * state.blocksPerPixel,
+            BaselineGrid.SIZE, BaselineGrid.SIZE, state.blocksPerPixel, null
+        );
+    }
+
+    /** Applies a successful batched H_LATTICE result: wrap the anchors and reconstruct, or copy the dense plane. */
+    static void applyLatticeQuery(final OverworldStageState state, final BaselineSampler sampler, final int[] result) {
+        if (state.lod >= OVERVIEW_ANCHOR_MIN_LOD && sampler.interpolatableOverviewHeights()) {
+            final OverviewLatticePlan plan = planOverviewLattice(
+                state.lod, state.tileOriginX, state.tileOriginZ,
+                P_MIN, P_MIN, BaselineGrid.SIZE, BaselineGrid.SIZE
+            );
+            state.lattice = new OverviewLattice(
+                result, plan.anchorMinKx, plan.anchorMinKz, plan.anchorW, plan.anchorH
+            );
+            reconstructOverviewLattice(
+                P_MIN, P_MIN, BaselineGrid.SIZE, BaselineGrid.SIZE, state.lattice, state.grid.terrainY
+            );
+        } else {
+            System.arraycopy(result, 0, state.grid.terrainY, 0, state.grid.terrainY.length);
+        }
+    }
+
+    /**
+     * Plans member {@code state}'s ANCHOR_BIOMES native query, gathering the anchor terrain
+     * plane the biome solve consumes; null when the tile took no lattice and the stage queries
+     * nothing.
+     */
+    static StageQuery planAnchorBiomeQuery(final OverworldStageState state) {
+        if (state.lattice == null) {
             return null;
         }
-        return new OverviewLattice(anchors, anchorMinKx, anchorMinKz, anchorW, anchorH);
+        return planSubBiomeAnchors(
+            state.lod, state.tileOriginX, state.tileOriginZ, state.grid.subPerAxis,
+            0, 0, LATTICE_CELL_COUNT, LATTICE_CELL_COUNT,
+            state.grid.terrainY, 0, 0, BaselineGrid.SIZE
+        );
+    }
+
+    /** Applies a successful batched ANCHOR_BIOMES result; layout identical to {@link #solveSubBiomeAnchors}. */
+    static void applyAnchorBiomeQuery(final OverworldStageState state, final int[] result) {
+        state.biomeAnchors = result;
     }
 
     /**
@@ -1258,6 +1386,35 @@ public final class LodSampling {
         final int heightBaseRow,
         final int heightStride
     ) {
+        final StageQuery plan = planSubBiomeAnchors(
+            lod, tileOriginX, tileOriginZ, sub, cellX0, cellZ0, cellsW, cellsH,
+            pixelHeights, heightBaseCol, heightBaseRow, heightStride
+        );
+        final int[] anchorBiomes = new int[plan.w * plan.h];
+        if (!sampler.surfaceBiomes(
+            plan.blockX, plan.blockZ, plan.w, plan.h, plan.stride, plan.terrainY, anchorBiomes
+        )) {
+            return null;
+        }
+        return anchorBiomes;
+    }
+
+    /** Anchor-sweep query geometry plus the gathered anchor terrain plane; the shared source for
+     * the per-tile solve and a wave's batched ANCHOR_BIOMES dispatch. */
+    private static StageQuery planSubBiomeAnchors(
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final int sub,
+        final int cellX0,
+        final int cellZ0,
+        final int cellsW,
+        final int cellsH,
+        final int[] pixelHeights,
+        final int heightBaseCol,
+        final int heightBaseRow,
+        final int heightStride
+    ) {
         final int blocksPerPixel = 1 << lod;
         final int subStride = blocksPerPixel / sub;
         final int step = 2 * sub;
@@ -1274,15 +1431,11 @@ public final class LodSampling {
                 anchorHeights[kz * anchorsW + kx] = pixelHeights[row * heightStride + col];
             }
         }
-        final int[] anchorBiomes = new int[anchorsW * anchorsH];
-        if (!sampler.surfaceBiomes(
+        return new StageQuery(
             blockX0 + cellX0 * step * subStride,
             blockZ0 + cellZ0 * step * subStride,
-            anchorsW, anchorsH, step * subStride, anchorHeights, anchorBiomes
-        )) {
-            return null;
-        }
-        return anchorBiomes;
+            anchorsW, anchorsH, step * subStride, anchorHeights
+        );
     }
 
     /**

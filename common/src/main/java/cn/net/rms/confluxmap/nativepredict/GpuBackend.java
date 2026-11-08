@@ -17,6 +17,7 @@ public final class GpuBackend {
 
     private static volatile PredictionBackend configured = PredictionBackend.GPU;
     private static volatile boolean libraryReady;
+    private static volatile boolean batchRefused;
 
     private GpuBackend() {
     }
@@ -62,6 +63,28 @@ public final class GpuBackend {
         return backend == PredictionBackend.GPU
             ? CubiomesNative.GPU_MODE_AUTO
             : CubiomesNative.GPU_MODE_OFF;
+    }
+
+    /**
+     * Latches wave batch dispatch off for the rest of this process. The engine latches dead,
+     * device-less, or cfx-unbuilt process-wide, so re-attempting would serialize the same
+     * refusal onto each wave's leader thread. Nothing resets it, mirroring the native latches.
+     */
+    public static void noteBatchRefused() {
+        batchRefused = true;
+    }
+
+    /**
+     * Whether a wave may admit with a live batch seam: no refusal latched and the resolved
+     * engine mode is not OFF. A missing snapshot means the library predates the batch entries,
+     * so per-tile dispatch is the honest answer there too.
+     */
+    public static boolean batchDispatchAvailable() {
+        return batchDispatchAvailable(stats(), batchRefused);
+    }
+
+    static boolean batchDispatchAvailable(final GpuStats snapshot, final boolean refused) {
+        return !refused && snapshot != null && snapshot.engineMode() != CubiomesNative.GPU_MODE_OFF;
     }
 
     /**

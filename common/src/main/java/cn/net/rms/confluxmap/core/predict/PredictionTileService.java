@@ -27,6 +27,7 @@ import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.nativepredict.CubiomesContexts;
 import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -38,8 +39,10 @@ import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
+import java.util.function.Predicate;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -93,6 +96,18 @@ public final class PredictionTileService {
     private boolean firstVisibleLogged;
     /** Debug-gated outcome of the last closed viewport load; the e2e gametest asserts on it. */
     private volatile ViewportLoadResult lastViewportLoadForTest;
+
+    /** Wave members' sampler factory signature, mirroring {@link NativeBaselineSampler}'s constructor. */
+    interface WaveSamplerFactory {
+        BaselineSampler create(int mcVersion, long seed, int nativeDim, int flags);
+    }
+
+    /**
+     * Test-only override of the factory {@link #admitWave} builds members' sampler through; null
+     * in production. Package-private so PredictionTileServiceTest can pin wave formation against
+     * a recording fake - the batch seam is otherwise unobservable from the service's public surface.
+     */
+    volatile WaveSamplerFactory waveSamplerFactoryForTest;
 
     /** Dispatch tiers, lowest first: user-waited, visible viewport, padded ring, background. */
     private static final int TIER_URGENT = 0;
@@ -1122,32 +1137,206 @@ public final class PredictionTileService {
     private void pump() {
         final boolean timing = debugTimingEnabled();
         while (true) {
-            final TileKey next;
-            final long token;
-            final long generation;
-            final long netherGeneration;
-            final int netherY;
+            final Runnable dispatch;
             synchronized (this) {
-                if (inFlight.size() >= maxConcurrentCompositions || dirty.isEmpty()) {
+                final int capacity = maxConcurrentCompositions - inFlight.size();
+                if (capacity <= 0 || dirty.isEmpty()) {
                     return;
                 }
-                next = nearestDirty();
-                if (next == null) {
+                dispatch = admit(capacity, timing);
+                if (dispatch == null) {
                     return;
-                }
-                token = dirty.remove(next);
-                generation = reloadGeneration;
-                netherGeneration = netherBiomeGeneration;
-                netherY = netherBiomeY;
-                inFlight.add(next);
-                if (timing) {
-                    noteTimingDispatch(next);
                 }
             }
-            executors.workers().execute(() -> composeAndFinish(
-                next, token, generation, netherGeneration, netherY
-            ));
+            // Submission only: a caller thread never waits on workers, wave-mates included.
+            dispatch.run();
         }
+    }
+
+    /**
+     * Caller must hold the monitor and pass the free composition slots. One admission step,
+     * always starting from the globally best queued tile so dispatch priority is unchanged: a
+     * whole wave when that tile is staged-eligible and same-group tiles fit the room, otherwise
+     * one legacy tile. Wave admission never splits a wave - whatever fits the room now IS the
+     * wave, the rest waits for the next pump as a future wave.
+     */
+    private Runnable admit(final int capacity, final boolean timing) {
+        final TileKey best = nearestDirty();
+        if (best == null) {
+            return null;
+        }
+        if (stagedWaveCandidate(best)) {
+            final int room = Math.min(capacity, WaveComposer.WAVE_CAP);
+            final int lod = best.lod();
+            final String layerId = best.layerId();
+            final List<TileKey> group = new ArrayList<>(room);
+            group.add(best);
+            while (group.size() < room) {
+                // Keys leave dirty only at admission below; without the exclusion nearestDirty re-picks the seed.
+                final TileKey member = nearestDirty(
+                    key -> !group.contains(key) && stagedWaveCandidate(key)
+                        && key.lod() == lod && key.layerId().equals(layerId)
+                );
+                if (member == null) {
+                    break;
+                }
+                group.add(member);
+            }
+            if (group.size() > 1) {
+                return admitWave(group, timing);
+            }
+            // A lone staged candidate is a degenerate wave: keep the retained single-shot path.
+        }
+        return admitSingle(best, timing);
+    }
+
+    /** Caller must hold the monitor; {@code key} is still queued in {@code dirty}. */
+    private Runnable admitSingle(final TileKey key, final boolean timing) {
+        final long token = dirty.remove(key);
+        final long generation = reloadGeneration;
+        final long netherGeneration = netherBiomeGeneration;
+        final int netherY = netherBiomeY;
+        inFlight.add(key);
+        if (timing) {
+            noteTimingDispatch(key);
+        }
+        return () -> submitSingle(key, token, generation, netherGeneration, netherY);
+    }
+
+    /** Caller must hold the monitor; every key is still queued in {@code dirty}. */
+    private Runnable admitWave(final List<TileKey> group, final boolean timing) {
+        final int size = group.size();
+        final long generation = reloadGeneration;
+        final long netherGeneration = netherBiomeGeneration;
+        final int netherY = netherBiomeY;
+        final long token = sessionGuard.current().token();
+        final long[] memberTokens = new long[size];
+        final int[] originX = new int[size];
+        final int[] originZ = new int[size];
+        for (int i = 0; i < size; i++) {
+            final TileKey key = group.get(i);
+            memberTokens[i] = dirty.remove(key);
+            originX[i] = key.originBlockX();
+            originZ[i] = key.originBlockZ();
+            inFlight.add(key);
+            if (timing) {
+                noteTimingDispatch(key);
+            }
+        }
+        final TileKey any = group.get(0);
+        final WaveSamplerFactory waveSamplerFactory = waveSamplerFactoryForTest;
+        final BaselineSampler sampler = waveSamplerFactory != null
+            ? waveSamplerFactory.create(
+                state.mcVersion(), state.seed(), PredictionDimensions.nativeDim(any.dimension()),
+                state.cubiomesFlags(any.dimension())
+            )
+            : new NativeBaselineSampler(
+                state.mcVersion(), state.seed(), PredictionDimensions.nativeDim(any.dimension()),
+                state.cubiomesFlags(any.dimension())
+            );
+        final WaveComposer.BatchDispatch batch;
+        if (waveSamplerFactory != null) {
+            batch = sampler instanceof WaveComposer.BatchDispatch dispatch ? dispatch : null;
+        } else {
+            // CPU backend or an unavailable/refusal-latched engine admits a null seam: a live
+            // one would serialize refusal repairs onto the leader thread.
+            batch = GpuBackend.batchDispatchAvailable()
+                ? (WaveComposer.BatchDispatch) sampler
+                : null;
+        }
+        final WaveComposer wave = new WaveComposer(
+            size,
+            () -> !isCompositionCurrent(generation, token),
+            sampler,
+            state.seed(),
+            state.mcVersion(),
+            timing,
+            any.lod(),
+            originX,
+            originZ,
+            batch
+        );
+        final List<TileKey> keys = List.copyOf(group);
+        return () -> submitWave(wave, keys, memberTokens, generation, netherGeneration, netherY);
+    }
+
+    private void submitSingle(
+        final TileKey key, final long token, final long generation, final long netherGeneration, final int netherY
+    ) {
+        try {
+            executors.workers().execute(
+                () -> composeAndFinish(key, token, generation, netherGeneration, netherY)
+            );
+        } catch (final RejectedExecutionException shuttingDown) {
+            synchronized (this) {
+                inFlight.remove(key);
+            }
+        }
+    }
+
+    private void submitWave(
+        final WaveComposer wave,
+        final List<TileKey> keys,
+        final long[] memberTokens,
+        final long generation,
+        final long netherGeneration,
+        final int netherY
+    ) {
+        int submitted = 0;
+        try {
+            for (int i = 0; i < keys.size(); i++) {
+                final int index = i;
+                final TileKey key = keys.get(i);
+                final long token = memberTokens[index];
+                executors.workers().execute(
+                    () -> composeWaveMemberAndFinish(
+                        wave, index, key, token, generation, netherGeneration, netherY
+                    )
+                );
+                submitted++;
+            }
+        } catch (final RejectedExecutionException shuttingDown) {
+            // Free the members already queued on the wave's barriers, then drop the tiles that
+            // never got a worker; submitted members release their own slots on the way out.
+            wave.dissolve();
+            synchronized (this) {
+                for (int i = submitted; i < keys.size(); i++) {
+                    inFlight.remove(keys.get(i));
+                }
+            }
+        }
+    }
+
+    /**
+     * Whether a dirty tile belongs to a staged overworld wave: the six-stage skeleton only
+     * serves seeded, non-superflat Overworld terrain tiles of one layer and LOD. Everything
+     * else (biome view, Nether, End, superflat, unseeded) keeps the legacy single-shot path;
+     * the per-member precheck re-validates all of this at compose time.
+     */
+    private boolean stagedWaveCandidate(final TileKey key) {
+        if (!key.dimension().equals(DimensionId.OVERWORLD) || BiomeTileKeys.isBiome(key)) {
+            return false;
+        }
+        if (isSuperflat(key.dimension()) || !state.predictable(key.dimension())) {
+            return false;
+        }
+        final MapLayer requestedLayer;
+        try {
+            requestedLayer = MapLayer.parse(BiomeTileKeys.baseLayerId(key));
+        } catch (final IllegalArgumentException e) {
+            return false;
+        }
+        return requestedLayer.equals(PredictionDimensions.layer(key.dimension()));
+    }
+
+    /** Whether a composition admitted at {@code generation}/{@code token} may still sample and upload. */
+    private boolean isCompositionCurrent(final long generation, final long token) {
+        synchronized (this) {
+            if (generation != reloadGeneration) {
+                return false;
+            }
+        }
+        return sessionGuard.isCurrent(token);
     }
 
     /**
@@ -1177,6 +1366,11 @@ public final class PredictionTileService {
      * depends on {@code dirty}'s hash iteration order.
      */
     private TileKey nearestDirty() {
+        return nearestDirty(null);
+    }
+
+    /** As {@link #nearestDirty()}, restricted to keys the predicate accepts (null accepts all). */
+    private TileKey nearestDirty(final Predicate<TileKey> eligible) {
         final int vx = viewpointX;
         final int vz = viewpointZ;
         final ViewportRect activeViewport = viewport;
@@ -1184,7 +1378,7 @@ public final class PredictionTileService {
         int bestTier = Integer.MAX_VALUE;
         long bestDist = Long.MAX_VALUE;
         for (final TileKey key : dirty.keySet()) {
-            if (inFlight.contains(key)) {
+            if (inFlight.contains(key) || (eligible != null && !eligible.test(key))) {
                 continue;
             }
             final int tier = dispatchTier(key);
@@ -1235,60 +1429,99 @@ public final class PredictionTileService {
         final long netherGeneration,
         final int netherY
     ) {
-        Composition composition = null;
         // The mode this composition runs under: composeTile reads the same field, so comparing
         // it against the live field inside the monitor is the same staleness check comparing the
         // composition's mode used to be.
         final PredictionViewMode requestedMode = viewMode;
         final boolean timing = debugTimingEnabled();
         final long composeStartNanos = timing ? System.nanoTime() : 0L;
-        long composeNanos = 0L;
-        boolean submittedUpload = false;
-        ViewportLoadTiming.Summary closedViewportLoad = null;
+        Composition composition = null;
         try {
             composition = composeTile(key, token, requestedMode, netherY);
         } finally {
-            if (composeStartNanos != 0L) {
-                composeNanos = System.nanoTime() - composeStartNanos;
-            }
-            synchronized (this) {
-                if (composition != null && generation == reloadGeneration
-                    && (!isCurrentNetherBiomeKey(key)
-                        || netherGeneration == netherBiomeGeneration)
-                    && requestedMode == viewMode) {
-                    requestedTiles.add(key);
-                    metadataTiles.put(metadataKey(key), composition.metadata());
-                    // A null tile means "not planar-cacheable" (see planarTile): it still
-                    // composed and uploads, it just never enters the mip cache. Recording the
-                    // key lets per-frame request dedup skip it without a cache to consult.
-                    if (composition.tile() != null) {
-                        mipCache.put(key, composition.tile());
-                    } else {
-                        nonCacheableTiles.add(key);
-                    }
-                    staleViewModeTiles.remove(key);
-                    staleRealCoverageTiles.remove(key);
-                    invalidateCachedAncestorsAndQueueVisible(key, token);
-                    uploads.submitUpload(composition.update());
-                    submittedUpload = true;
-                }
-                inFlight.remove(key);
-                urgent.remove(key);
-                if (timing) {
-                    // Arguments evaluate before the call: the idle check reads the window the
-                    // finish is about to accumulate into (and possibly close).
-                    closedViewportLoad = viewportTiming.finished(
-                        key, composeNanos,
-                        composition == null ? null : composition.stageNanos(),
-                        composition == null ? 0L : composition.sampledPoints(),
-                        submittedUpload,
-                        viewportTimingIdle(viewportTiming.windowRect()),
-                        System.nanoTime()
-                    );
-                }
-            }
-            pump();
+            finishAndReport(key, composition, token, generation, netherGeneration, requestedMode,
+                composeStartNanos, timing);
         }
+    }
+
+    private void composeWaveMemberAndFinish(
+        final WaveComposer wave,
+        final int index,
+        final TileKey key,
+        final long token,
+        final long generation,
+        final long netherGeneration,
+        final int netherY
+    ) {
+        final PredictionViewMode requestedMode = viewMode;
+        final boolean timing = debugTimingEnabled();
+        final long composeStartNanos = timing ? System.nanoTime() : 0L;
+        Composition composition = null;
+        try {
+            try {
+                composition = composeStagedMember(wave, index, key, token, requestedMode, netherY);
+            } catch (final Throwable fault) {
+                // Anything failing around the member's stages must free its wave-mates.
+                LOGGER.warn("Predicted wave member {} failed around its stages", index, fault);
+                wave.dissolve();
+            }
+        } finally {
+            finishAndReport(key, composition, token, generation, netherGeneration, requestedMode,
+                composeStartNanos, timing);
+        }
+    }
+
+    /** Shared completion path of both admission shapes: commit-or-drop, release the slot, pump, log. */
+    private void finishAndReport(
+        final TileKey key,
+        final Composition composition,
+        final long token,
+        final long generation,
+        final long netherGeneration,
+        final PredictionViewMode requestedMode,
+        final long composeStartNanos,
+        final boolean timing
+    ) {
+        final long composeNanos = composeStartNanos != 0L ? System.nanoTime() - composeStartNanos : 0L;
+        boolean submittedUpload = false;
+        ViewportLoadTiming.Summary closedViewportLoad = null;
+        synchronized (this) {
+            if (composition != null && generation == reloadGeneration
+                && (!isCurrentNetherBiomeKey(key)
+                    || netherGeneration == netherBiomeGeneration)
+                && requestedMode == viewMode) {
+                requestedTiles.add(key);
+                metadataTiles.put(metadataKey(key), composition.metadata());
+                // A null tile means "not planar-cacheable" (see planarTile): it still
+                // composed and uploads, it just never enters the mip cache. Recording the
+                // key lets per-frame request dedup skip it without a cache to consult.
+                if (composition.tile() != null) {
+                    mipCache.put(key, composition.tile());
+                } else {
+                    nonCacheableTiles.add(key);
+                }
+                staleViewModeTiles.remove(key);
+                staleRealCoverageTiles.remove(key);
+                invalidateCachedAncestorsAndQueueVisible(key, token);
+                uploads.submitUpload(composition.update());
+                submittedUpload = true;
+            }
+            inFlight.remove(key);
+            urgent.remove(key);
+            if (timing) {
+                // Arguments evaluate before the call: the idle check reads the window the
+                // finish is about to accumulate into (and possibly close).
+                closedViewportLoad = viewportTiming.finished(
+                    key, composeNanos,
+                    composition == null ? null : composition.stageNanos(),
+                    composition == null ? 0L : composition.sampledPoints(),
+                    submittedUpload,
+                    viewportTimingIdle(viewportTiming.windowRect()),
+                    System.nanoTime()
+                );
+            }
+        }
+        pump();
         if (timing) {
             if (closedViewportLoad != null) {
                 logViewportLoad(closedViewportLoad);
@@ -1525,6 +1758,224 @@ public final class PredictionTileService {
         final PredictionViewMode requestedMode,
         final int currentNetherY
     ) {
+        final CompositionPlan plan = precheckTile(key, token, requestedMode, currentNetherY);
+        if (plan == null) {
+            return null;
+        }
+        if (plan.cached() != null) {
+            return plan.cached();
+        }
+        final BaselineGrid grid;
+        final DerivedGrid derived;
+        final QuadrantLayout quadrants = state.quadrantLayout(key.dimension());
+        final QuadrantLayout.Mask quadrantMask;
+        final boolean timing = debugTimingEnabled();
+        CountingSampler counting = null;
+        long stageGpuDelta = 0L;
+        if (plan.lowerNetherBiome()) {
+            final NativeBaselineSampler nativeSampler = new NativeBaselineSampler(
+                state.mcVersion(), state.seed(), plan.nativeDim(),
+                state.cubiomesFlags(key.dimension())
+            );
+            final BaselineSampler sampler;
+            if (timing) {
+                counting = new CountingSampler(nativeSampler);
+                sampler = counting;
+            } else {
+                sampler = nativeSampler;
+            }
+            final long stagesBefore = timing ? nativeSampler.gpuStageStats() : 0L;
+            grid = LodSampling.sampleNetherBiomesAtY(
+                sampler, plan.lod(), plan.tileOriginX(), plan.tileOriginZ(), plan.netherY()
+            );
+            if (timing) {
+                stageGpuDelta = nativeSampler.gpuStageStats() - stagesBefore;
+            }
+            if (grid == null) {
+                return null;
+            }
+            // Only flat quadrants carry a configured uniform biome; cleared quadrants keep the
+            // real sampled biomes quadra-gen preserved.
+            if (quadrants != null) {
+                quadrants.applyBiomes(grid);
+            }
+            derived = BaselineDeriver.derive(grid);
+            quadrantMask = null;
+        } else {
+            final FlatBaseline flat = state.flatBaseline(key.dimension());
+            if (isSuperflat(key.dimension())) {
+                // Superflat: every column is the same known surface - no seed, no native sampling.
+                grid = flat.toBaselineGrid();
+                derived = flat.toDerivedGrid();
+                quadrantMask = flatQuadrantMask(key.dimension());
+            } else {
+                final NativeBaselineSampler nativeSampler = new NativeBaselineSampler(
+                    state.mcVersion(), plan.seed(), plan.nativeDim(), state.cubiomesFlags(key.dimension())
+                );
+                final BaselineSampler sampler;
+                if (timing) {
+                    counting = new CountingSampler(nativeSampler);
+                    sampler = counting;
+                } else {
+                    sampler = nativeSampler;
+                }
+                final boolean overworldBiomeView = BiomeTileKeys.isBiome(key)
+                    && key.dimension().equals(DimensionId.OVERWORLD);
+                final long stagesBefore = timing ? nativeSampler.gpuStageStats() : 0L;
+                if (overworldBiomeView) {
+                    // The biome-identity view never reads terrain: biomes come from the
+                    // terrain-free sampler path, and the canopy (a terrain-map color pass) is
+                    // dead work for the flat-color composer.
+                    grid = LodSampling.sampleOverworldBiomes(
+                        sampler, plan.lod(), plan.tileOriginX(), plan.tileOriginZ()
+                    );
+                    if (timing) {
+                        stageGpuDelta = nativeSampler.gpuStageStats() - stagesBefore;
+                    }
+                    if (grid == null) {
+                        return null;
+                    }
+                    if (quadrants != null) {
+                        quadrants.applyBiomes(grid);
+                    }
+                    derived = BaselineDeriver.derive(grid);
+                    quadrantMask = null;
+                } else {
+                    grid = key.dimension().equals(DimensionId.NETHER)
+                        ? LodSampling.sampleNetherRoof(sampler, plan.lod(), plan.tileOriginX(), plan.tileOriginZ())
+                        : LodSampling.sample(
+                            sampler, plan.end(), plan.lod(), plan.tileOriginX(), plan.tileOriginZ()
+                        );
+                    if (timing) {
+                        stageGpuDelta = nativeSampler.gpuStageStats() - stagesBefore;
+                    }
+                    if (grid == null) {
+                        return null;
+                    }
+                    final OverworldSampled sampled = finishOverworldSample(plan, grid);
+                    derived = sampled.derived();
+                    quadrantMask = sampled.quadrantMask();
+                }
+            }
+        }
+        return composeSampledTile(
+            plan, grid, derived, quadrantMask,
+            counting == null ? 0L : counting.points(), stageGpuDelta,
+            counting == null ? null : counting.stageNanos()
+        );
+    }
+
+    /**
+     * One wave member's composition: the shared precheck (a cache-served member bypasses the
+     * stages but still attends every barrier), the staged sampling, then the same overworld
+     * post-sampling steps and tail as the single-shot path.
+     */
+    private Composition composeStagedMember(
+        final WaveComposer wave,
+        final int index,
+        final TileKey key,
+        final long token,
+        final PredictionViewMode requestedMode,
+        final int currentNetherY
+    ) {
+        final CompositionPlan plan = precheckTile(key, token, requestedMode, currentNetherY);
+        if (plan == null || plan.cached() != null) {
+            wave.bypassMember(index);
+            wave.runMember(index);
+            return plan == null ? null : plan.cached();
+        }
+        if (!wave.runMember(index)) {
+            return null;
+        }
+        final OverworldSampled sampled = finishOverworldSample(plan, wave.grid(index));
+        // Wave members account per-tile sampling plus their batch shares; stageGpuDelta stays 0 -
+        // the GPU stage counters are per-context and the batch lands on the leader's context.
+        return composeSampledTile(
+            plan, wave.grid(index), sampled.derived(), sampled.quadrantMask(),
+            wave.sampledPoints(index), 0L, wave.stageNanos(index)
+        );
+    }
+
+    /** Post-sampling overworld terrain steps shared by the single-shot path and wave members. */
+    private OverworldSampled finishOverworldSample(final CompositionPlan plan, final BaselineGrid grid) {
+        final DerivedGrid derived = BaselineDeriver.derive(grid);
+        if (!BiomeTileKeys.isBiome(plan.key())) {
+            CanopyStylizer.apply(
+                derived, grid, plan.seed(), plan.lod(), plan.tileOriginX(), plan.tileOriginZ()
+            );
+        }
+        final QuadrantLayout quadrants = state.quadrantLayout(plan.key().dimension());
+        // Quadrant layouts (quadra-gen) overwrite their columns after derivation and canopy, so
+        // synthetic trees cannot survive in a cleared or flat quadrant. The companion's
+        // PatchBuilder masks its residual baseline with the same code.
+        return new OverworldSampled(derived, quadrants == null ? null : quadrants.apply(grid, derived));
+    }
+
+    /** The fresh-sampled tail both composition shapes share: shade, sync planes, masking, upload. */
+    private Composition composeSampledTile(
+        final CompositionPlan plan,
+        final BaselineGrid grid,
+        final DerivedGrid derived,
+        final QuadrantLayout.Mask quadrantMask,
+        final long sampledPoints,
+        final long stageGpuDelta,
+        final long[] stageNanos
+    ) {
+        final TileKey key = plan.key();
+        final CorrectionTile directCorrections = plan.directCorrections();
+        final int[] pixels = shade(
+            key, derived, grid, directCorrections, plan.compositionMode(), quadrantMask
+        );
+        final byte[] syncEvaluated = directCorrections == null
+            ? new byte[PatchCodec.MASK_BYTES] : directCorrections.copyEvaluated();
+        // No server differential means no column can be an evaluated sync pixel, so the
+        // chunk-granular revision plane is left unallocated instead of being filled with
+        // Long.MIN_VALUE.
+        final long[] syncChunkSourceRevisions = directCorrections == null
+            ? null : directCorrections.copyChunkSourceRevisions();
+        final byte[] blockLight = directCorrections == null
+            ? new byte[PatchCodec.PIXELS] : directCorrections.copyBlockLight();
+        uploads.maskPredictedPixels(
+            realKey(key), pixels, syncEvaluated, syncChunkSourceRevisions,
+            directCorrections == null
+                ? CorrectionProfile.LEGACY_V1 : directCorrections.correctionProfile()
+        );
+        final AppliedLighting appliedLighting = applyLayerLighting(
+            key, pixels, blockLight, plan.style()
+        );
+        return new Composition(
+            tileUpdate(
+                key, pixels, blockLight, appliedLighting.daylight(), appliedLighting.gamma(),
+                plan.style()
+            ),
+            new TileMetadata(
+                biomeIds(grid, directCorrections, grid),
+                surfaceYs(derived, directCorrections, derived)
+            ),
+            planarTile(
+                key, grid, derived, blockLight, syncEvaluated, syncChunkSourceRevisions,
+                plan.compositionMode(), plan.directHasServerState(), plan.directValidatedAt(),
+                directCorrections == null
+                    ? CorrectionProfile.LEGACY_V1 : directCorrections.correctionProfile()
+            ),
+            sampledPoints,
+            stageGpuDelta,
+            stageNanos
+        );
+    }
+
+    /**
+     * The pre-sampling section of every composition: session/layer gates plus the two cache
+     * planes. Returns null when the tile must not compose at all, a plan whose {@link
+     * CompositionPlan#cached()} composition is already complete on a cache hit, and otherwise
+     * the plan the sampling branches and the fresh tail consume.
+     */
+    private CompositionPlan precheckTile(
+        final TileKey key,
+        final long token,
+        final PredictionViewMode requestedMode,
+        final int currentNetherY
+    ) {
         final SessionGuard.Session session = sessionGuard.current();
         if (!sessionGuard.isCurrent(token) || !session.active()
             || !key.world().equals(session.world()) || !key.dimension().equals(session.dimension())
@@ -1551,7 +2002,6 @@ public final class PredictionTileService {
             ? requestedLayer.param()
             : currentNetherY;
 
-        final boolean end = PredictionDimensions.isEnd(key.dimension());
         final int lod = key.lod();
         final int tileOriginX = key.originBlockX();
         final int tileOriginZ = key.originBlockZ();
@@ -1615,157 +2065,29 @@ public final class PredictionTileService {
             final AppliedLighting appliedLighting = applyLayerLighting(
                 key, pixels, blockLight, style
             );
-            return new Composition(
-                tileUpdate(
-                    key, pixels, blockLight, appliedLighting.daylight(), appliedLighting.gamma(),
-                    style
-                ),
-                new TileMetadata(
-                    biomeIds(cachedGrid, directCorrections, cachedGrid),
-                    surfaceYs(cachedDerived, directCorrections, cachedDerived)
-                ),
-                reusable,
-                0L,
-                0L,
-                null
+            return new CompositionPlan(
+                key, compositionMode, style, lowerNetherBiome, netherY, lod, tileOriginX,
+                tileOriginZ, state.seed(), nativeDim, directCorrections, directHasServerState,
+                directValidatedAt,
+                new Composition(
+                    tileUpdate(
+                        key, pixels, blockLight, appliedLighting.daylight(), appliedLighting.gamma(),
+                        style
+                    ),
+                    new TileMetadata(
+                        biomeIds(cachedGrid, directCorrections, cachedGrid),
+                        surfaceYs(cachedDerived, directCorrections, cachedDerived)
+                    ),
+                    reusable,
+                    0L,
+                    0L,
+                    null
+                )
             );
         }
-
-        final BaselineGrid grid;
-        final DerivedGrid derived;
-        final QuadrantLayout quadrants = state.quadrantLayout(key.dimension());
-        final QuadrantLayout.Mask quadrantMask;
-        final boolean timing = debugTimingEnabled();
-        CountingSampler counting = null;
-        long stageGpuDelta = 0L;
-        if (lowerNetherBiome) {
-            final NativeBaselineSampler nativeSampler = new NativeBaselineSampler(
-                state.mcVersion(), state.seed(), nativeDim,
-                state.cubiomesFlags(key.dimension())
-            );
-            final BaselineSampler sampler;
-            if (timing) {
-                counting = new CountingSampler(nativeSampler);
-                sampler = counting;
-            } else {
-                sampler = nativeSampler;
-            }
-            final long stagesBefore = timing ? nativeSampler.gpuStageStats() : 0L;
-            grid = LodSampling.sampleNetherBiomesAtY(
-                sampler, lod, tileOriginX, tileOriginZ, netherY
-            );
-            if (timing) {
-                stageGpuDelta = nativeSampler.gpuStageStats() - stagesBefore;
-            }
-            if (grid == null) {
-                return null;
-            }
-            // Only flat quadrants carry a configured uniform biome; cleared quadrants keep the
-            // real sampled biomes quadra-gen preserved.
-            if (quadrants != null) {
-                quadrants.applyBiomes(grid);
-            }
-            derived = BaselineDeriver.derive(grid);
-            quadrantMask = null;
-        } else {
-            final FlatBaseline flat = state.flatBaseline(key.dimension());
-            if (isSuperflat(key.dimension())) {
-                // Superflat: every column is the same known surface - no seed, no native sampling.
-                grid = flat.toBaselineGrid();
-                derived = flat.toDerivedGrid();
-                quadrantMask = flatQuadrantMask(key.dimension());
-            } else {
-                final long seed = state.seed();
-                final NativeBaselineSampler nativeSampler = new NativeBaselineSampler(
-                    state.mcVersion(), seed, nativeDim, state.cubiomesFlags(key.dimension())
-                );
-                final BaselineSampler sampler;
-                if (timing) {
-                    counting = new CountingSampler(nativeSampler);
-                    sampler = counting;
-                } else {
-                    sampler = nativeSampler;
-                }
-                final boolean overworldBiomeView = BiomeTileKeys.isBiome(key)
-                    && key.dimension().equals(DimensionId.OVERWORLD);
-                final long stagesBefore = timing ? nativeSampler.gpuStageStats() : 0L;
-                if (overworldBiomeView) {
-                    // The biome-identity view never reads terrain: biomes come from the
-                    // terrain-free sampler path, and the canopy (a terrain-map color pass) is
-                    // dead work for the flat-color composer.
-                    grid = LodSampling.sampleOverworldBiomes(
-                        sampler, lod, tileOriginX, tileOriginZ
-                    );
-                    if (timing) {
-                        stageGpuDelta = nativeSampler.gpuStageStats() - stagesBefore;
-                    }
-                    if (grid == null) {
-                        return null;
-                    }
-                    if (quadrants != null) {
-                        quadrants.applyBiomes(grid);
-                    }
-                    derived = BaselineDeriver.derive(grid);
-                    quadrantMask = null;
-                } else {
-                    grid = key.dimension().equals(DimensionId.NETHER)
-                        ? LodSampling.sampleNetherRoof(sampler, lod, tileOriginX, tileOriginZ)
-                        : LodSampling.sample(sampler, end, lod, tileOriginX, tileOriginZ);
-                    if (timing) {
-                        stageGpuDelta = nativeSampler.gpuStageStats() - stagesBefore;
-                    }
-                    if (grid == null) {
-                        return null;
-                    }
-                    derived = BaselineDeriver.derive(grid);
-                    if (!BiomeTileKeys.isBiome(key)) {
-                        CanopyStylizer.apply(derived, grid, seed, lod, tileOriginX, tileOriginZ);
-                    }
-                    // Quadrant layouts (quadra-gen) overwrite their columns after derivation and
-                    // canopy, so synthetic trees cannot survive in a cleared or flat quadrant. The
-                    // companion's PatchBuilder masks its residual baseline with the same code.
-                    quadrantMask = quadrants == null ? null : quadrants.apply(grid, derived);
-                }
-            }
-        }
-
-        final int[] pixels = shade(
-            key, derived, grid, directCorrections, compositionMode, quadrantMask
-        );
-        final byte[] syncEvaluated = directCorrections == null
-            ? new byte[PatchCodec.MASK_BYTES] : directCorrections.copyEvaluated();
-        // No server differential means no column can be an evaluated sync pixel, so the
-        // chunk-granular revision plane is left unallocated instead of being filled with
-        // Long.MIN_VALUE.
-        final long[] syncChunkSourceRevisions = directCorrections == null
-            ? null : directCorrections.copyChunkSourceRevisions();
-        final byte[] blockLight = directCorrections == null
-            ? new byte[PatchCodec.PIXELS] : directCorrections.copyBlockLight();
-        uploads.maskPredictedPixels(
-            realKey(key), pixels, syncEvaluated, syncChunkSourceRevisions,
-            directCorrections == null
-                ? CorrectionProfile.LEGACY_V1 : directCorrections.correctionProfile()
-        );
-        final AppliedLighting appliedLighting = applyLayerLighting(
-            key, pixels, blockLight, style
-        );
-        return new Composition(
-            tileUpdate(
-                key, pixels, blockLight, appliedLighting.daylight(), appliedLighting.gamma(), style
-            ),
-            new TileMetadata(
-                biomeIds(grid, directCorrections, grid),
-                surfaceYs(derived, directCorrections, derived)
-            ),
-            planarTile(
-                key, grid, derived, blockLight, syncEvaluated, syncChunkSourceRevisions,
-                compositionMode, directHasServerState, directValidatedAt,
-                directCorrections == null
-                    ? CorrectionProfile.LEGACY_V1 : directCorrections.correctionProfile()
-            ),
-            counting == null ? 0L : counting.points(),
-            stageGpuDelta,
-            counting == null ? null : counting.stageNanos()
+        return new CompositionPlan(
+            key, compositionMode, style, lowerNetherBiome, netherY, lod, tileOriginX, tileOriginZ,
+            state.seed(), nativeDim, directCorrections, directHasServerState, directValidatedAt, null
         );
     }
 
@@ -2483,6 +2805,36 @@ public final class PredictionTileService {
      * non-counting paths). Every correction or styling plane a composition needs is either
      * inside the tile or rebuilt locally by the path that produced it.
      */
+    /**
+     * Everything the sampling branches and the fresh tail need from the pre-sampling section:
+     * identity and styling snapshots, correction references, and - on a cache hit - the already
+     * complete {@link #cached()} composition.
+     */
+    private record CompositionPlan(
+        TileKey key,
+        PredictionViewMode compositionMode,
+        MapColorStyle style,
+        boolean lowerNetherBiome,
+        int netherY,
+        int lod,
+        int tileOriginX,
+        int tileOriginZ,
+        long seed,
+        int nativeDim,
+        CorrectionTile directCorrections,
+        boolean directHasServerState,
+        long directValidatedAt,
+        Composition cached
+    ) {
+        boolean end() {
+            return PredictionDimensions.isEnd(key.dimension());
+        }
+    }
+
+    /** Post-sampling overworld products handed to the fresh composition tail. */
+    private record OverworldSampled(DerivedGrid derived, QuadrantLayout.Mask quadrantMask) {
+    }
+
     private record Composition(
         TileUpdate update,
         TileMetadata metadata,

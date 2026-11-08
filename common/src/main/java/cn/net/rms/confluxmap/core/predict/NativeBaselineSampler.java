@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.nativepredict.CubiomesContext;
 import cn.net.rms.confluxmap.nativepredict.CubiomesContexts;
+import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 
@@ -10,9 +11,12 @@ import cn.net.rms.confluxmap.nativepredict.NativeLib;
  * for one fixed (mcVersion, seed, dim, flags) tuple (see {@link CubiomesContexts} for the per-thread
  * caching/epoch-invalidation contract - this class does no caching of its own, it's cheap
  * enough to construct fresh per tile compose). Never throws on native failure; every method
- * returns false, matching {@link BaselineSampler}'s contract.
+ * returns false, matching {@link BaselineSampler}'s contract. Also the production {@link
+ * WaveComposer.BatchDispatch}: the wave leader resolves its own thread's context here (the
+ * calling thread's cached context <em>is</em> the leader's generator state) and the voronoi sha
+ * the biome batch validates is read from that context, never derived in Java.
  */
-public final class NativeBaselineSampler implements BaselineSampler {
+public final class NativeBaselineSampler implements BaselineSampler, WaveComposer.BatchDispatch {
     private static final int CLIMATE_MODEL_MIN = McVersions.toCubiomes("1.18").orElseThrow();
 
     private final int mcVersion;
@@ -261,8 +265,10 @@ public final class NativeBaselineSampler implements BaselineSampler {
      * the flat-array contract and the per-tile failure bitmap. Returns 0 when the batch was
      * attempted (repair the {@code failMask} set bits through {@link #overviewHeightsCoarse});
      * nonzero when the caller must dispatch its tiles individually, which is also what an
-     * unavailable context or a latched fault returns.
+     * unavailable context or a latched fault returns. A refusal latches wave batching off for
+     * the rest of the process via {@link GpuBackend#noteBatchRefused}.
      */
+    @Override
     public int overviewHeightsCoarseBatch(
         final int[] blockX,
         final int[] blockZ,
@@ -275,11 +281,16 @@ public final class NativeBaselineSampler implements BaselineSampler {
     ) {
         try {
             final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);
-            return ctx == null
-                ? 1
-                : ctx.overviewHeightsCoarseBatch(
-                    blockX, blockZ, w, h, stride, n, outTerrainY, failMask
-                );
+            if (ctx == null) {
+                return 1;
+            }
+            final int status = ctx.overviewHeightsCoarseBatch(
+                blockX, blockZ, w, h, stride, n, outTerrainY, failMask
+            );
+            if (status != 0) {
+                GpuBackend.noteBatchRefused();
+            }
+            return status;
         } catch (final Throwable fault) {
             NativeLib.disableForSession(fault);
             return 1;
@@ -317,6 +328,61 @@ public final class NativeBaselineSampler implements BaselineSampler {
             NativeLib.disableForSession(fault);
             return 1;
         }
+    }
+
+    /**
+     * Wave-seam dispatch: same batch as {@link #surfaceBiomesBatch(long, int[], int[], int[],
+     * int[], int[], int[], int, int[], int[])}, but the voronoi sha comes from the resolved
+     * context instead of the caller - the wave leader owns the generator, so the probe cannot
+     * disagree with it. A library predating the sha accessor refuses the batch (per-tile
+     * fallback) without latching the native library dead. A refusal latches wave batching off
+     * for the rest of the process via {@link GpuBackend#noteBatchRefused}.
+     */
+    @Override
+    public int surfaceBiomesBatch(
+        final int[] blockX,
+        final int[] blockZ,
+        final int[] w,
+        final int[] h,
+        final int[] stride,
+        final int[] terrainY,
+        final int n,
+        final int[] outBiomeIds,
+        final int[] failMask
+    ) {
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);
+            if (ctx == null) {
+                return 1;
+            }
+            final long sha;
+            try {
+                sha = ctx.voronoiSha();
+            } catch (final UnsatisfiedLinkError staleLibrary) {
+                return 1;
+            }
+            final int status = ctx.surfaceBiomesBatch(
+                sha, blockX, blockZ, w, h, stride, terrainY, n, outBiomeIds, failMask
+            );
+            if (status != 0) {
+                GpuBackend.noteBatchRefused();
+            }
+            return status;
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return 1;
+        }
+    }
+
+    /**
+     * The calling thread's context serves exactly this sampler's fixed identity whenever it
+     * resolves at all ({@link CubiomesContexts} is a keyed lookup), so the real check happens
+     * through the resolution inside the batch entries; this comparison pins the wave
+     * coordinator's pre-dispatch re-validation contract at the seam.
+     */
+    @Override
+    public boolean batchContextMatches(final long waveSeed, final int waveMcVersion) {
+        return waveSeed == seed && waveMcVersion == mcVersion;
     }
 
     @Override
