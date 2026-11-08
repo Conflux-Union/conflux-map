@@ -1,10 +1,10 @@
-# PR154 预测地图耗时、审查与优化报告
+# PR154 Prediction Performance Review and Optimization Report
 
-本次基于最新 PR 提交 `c9ecc9c9` 完成审查，优化分支为 `codex/predict-pipeline-performance`。结果：首次探索新区域的冷加载基本持平，未达到整体 4 倍；服务器修正/验证刷新从约 1.2–1.8 秒降至约 46 毫秒，提升约 26–39 倍。下面的阶段表包含各模块耗时与占比，视口表包含端到端 CPU 就绪时间。测试没有覆盖 GPU 绘制、网络或完整实机帧延迟，因此不能将其中某个倍数直接称为整体玩家体感提升。
+This review covers PR commit `c9ecc9c9`; the optimization branch is `codex/predict-pipeline-performance`. Cold exploration remains effectively unchanged and does not meet the overall 4x target. Correction/validation refreshes fall from approximately 1.2–1.8 seconds to 46 milliseconds, a 26–39x improvement. The tables below report stage costs and CPU-side viewport readiness. GPU drawing, network latency and complete live-client frame latency were not measured, so these results do not establish an overall player-perceived speedup.
 
-发现并修复两项 P2：原生质量审计的群系采样坐标错误，以及增量构建遗漏算法头文件输入。最终 138 项相关测试全部通过；18 张瓦片的高度、群系、流体和最终像素逐值一致，36/36 组视口哈希也一致。全量测试唯一失败项为 Windows 无法创建符号链接的环境问题。
+Two P2 findings were fixed: incorrect biome coordinates in the native quality audit and an omitted algorithm header in native incremental-build inputs. All 138 targeted tests passed. Eighteen visual snapshots matched exactly in heights, biomes, fluid flags and final pixels; all 36 viewport hashes also matched. The full suite's only failure was a Windows environment restriction on creating a symbolic link.
 
-没有提交降低采样密度的方案：实验出现大范围海陆错误，已否决。后续应优先测量真实客户端的上传与首帧，优化精确地表柱和群系采样复用，并减少剩余单点 JNI 查询；当前证据不支持承诺首次探索达到 4 倍。
+Reduced sampling density was rejected because experiments produced widespread land/water errors. Follow-up work should measure actual client uploads and first drawing, reuse exact columns and biome samples, and reduce remaining point JNI queries. Current evidence does not support promising 4x faster first-time exploration.
 
 Reviewed PR: https://github.com/Conflux-Union/conflux-map/pull/154, head `c9ecc9c95d61df5c752714a42d22cc1ca6891c34` (2026-11-08). The PR's native overview solver improves its measured isolated CPU workload, but that number is not the same as the time a player waits for a viewport: exact columns, biome sampling, Java scheduling, and render-frame upload limits remain in that path.
 
@@ -59,10 +59,10 @@ Current CI quality floors include mean height MAE ≤2.30, within-two accuracy �
 ## Verification and Reproduction
 
 - Before rebasing to the final PR commit, `:common:check` ran 1,596 tests; 1,595 passed and the existing Windows symlink-permission case `WebMapBrandingTest.rejectsSymlinksOutsideTheConfigurationDirectory` failed because this host cannot create the required link. This is not an all-green suite. After rebasing, all 138 targeted tests passed with no skips, including service, sampling, cache, native integration, JNI/WASM parity, masking and upload/merge tests.
-- Opt-in `:common:benchmark --tests '*PredictionPipelineBenchmarkTest'` and `--tests '*PredictionViewportBenchmarkTest'` produce the JSON measurements beside this report. Override `PREDICTION_PIPELINE_OUTPUT`, `PREDICTION_PIPELINE_LABEL`, and `CONFLUX_VIEWPORT_BENCHMARK_OUTPUT` to retain reports.
+- Opt-in benchmark tests generate raw JSON in ignored build directories by default. Keep generated measurements out of the source tree; retain the summarized results in this report. Commands and output locations are listed below.
 - `native/test_full_matrix.exe --sampling-only` passed the 20-position production biome parity audit using Zig 0.13.0.
-- Output parity: 36/36 viewport hashes match. The latest unmodified PR classes generated 18 visual baselines, then the optimized classes compared equal in terrain heights, biome IDs, fluid flags and every rendered pixel (`pr154-optimized-visual-parity.json`). Sampling density was not reduced. No published native or WASM binary was changed by this work.
-- Full native 300-case exhaustive quality and complete Minecraft client/server GameTest matrices were not rerun. GitHub queries and fetches used process-local direct access; persistent proxy settings were unchanged. No branch was pushed and no GitHub review was posted.
+- Output parity: 36/36 viewport hashes match. The unmodified PR classes generated 18 visual baselines, then the optimized classes compared equal in terrain heights, biome IDs, fluid flags and every rendered pixel. Sampling density was not reduced. The five-platform binaries, WASM build and `verifyMasterBaseline` task are inherited from PR154; they are not new work by this branch. No published native or WASM binary was changed by these optimizations.
+- Full native 300-case exhaustive quality and complete Minecraft client/server GameTest matrices were not rerun. GitHub access used process-local direct connections; persistent proxy settings were unchanged. The branch was subsequently published to the author's fork; no GitHub review was posted.
 
 ## Next Optimization Plan
 
@@ -78,6 +78,22 @@ Broader uniform downsampling is rejected. Any future approximation should be lim
 
 ## Data Provenance and Baseline Reproduction
 
-The final tables use `pr154-current-head-baseline-stages.json`, `pr154-current-head-baseline-viewport.json`, and `pr154-optimized-viewport-current.json`. The first two use original PR production bytecode, including `LodSampling` recompiled from `c9ecc9c9`; the same committed Windows DLL is fixed for both sides. Baseline main/API class directories precede optimized classes on the benchmark classpath. To reproduce independently, compile original production classes in a temporary clean PR checkout and run the identical new benchmark test sources against those classes; never use optimized production classes as the baseline. Run CPU-heavy tests sequentially. Use the original PR to generate visual baselines before the optimized comparison, rather than deleting the baseline and treating a self-comparison as validation.
+The final tables were calculated from the final PR baseline stage/viewport measurements and the optimized viewport measurements. Baseline production bytecode includes `LodSampling` recompiled from `c9ecc9c9`; the same committed Windows DLL is fixed for both sides. Baseline main/API class directories precede optimized classes on the benchmark classpath. To reproduce independently, compile original production classes in a temporary clean PR checkout and run the identical new benchmark test sources against those classes; never use optimized production classes as the baseline. Run CPU-heavy tests sequentially. Use the original PR to generate visual baselines before the optimized comparison, rather than deleting the baseline and treating a self-comparison as validation.
 
-`pipeline-optimized-stages.json` is a separate stage run and should not alone establish a speedup across changing CPU frequency. `pr154-baseline-stages.json`, `pr154-baseline-viewport.json`, and `pipeline-optimized-viewport.json` are historical measurements from the earlier `fe789d33` round, retained for traceability rather than used in the final tables. `pr154-batching-parity.json` records 16 before/after SHA comparisons; `pr154-residual-sampling-quality.json` contains all 96 approximation experiment rows. The opt-in tests also support stage version/LOD/origin filters through `PREDICTION_PIPELINE_VERSIONS`, `PREDICTION_PIPELINE_LODS`, and `PREDICTION_PIPELINE_ORIGINS`.
+The 10 original JSON files, including earlier `fe789d33` measurements, 16 SHA-256 comparisons and 96 approximation experiment rows, were verified and archived locally under ignored `build/reports/prediction-pipeline/archive/pr154-20261108/`. Its local `manifest.json` records file sizes and SHA-256 hashes. This archive is not part of the checkout or a prerequisite for running tests. The compact tables and conclusions above remain versioned; raw traces can be regenerated or supplied separately as review artifacts.
+
+Run each command separately from the repository root with JDK 21 or newer:
+
+```sh
+./gradlew :common:benchmark --tests '*PredictionPipelineBenchmarkTest' --configure-on-demand --console=plain
+./gradlew :common:benchmark --tests '*PredictionViewportBenchmarkTest' --configure-on-demand --console=plain
+./gradlew :common:benchmark --tests '*PredictionSamplingQualityBenchmarkTest' --configure-on-demand --console=plain
+```
+
+| Harness | Default output | Optional override |
+|---|---|---|
+| Pipeline stages | `common/build/reports/prediction-pipeline/stages.json` | `PREDICTION_PIPELINE_OUTPUT`; label with `PREDICTION_PIPELINE_LABEL` |
+| Viewport readiness | `common/build/tile-cost/viewport-results.json` | `CONFLUX_VIEWPORT_BENCHMARK_OUTPUT` |
+| Sampling quality experiment | `common/build/reports/prediction-pipeline/sampling-quality.json` | No output override |
+
+The stage harness also supports version/LOD/origin filters through `PREDICTION_PIPELINE_VERSIONS`, `PREDICTION_PIPELINE_LODS`, and `PREDICTION_PIPELINE_ORIGINS`. Keep separate baseline and optimized outputs. Timing a separate stage run across changing CPU frequency is insufficient by itself to establish a speedup.
