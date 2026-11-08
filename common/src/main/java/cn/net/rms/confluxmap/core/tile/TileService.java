@@ -420,38 +420,51 @@ public final class TileService {
         final int pixelsPerChunk = 16 >> realKey.lod();
         final int baseChunkX = realKey.tileX() * chunksPerTile;
         final int baseChunkZ = realKey.tileZ() * chunksPerTile;
-        for (int chunkDz = 0; chunkDz < chunksPerTile; chunkDz++) {
-            for (int chunkDx = 0; chunkDx < chunksPerTile; chunkDx++) {
-                final int chunkX = baseChunkX + chunkDx;
-                final int chunkZ = baseChunkZ + chunkDz;
-                final ChunkViewport localViewport = localAuthorityViewport;
-                final boolean locallyAuthoritative = localViewport != null
-                    && localViewport.contains(chunkX, chunkZ);
-                final boolean localPresent = store.hasRealChunk(chunkX, chunkZ);
-                if (!localPresent) {
+        // Tile boundaries also align to the store's 16x16-chunk regions. A missing region has
+        // no local pixels to mask, so high LODs need one map lookup per region rather than one
+        // per world chunk (256 rather than 65,536 for an uncaptured LOD4 tile).
+        for (int regionDz = 0; regionDz < chunksPerTile; regionDz += RegionColumns.CHUNKS) {
+            for (int regionDx = 0; regionDx < chunksPerTile; regionDx += RegionColumns.CHUNKS) {
+                final RegionColumns region = store.region(
+                    (baseChunkX + regionDx) >> 4, (baseChunkZ + regionDz) >> 4
+                );
+                if (region == null) {
                     continue;
                 }
-                final long localRevision = localPresent
-                    ? store.realChunkSourceRevision(chunkX, chunkZ)
-                    : MapSourceSelector.UNKNOWN_REVISION;
-                final long syncChunkRevision = syncChunkSourceRevisions == null
-                    ? MapSourceSelector.UNKNOWN_REVISION
-                    : syncChunkSourceRevisions[chunkDz * chunksPerTile + chunkDx];
-                final int pixelX = chunkDx * pixelsPerChunk;
-                final int pixelZ = chunkDz * pixelsPerChunk;
-                for (int dz = 0; dz < pixelsPerChunk; dz++) {
-                    final int row = (pixelZ + dz) * RegionColumns.SIZE;
-                    for (int dx = 0; dx < pixelsPerChunk; dx++) {
-                        final int pixel = row + pixelX + dx;
-                        final boolean syncPresent = syncEvaluated != null
-                            && (syncEvaluated[pixel >>> 3] & (1 << (pixel & 7))) != 0;
-                        final long syncRevision = syncPresent
-                            ? syncChunkRevision
-                            : MapSourceSelector.UNKNOWN_REVISION;
-                        if (locallyAuthoritative || !MapSourceSelector.syncWins(
-                            localPresent, localRevision, syncPresent, syncRevision, profile
-                        )) {
-                            predictedPixels[pixel] = Argb.TRANSPARENT;
+                for (int localZ = 0; localZ < RegionColumns.CHUNKS; localZ++) {
+                    final int chunkDz = regionDz + localZ;
+                    for (int localX = 0; localX < RegionColumns.CHUNKS; localX++) {
+                        final boolean localPresent = region.chunkSource(localX, localZ).isExplored();
+                        if (!localPresent) {
+                            continue;
+                        }
+                        final int chunkDx = regionDx + localX;
+                        final int chunkX = baseChunkX + chunkDx;
+                        final int chunkZ = baseChunkZ + chunkDz;
+                        final ChunkViewport localViewport = localAuthorityViewport;
+                        final boolean locallyAuthoritative = localViewport != null
+                            && localViewport.contains(chunkX, chunkZ);
+                        final long localRevision = region.chunkSourceRevision(localX, localZ);
+                        final long syncChunkRevision = syncChunkSourceRevisions == null
+                            ? MapSourceSelector.UNKNOWN_REVISION
+                            : syncChunkSourceRevisions[chunkDz * chunksPerTile + chunkDx];
+                        final int pixelX = chunkDx * pixelsPerChunk;
+                        final int pixelZ = chunkDz * pixelsPerChunk;
+                        for (int dz = 0; dz < pixelsPerChunk; dz++) {
+                            final int row = (pixelZ + dz) * RegionColumns.SIZE;
+                            for (int dx = 0; dx < pixelsPerChunk; dx++) {
+                                final int pixel = row + pixelX + dx;
+                                final boolean syncPresent = syncEvaluated != null
+                                    && (syncEvaluated[pixel >>> 3] & (1 << (pixel & 7))) != 0;
+                                final long syncRevision = syncPresent
+                                    ? syncChunkRevision
+                                    : MapSourceSelector.UNKNOWN_REVISION;
+                                if (locallyAuthoritative || !MapSourceSelector.syncWins(
+                                    localPresent, localRevision, syncPresent, syncRevision, profile
+                                )) {
+                                    predictedPixels[pixel] = Argb.TRANSPARENT;
+                                }
+                            }
                         }
                     }
                 }

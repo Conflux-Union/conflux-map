@@ -112,6 +112,7 @@ public final class PredictionTileService {
     private final Map<TileKey, TileMetadata> metadataTiles = new HashMap<>();
     /** Recent CPU results used to build a coarser tile without resampling. */
     private final PredictionMipCache mipCache = new PredictionMipCache(REUSABLE_TILE_LIMIT);
+    private final PredictionBaselineCache baselineCache = new PredictionBaselineCache(REUSABLE_TILE_LIMIT);
     private final SyncedMaterialPalette syncedMaterials = new SyncedMaterialPalette();
     /** Parent tiles waiting for one bounded disk-backed lower-LOD reduction. */
     private final LinkedHashMap<TileKey, Long> lowerCoverageQueue = new LinkedHashMap<>();
@@ -267,6 +268,7 @@ public final class PredictionTileService {
 
     public void setCacheLimit(final int limit) {
         mipCache.setLimit(limit);
+        baselineCache.setLimit(limit);
     }
 
     int cacheLimitForTest() {
@@ -693,6 +695,7 @@ public final class PredictionTileService {
             staleRealCoverageTiles.clear();
             metadataTiles.clear();
             mipCache.clear();
+            baselineCache.clear();
             lowerCoverageQueue.clear();
             missingLowerCoverage.clear();
         }
@@ -716,6 +719,7 @@ public final class PredictionTileService {
             staleRealCoverageTiles.clear();
             metadataTiles.clear();
             mipCache.clear();
+            baselineCache.clear();
             lowerCoverageQueue.clear();
             missingLowerCoverage.clear();
             if (session.active()) {
@@ -1340,7 +1344,16 @@ public final class PredictionTileService {
         final DerivedGrid derived;
         final QuadrantLayout quadrants = state.quadrantLayout(key.dimension());
         final QuadrantLayout.Mask quadrantMask;
-        if (lowerNetherBiome) {
+        final PredictionBaselineCache.Key baselineKey = baselineCacheKey(key, token, netherY);
+        // Flat grids carry their own fixed texture origin and do not need expensive sampling.
+        final boolean cacheBaseline = !isSuperflat(key.dimension());
+        final PredictionBaselineCache.Planes baseline = cacheBaseline ? baselineCache.get(baselineKey) : null;
+        if (baseline != null) {
+            grid = new BaselineGrid(lod, tileOriginX, tileOriginZ);
+            derived = new DerivedGrid();
+            reconstructGrids(baseline.surfaceKind(), baseline.fluidDepth(), baseline.biomes(), grid, derived);
+            quadrantMask = reapplyCachedLayering(key, grid, derived);
+        } else if (lowerNetherBiome) {
             final BaselineSampler sampler = new NativeBaselineSampler(
                 state.mcVersion(), state.seed(), nativeDim,
                 state.cubiomesFlags(key.dimension())
@@ -1426,6 +1439,21 @@ public final class PredictionTileService {
         final AppliedLighting appliedLighting = applyLayerLighting(
             key, pixels, blockLight, style
         );
+        final PredictionMipCache.Tile planar = planarTile(
+            key, grid, derived, blockLight, syncEvaluated, syncChunkSourceRevisions,
+            compositionMode, directHasServerState, directValidatedAt,
+            directCorrections == null
+                ? CorrectionProfile.LEGACY_V1 : directCorrections.correctionProfile()
+        );
+        // A late composition cannot repopulate a reloaded session's baseline cache. Keep only
+        // directly sampled, non-supersampled planes: packing sub-samples would lose information.
+        if (cacheBaseline && baseline == null && !grid.supersampled()) {
+            synchronized (this) {
+                if (baselineKey.equals(baselineCacheKey(key, token, netherY))) {
+                    baselineCache.put(baselineKey, planar);
+                }
+            }
+        }
         return new Composition(
             tileUpdate(
                 key, pixels, blockLight, appliedLighting.daylight(), appliedLighting.gamma(), style
@@ -1434,12 +1462,17 @@ public final class PredictionTileService {
                 biomeIds(grid, directCorrections, grid),
                 surfaceYs(derived, directCorrections, derived)
             ),
-            planarTile(
-                key, grid, derived, blockLight, syncEvaluated, syncChunkSourceRevisions,
-                compositionMode, directHasServerState, directValidatedAt,
-                directCorrections == null
-                    ? CorrectionProfile.LEGACY_V1 : directCorrections.correctionProfile()
-            )
+            planar
+        );
+    }
+
+    private synchronized PredictionBaselineCache.Key baselineCacheKey(
+        final TileKey key, final long token, final int netherY
+    ) {
+        return new PredictionBaselineCache.Key(
+            key, token, reloadGeneration, state.seed(), state.mcVersion(),
+            state.preset(key.dimension()), state.flatBaseline(key.dimension()),
+            state.quadrantLayout(key.dimension()), netherY
         );
     }
 
@@ -1578,12 +1611,17 @@ public final class PredictionTileService {
         final BaselineGrid grid,
         final DerivedGrid derived
     ) {
-        PackedSurfacePlane.unpackPlane(tile.packedSurfaceKind(), derived.surfaceY, derived.kind);
-        final byte[] fluidDepth = tile.fluidDepth();
+        reconstructGrids(tile.packedSurfaceKind(), tile.fluidDepth(), tile.biomes(), grid, derived);
+    }
+
+    private static void reconstructGrids(
+        final short[] surfaceKind, final byte[] fluidDepth, final byte[] biomes,
+        final BaselineGrid grid, final DerivedGrid derived
+    ) {
+        PackedSurfacePlane.unpackPlane(surfaceKind, derived.surfaceY, derived.kind);
         for (int i = 0; i < PackedSurfacePlane.CELLS; i++) {
             derived.fluidDepth[i] = fluidDepth[i] & 0xFF;
         }
-        final byte[] biomes = tile.biomes();
         for (int z = 0; z < BaselineGrid.PIXELS; z++) {
             for (int x = 0; x < BaselineGrid.PIXELS; x++) {
                 grid.biomeId[BaselineGrid.index(x, z)] = biomes[z * BaselineGrid.PIXELS + x] & 0xFF;

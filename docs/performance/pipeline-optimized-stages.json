@@ -1,0 +1,3853 @@
+{
+  "label": "pr154-c9ecc9c9-plus-local",
+  "seed": 146008555,
+  "warmupsPerCase": 2,
+  "measuredRunsPerCase": 3,
+  "threadCpuTimeAvailable": true,
+  "predictorVersion": "cb:07f828299518|shim:16|base:23",
+  "javaVersion": "21.0.12.1",
+  "os": "Windows 11 amd64",
+  "timingNote": "plainMedianMs measures unwrapped production calls; attributedMedianMs uses a dynamic proxy and nanoTime per sampler invocation and is for attribution only. Native timings include Java adapter/JNI costs. Stage medians need not sum to the total median.",
+  "cases": [
+    {
+      "version": "1.17.1",
+      "lod": 0,
+      "blockX": 0,
+      "blockZ": 0,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 515.625,
+        "sampleMs": 513.5003,
+        "deriveMs": 0.5573,
+        "canopyMs": 0.4322,
+        "composeMs": 2.598,
+        "totalMs": 517.2186
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 500.0,
+        "sampleMs": 505.5217,
+        "deriveMs": 0.6195,
+        "canopyMs": 0.5649,
+        "composeMs": 2.6585,
+        "totalMs": 510.1027,
+        "overviewHeightsMs": 53.5443,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 450.0237,
+        "surfaceBiomesMs": 0.4276,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0,
+        "samplingOutsideSamplerMs": 1.5390999999999622
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 578.125,
+          "sampleMs": 577.1691,
+          "deriveMs": 0.5573,
+          "canopyMs": 0.4322,
+          "composeMs": 2.6885,
+          "totalMs": 580.8471
+        },
+        {
+          "totalThreadCpuMs": 500.0,
+          "sampleMs": 494.3348,
+          "deriveMs": 0.5413,
+          "canopyMs": 0.4145,
+          "composeMs": 2.598,
+          "totalMs": 497.8886
+        },
+        {
+          "totalThreadCpuMs": 515.625,
+          "sampleMs": 513.5003,
+          "deriveMs": 0.6228,
+          "canopyMs": 0.498,
+          "composeMs": 2.5975,
+          "totalMs": 517.2186
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 515.625,
+          "sampleMs": 534.0491,
+          "deriveMs": 0.5502,
+          "canopyMs": 0.5649,
+          "composeMs": 2.6585,
+          "totalMs": 537.8227,
+          "overviewHeightsMs": 53.4482,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 478.6179,
+          "surfaceBiomesMs": 0.3606,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.6223999999999705
+        },
+        {
+          "totalThreadCpuMs": 500.0,
+          "sampleMs": 505.5217,
+          "deriveMs": 0.7518,
+          "canopyMs": 0.6315,
+          "composeMs": 3.1977,
+          "totalMs": 510.1027,
+          "overviewHeightsMs": 53.5443,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 450.0237,
+          "surfaceBiomesMs": 0.4276,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.5260999999999854
+        },
+        {
+          "totalThreadCpuMs": 453.125,
+          "sampleMs": 491.7562,
+          "deriveMs": 0.6195,
+          "canopyMs": 0.4025,
+          "composeMs": 2.5061,
+          "totalMs": 495.2843,
+          "overviewHeightsMs": 63.5565,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 426.1519,
+          "surfaceBiomesMs": 0.5087,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.5390999999999622
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        }
+      ]
+    },
+    {
+      "version": "1.17.1",
+      "lod": 0,
+      "blockX": 4096,
+      "blockZ": -8192,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 531.25,
+        "sampleMs": 534.843,
+        "deriveMs": 0.7921,
+        "canopyMs": 0.1566,
+        "composeMs": 4.3232,
+        "totalMs": 539.7996
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 515.625,
+        "sampleMs": 516.2093,
+        "deriveMs": 0.685,
+        "canopyMs": 0.2631,
+        "composeMs": 4.4861,
+        "totalMs": 522.2623,
+        "overviewHeightsMs": 54.0992,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 458.9686,
+        "surfaceBiomesMs": 0.6073,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0,
+        "samplingOutsideSamplerMs": 2.105099999999993
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 546.875,
+          "sampleMs": 545.8151,
+          "deriveMs": 1.2135,
+          "canopyMs": 0.3028,
+          "composeMs": 6.4999,
+          "totalMs": 553.8313
+        },
+        {
+          "totalThreadCpuMs": 531.25,
+          "sampleMs": 526.8721,
+          "deriveMs": 0.7921,
+          "canopyMs": 0.1566,
+          "composeMs": 4.3232,
+          "totalMs": 532.144
+        },
+        {
+          "totalThreadCpuMs": 531.25,
+          "sampleMs": 534.843,
+          "deriveMs": 0.4951,
+          "canopyMs": 0.1407,
+          "composeMs": 4.3208,
+          "totalMs": 539.7996
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 515.625,
+          "sampleMs": 516.8353,
+          "deriveMs": 0.685,
+          "canopyMs": 0.4166,
+          "composeMs": 4.3254,
+          "totalMs": 522.2623,
+          "overviewHeightsMs": 53.7768,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 461.0152,
+          "surfaceBiomesMs": 0.3512,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.6920999999999822
+        },
+        {
+          "totalThreadCpuMs": 515.625,
+          "sampleMs": 508.5079,
+          "deriveMs": 0.5509,
+          "canopyMs": 0.1359,
+          "composeMs": 4.4861,
+          "totalMs": 513.6808,
+          "overviewHeightsMs": 54.0992,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 451.4374,
+          "surfaceBiomesMs": 0.7006,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 2.2707000000000335
+        },
+        {
+          "totalThreadCpuMs": 531.25,
+          "sampleMs": 516.2093,
+          "deriveMs": 1.2118,
+          "canopyMs": 0.2631,
+          "composeMs": 4.9843,
+          "totalMs": 522.6685,
+          "overviewHeightsMs": 54.5283,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 458.9686,
+          "surfaceBiomesMs": 0.6073,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 2.105099999999993
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        }
+      ]
+    },
+    {
+      "version": "1.17.1",
+      "lod": 0,
+      "blockX": -5632,
+      "blockZ": -4864,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 609.375,
+        "sampleMs": 599.464,
+        "deriveMs": 0.7067,
+        "canopyMs": 1.7895,
+        "composeMs": 3.6679,
+        "totalMs": 605.9446
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 609.375,
+        "sampleMs": 605.32,
+        "deriveMs": 0.6799,
+        "canopyMs": 1.8429,
+        "composeMs": 3.8521,
+        "totalMs": 611.5575,
+        "overviewHeightsMs": 53.9893,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 549.6526,
+        "surfaceBiomesMs": 0.3989,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0,
+        "samplingOutsideSamplerMs": 1.667100000000005
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 593.75,
+          "sampleMs": 589.9895,
+          "deriveMs": 0.7067,
+          "canopyMs": 1.759,
+          "composeMs": 3.6363,
+          "totalMs": 596.0915
+        },
+        {
+          "totalThreadCpuMs": 609.375,
+          "sampleMs": 599.464,
+          "deriveMs": 0.777,
+          "canopyMs": 2.0357,
+          "composeMs": 3.6679,
+          "totalMs": 605.9446
+        },
+        {
+          "totalThreadCpuMs": 734.375,
+          "sampleMs": 731.4701,
+          "deriveMs": 0.689,
+          "canopyMs": 1.7895,
+          "composeMs": 3.8026,
+          "totalMs": 737.7512
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 609.375,
+          "sampleMs": 605.32,
+          "deriveMs": 0.6799,
+          "canopyMs": 1.7805,
+          "composeMs": 3.7771,
+          "totalMs": 611.5575,
+          "overviewHeightsMs": 52.1582,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 549.6526,
+          "surfaceBiomesMs": 1.021,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 2.488200000000006
+        },
+        {
+          "totalThreadCpuMs": 671.875,
+          "sampleMs": 662.4519,
+          "deriveMs": 0.6568,
+          "canopyMs": 1.8429,
+          "composeMs": 3.8521,
+          "totalMs": 668.8037,
+          "overviewHeightsMs": 85.7927,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 574.6653,
+          "surfaceBiomesMs": 0.3989,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.5950000000000273
+        },
+        {
+          "totalThreadCpuMs": 593.75,
+          "sampleMs": 584.1119,
+          "deriveMs": 0.8347,
+          "canopyMs": 2.3757,
+          "composeMs": 4.3687,
+          "totalMs": 591.691,
+          "overviewHeightsMs": 53.9893,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 528.0603,
+          "surfaceBiomesMs": 0.3952,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.667100000000005
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        }
+      ]
+    },
+    {
+      "version": "1.17.1",
+      "lod": 1,
+      "blockX": 0,
+      "blockZ": 0,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 296.875,
+        "sampleMs": 293.1523,
+        "deriveMs": 0.5797,
+        "canopyMs": 0.8615,
+        "composeMs": 3.9978,
+        "totalMs": 298.5711
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 265.625,
+        "sampleMs": 261.4849,
+        "deriveMs": 0.5562,
+        "canopyMs": 0.6671,
+        "composeMs": 3.6016,
+        "totalMs": 268.0933,
+        "overviewHeightsMs": 66.8654,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 190.4198,
+        "surfaceBiomesMs": 1.0881,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0,
+        "samplingOutsideSamplerMs": 1.5516999999999825
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 296.875,
+          "sampleMs": 298.7553,
+          "deriveMs": 0.6161,
+          "canopyMs": 1.2023,
+          "composeMs": 4.2439,
+          "totalMs": 304.8176
+        },
+        {
+          "totalThreadCpuMs": 296.875,
+          "sampleMs": 293.1523,
+          "deriveMs": 0.5595,
+          "canopyMs": 0.8615,
+          "composeMs": 3.9978,
+          "totalMs": 298.5711
+        },
+        {
+          "totalThreadCpuMs": 234.375,
+          "sampleMs": 234.7545,
+          "deriveMs": 0.5797,
+          "canopyMs": 0.6649,
+          "composeMs": 3.5482,
+          "totalMs": 239.5473
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 265.625,
+          "sampleMs": 263.4298,
+          "deriveMs": 0.6212,
+          "canopyMs": 0.6369,
+          "composeMs": 3.4054,
+          "totalMs": 268.0933,
+          "overviewHeightsMs": 66.8654,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 193.5309,
+          "surfaceBiomesMs": 1.1254,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.9080999999999904
+        },
+        {
+          "totalThreadCpuMs": 187.5,
+          "sampleMs": 187.3294,
+          "deriveMs": 0.5525,
+          "canopyMs": 0.6708,
+          "composeMs": 3.6016,
+          "totalMs": 192.1543,
+          "overviewHeightsMs": 58.0048,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 126.6982,
+          "surfaceBiomesMs": 1.0747,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.5516999999999825
+        },
+        {
+          "totalThreadCpuMs": 281.25,
+          "sampleMs": 261.4849,
+          "deriveMs": 0.5562,
+          "canopyMs": 0.6671,
+          "composeMs": 5.4365,
+          "totalMs": 268.1447,
+          "overviewHeightsMs": 68.4286,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 190.4198,
+          "surfaceBiomesMs": 1.0881,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.5483999999999583
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        }
+      ]
+    },
+    {
+      "version": "1.17.1",
+      "lod": 1,
+      "blockX": 4096,
+      "blockZ": -8192,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 265.625,
+        "sampleMs": 271.7492,
+        "deriveMs": 0.9902,
+        "canopyMs": 0.6859,
+        "composeMs": 7.434,
+        "totalMs": 280.8593
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 281.25,
+        "sampleMs": 282.9214,
+        "deriveMs": 0.4116,
+        "canopyMs": 0.2914,
+        "composeMs": 3.9087,
+        "totalMs": 287.6907,
+        "overviewHeightsMs": 84.1007,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 178.6971,
+        "surfaceBiomesMs": 1.0077,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0,
+        "samplingOutsideSamplerMs": 1.091199999999958
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 265.625,
+          "sampleMs": 290.6858,
+          "deriveMs": 0.5636,
+          "canopyMs": 0.4107,
+          "composeMs": 4.8462,
+          "totalMs": 296.5063
+        },
+        {
+          "totalThreadCpuMs": 234.375,
+          "sampleMs": 251.5964,
+          "deriveMs": 1.3613,
+          "canopyMs": 0.9176,
+          "composeMs": 9.4181,
+          "totalMs": 263.2934
+        },
+        {
+          "totalThreadCpuMs": 281.25,
+          "sampleMs": 271.7492,
+          "deriveMs": 0.9902,
+          "canopyMs": 0.6859,
+          "composeMs": 7.434,
+          "totalMs": 280.8593
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 281.25,
+          "sampleMs": 282.9214,
+          "deriveMs": 0.4116,
+          "canopyMs": 0.2878,
+          "composeMs": 4.0699,
+          "totalMs": 287.6907,
+          "overviewHeightsMs": 102.0967,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 178.6971,
+          "surfaceBiomesMs": 1.011,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.1166000000000054
+        },
+        {
+          "totalThreadCpuMs": 296.875,
+          "sampleMs": 294.0977,
+          "deriveMs": 0.4104,
+          "canopyMs": 0.2914,
+          "composeMs": 3.9087,
+          "totalMs": 298.7082,
+          "overviewHeightsMs": 84.1007,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 207.9211,
+          "surfaceBiomesMs": 0.9847,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.091199999999958
+        },
+        {
+          "totalThreadCpuMs": 203.125,
+          "sampleMs": 188.7761,
+          "deriveMs": 0.4321,
+          "canopyMs": 0.3033,
+          "composeMs": 3.7908,
+          "totalMs": 193.3023,
+          "overviewHeightsMs": 61.4159,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 125.2808,
+          "surfaceBiomesMs": 1.0077,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.0717000000000212
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        }
+      ]
+    },
+    {
+      "version": "1.17.1",
+      "lod": 1,
+      "blockX": -5632,
+      "blockZ": -4864,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 281.25,
+        "sampleMs": 270.6068,
+        "deriveMs": 0.7711,
+        "canopyMs": 3.4999,
+        "composeMs": 4.3368,
+        "totalMs": 278.6819
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 250.0,
+        "sampleMs": 246.0322,
+        "deriveMs": 0.814,
+        "canopyMs": 3.5725,
+        "composeMs": 5.0594,
+        "totalMs": 255.9467,
+        "overviewHeightsMs": 74.7518,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 168.9032,
+        "surfaceBiomesMs": 1.3035,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0,
+        "samplingOutsideSamplerMs": 1.2960999999999956
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 281.25,
+          "sampleMs": 266.8234,
+          "deriveMs": 0.683,
+          "canopyMs": 3.4352,
+          "composeMs": 4.3368,
+          "totalMs": 275.2784
+        },
+        {
+          "totalThreadCpuMs": 343.75,
+          "sampleMs": 320.774,
+          "deriveMs": 1.5217,
+          "canopyMs": 7.6392,
+          "composeMs": 7.5814,
+          "totalMs": 337.5163
+        },
+        {
+          "totalThreadCpuMs": 281.25,
+          "sampleMs": 270.6068,
+          "deriveMs": 0.7711,
+          "canopyMs": 3.4999,
+          "composeMs": 3.8041,
+          "totalMs": 278.6819
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 250.0,
+          "sampleMs": 246.0322,
+          "deriveMs": 0.6079,
+          "canopyMs": 3.3402,
+          "composeMs": 5.9664,
+          "totalMs": 255.9467,
+          "overviewHeightsMs": 74.7518,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 168.9032,
+          "surfaceBiomesMs": 1.2695,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.1076999999999941
+        },
+        {
+          "totalThreadCpuMs": 250.0,
+          "sampleMs": 254.8476,
+          "deriveMs": 0.814,
+          "canopyMs": 3.5725,
+          "composeMs": 3.4501,
+          "totalMs": 262.6842,
+          "overviewHeightsMs": 77.4784,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 174.574,
+          "surfaceBiomesMs": 1.3035,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.4917000000000087
+        },
+        {
+          "totalThreadCpuMs": 218.75,
+          "sampleMs": 224.5814,
+          "deriveMs": 0.8816,
+          "canopyMs": 4.6085,
+          "composeMs": 5.0594,
+          "totalMs": 235.1309,
+          "overviewHeightsMs": 57.1569,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 164.6223,
+          "surfaceBiomesMs": 1.5061,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.2960999999999956
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        }
+      ]
+    },
+    {
+      "version": "1.17.1",
+      "lod": 2,
+      "blockX": 0,
+      "blockZ": 0,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 93.75,
+        "sampleMs": 112.888,
+        "deriveMs": 0.6248,
+        "canopyMs": 0.2679,
+        "composeMs": 3.542,
+        "totalMs": 117.2136
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 125.0,
+        "sampleMs": 115.2752,
+        "deriveMs": 0.8296,
+        "canopyMs": 0.4138,
+        "composeMs": 5.4017,
+        "totalMs": 120.9247,
+        "overviewHeightsMs": 105.221,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 8.6558,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0181,
+        "samplingOutsideSamplerMs": 0.30870000000000175
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 93.75,
+          "sampleMs": 112.888,
+          "deriveMs": 0.5303,
+          "canopyMs": 0.2679,
+          "composeMs": 3.5274,
+          "totalMs": 117.2136
+        },
+        {
+          "totalThreadCpuMs": 78.125,
+          "sampleMs": 83.6262,
+          "deriveMs": 0.7316,
+          "canopyMs": 0.3776,
+          "composeMs": 3.542,
+          "totalMs": 88.2774
+        },
+        {
+          "totalThreadCpuMs": 109.375,
+          "sampleMs": 112.9757,
+          "deriveMs": 0.6248,
+          "canopyMs": 0.2621,
+          "composeMs": 4.0814,
+          "totalMs": 117.944
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 93.75,
+          "sampleMs": 79.9183,
+          "deriveMs": 0.8296,
+          "canopyMs": 0.4138,
+          "composeMs": 5.4017,
+          "totalMs": 86.5634,
+          "overviewHeightsMs": 70.9222,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 8.6558,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0316,
+          "samplingOutsideSamplerMs": 0.30870000000000175
+        },
+        {
+          "totalThreadCpuMs": 125.0,
+          "sampleMs": 115.2752,
+          "deriveMs": 0.8552,
+          "canopyMs": 0.4347,
+          "composeMs": 7.0552,
+          "totalMs": 123.6203,
+          "overviewHeightsMs": 105.221,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 9.6873,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0181,
+          "samplingOutsideSamplerMs": 0.3487999999999971
+        },
+        {
+          "totalThreadCpuMs": 125.0,
+          "sampleMs": 116.7157,
+          "deriveMs": 0.4727,
+          "canopyMs": 0.2448,
+          "composeMs": 3.4915,
+          "totalMs": 120.9247,
+          "overviewHeightsMs": 109.9938,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 6.4849,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0152,
+          "samplingOutsideSamplerMs": 0.22180000000000177
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.17.1",
+      "lod": 2,
+      "blockX": 4096,
+      "blockZ": -8192,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 93.75,
+        "sampleMs": 95.7241,
+        "deriveMs": 0.7299,
+        "canopyMs": 0.4425,
+        "composeMs": 4.5925,
+        "totalMs": 100.2757
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 93.75,
+        "sampleMs": 89.4397,
+        "deriveMs": 0.5186,
+        "canopyMs": 0.2912,
+        "composeMs": 3.4753,
+        "totalMs": 93.7095,
+        "overviewHeightsMs": 82.5771,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 7.2685,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0219,
+        "samplingOutsideSamplerMs": 0.2897000000000105
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 140.625,
+          "sampleMs": 120.4804,
+          "deriveMs": 1.0512,
+          "canopyMs": 0.5091,
+          "composeMs": 7.265,
+          "totalMs": 129.3057
+        },
+        {
+          "totalThreadCpuMs": 93.75,
+          "sampleMs": 95.7241,
+          "deriveMs": 0.7103,
+          "canopyMs": 0.3538,
+          "composeMs": 3.4368,
+          "totalMs": 100.225
+        },
+        {
+          "totalThreadCpuMs": 93.75,
+          "sampleMs": 94.5108,
+          "deriveMs": 0.7299,
+          "canopyMs": 0.4425,
+          "composeMs": 4.5925,
+          "totalMs": 100.2757
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 93.75,
+          "sampleMs": 89.4397,
+          "deriveMs": 0.514,
+          "canopyMs": 0.2805,
+          "composeMs": 3.4753,
+          "totalMs": 93.7095,
+          "overviewHeightsMs": 82.5771,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 6.5204,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0303,
+          "samplingOutsideSamplerMs": 0.3119000000000085
+        },
+        {
+          "totalThreadCpuMs": 78.125,
+          "sampleMs": 78.7022,
+          "deriveMs": 0.6281,
+          "canopyMs": 0.4238,
+          "composeMs": 3.9042,
+          "totalMs": 83.6583,
+          "overviewHeightsMs": 71.1229,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 7.2685,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0211,
+          "samplingOutsideSamplerMs": 0.2897000000000105
+        },
+        {
+          "totalThreadCpuMs": 125.0,
+          "sampleMs": 108.7896,
+          "deriveMs": 0.5186,
+          "canopyMs": 0.2912,
+          "composeMs": 3.2917,
+          "totalMs": 112.8911,
+          "overviewHeightsMs": 100.457,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 8.0269,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0219,
+          "samplingOutsideSamplerMs": 0.2837999999999994
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.17.1",
+      "lod": 2,
+      "blockX": -5632,
+      "blockZ": -4864,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 109.375,
+        "sampleMs": 108.7849,
+        "deriveMs": 0.6361,
+        "canopyMs": 0.5397,
+        "composeMs": 3.473,
+        "totalMs": 113.2302
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 125.0,
+        "sampleMs": 117.3689,
+        "deriveMs": 1.0936,
+        "canopyMs": 0.8404,
+        "composeMs": 8.1254,
+        "totalMs": 128.7911,
+        "overviewHeightsMs": 91.8502,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 25.1246,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0168,
+        "samplingOutsideSamplerMs": 0.3772999999999911
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 109.375,
+          "sampleMs": 108.7849,
+          "deriveMs": 0.5828,
+          "canopyMs": 0.4581,
+          "composeMs": 3.4044,
+          "totalMs": 113.2302
+        },
+        {
+          "totalThreadCpuMs": 125.0,
+          "sampleMs": 108.9946,
+          "deriveMs": 0.6409,
+          "canopyMs": 0.5397,
+          "composeMs": 3.473,
+          "totalMs": 113.6482
+        },
+        {
+          "totalThreadCpuMs": 93.75,
+          "sampleMs": 78.2414,
+          "deriveMs": 0.6361,
+          "canopyMs": 0.6651,
+          "composeMs": 5.4722,
+          "totalMs": 85.0148
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 125.0,
+          "sampleMs": 117.3689,
+          "deriveMs": 1.0936,
+          "canopyMs": 0.8404,
+          "composeMs": 9.4882,
+          "totalMs": 128.7911,
+          "overviewHeightsMs": 91.8502,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 25.1246,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0168,
+          "samplingOutsideSamplerMs": 0.3772999999999911
+        },
+        {
+          "totalThreadCpuMs": 78.125,
+          "sampleMs": 87.3761,
+          "deriveMs": 0.5429,
+          "canopyMs": 0.4504,
+          "composeMs": 3.3667,
+          "totalMs": 91.7361,
+          "overviewHeightsMs": 77.3398,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 9.7948,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0158,
+          "samplingOutsideSamplerMs": 0.22569999999998913
+        },
+        {
+          "totalThreadCpuMs": 125.0,
+          "sampleMs": 125.1097,
+          "deriveMs": 1.1442,
+          "canopyMs": 1.0251,
+          "composeMs": 8.1254,
+          "totalMs": 135.4044,
+          "overviewHeightsMs": 97.8888,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 26.7572,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0199,
+          "samplingOutsideSamplerMs": 0.4438000000000102
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.17.1",
+      "lod": 3,
+      "blockX": 0,
+      "blockZ": 0,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 93.75,
+        "sampleMs": 106.8827,
+        "deriveMs": 0.582,
+        "canopyMs": 0.3853,
+        "composeMs": 3.3923,
+        "totalMs": 111.2324
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 125.0,
+        "sampleMs": 114.9543,
+        "deriveMs": 0.5784,
+        "canopyMs": 0.3862,
+        "composeMs": 3.95,
+        "totalMs": 121.4819,
+        "overviewHeightsMs": 88.6572,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 20.8581,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0168,
+        "samplingOutsideSamplerMs": 0.24689999999999657
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 93.75,
+          "sampleMs": 106.9601,
+          "deriveMs": 0.582,
+          "canopyMs": 0.3863,
+          "composeMs": 3.6621,
+          "totalMs": 111.5905
+        },
+        {
+          "totalThreadCpuMs": 93.75,
+          "sampleMs": 103.4859,
+          "deriveMs": 0.6015,
+          "canopyMs": 0.3839,
+          "composeMs": 3.382,
+          "totalMs": 107.8533
+        },
+        {
+          "totalThreadCpuMs": 125.0,
+          "sampleMs": 106.8827,
+          "deriveMs": 0.5721,
+          "canopyMs": 0.3853,
+          "composeMs": 3.3923,
+          "totalMs": 111.2324
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 125.0,
+          "sampleMs": 109.071,
+          "deriveMs": 0.5657,
+          "canopyMs": 0.3654,
+          "composeMs": 3.5597,
+          "totalMs": 113.5618,
+          "overviewHeightsMs": 88.6572,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 20.1501,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0168,
+          "samplingOutsideSamplerMs": 0.24689999999999657
+        },
+        {
+          "totalThreadCpuMs": 140.625,
+          "sampleMs": 137.7526,
+          "deriveMs": 0.5857,
+          "canopyMs": 0.3917,
+          "composeMs": 3.95,
+          "totalMs": 142.68,
+          "overviewHeightsMs": 116.6354,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 20.8581,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0172,
+          "samplingOutsideSamplerMs": 0.2418999999999869
+        },
+        {
+          "totalThreadCpuMs": 109.375,
+          "sampleMs": 114.9543,
+          "deriveMs": 0.5784,
+          "canopyMs": 0.3862,
+          "composeMs": 5.563,
+          "totalMs": 121.4819,
+          "overviewHeightsMs": 85.02,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 29.6548,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0163,
+          "samplingOutsideSamplerMs": 0.26319999999999766
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.17.1",
+      "lod": 3,
+      "blockX": 4096,
+      "blockZ": -8192,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 125.0,
+        "sampleMs": 126.8562,
+        "deriveMs": 0.8627,
+        "canopyMs": 0.4727,
+        "composeMs": 4.5175,
+        "totalMs": 133.8923
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 109.375,
+        "sampleMs": 117.2714,
+        "deriveMs": 0.5611,
+        "canopyMs": 0.2778,
+        "composeMs": 3.7157,
+        "totalMs": 121.8481,
+        "overviewHeightsMs": 92.6324,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 24.1573,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0186,
+        "samplingOutsideSamplerMs": 0.296599999999998
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 125.0,
+          "sampleMs": 126.8562,
+          "deriveMs": 0.8627,
+          "canopyMs": 0.5061,
+          "composeMs": 5.6673,
+          "totalMs": 133.8923
+        },
+        {
+          "totalThreadCpuMs": 140.625,
+          "sampleMs": 130.0137,
+          "deriveMs": 0.5818,
+          "canopyMs": 0.333,
+          "composeMs": 4.5175,
+          "totalMs": 135.446
+        },
+        {
+          "totalThreadCpuMs": 109.375,
+          "sampleMs": 118.8116,
+          "deriveMs": 0.9299,
+          "canopyMs": 0.4727,
+          "composeMs": 3.9837,
+          "totalMs": 124.1979
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 109.375,
+          "sampleMs": 121.0685,
+          "deriveMs": 0.6171,
+          "canopyMs": 0.272,
+          "composeMs": 3.5841,
+          "totalMs": 125.5417,
+          "overviewHeightsMs": 96.5888,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 24.1573,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0258,
+          "samplingOutsideSamplerMs": 0.296599999999998
+        },
+        {
+          "totalThreadCpuMs": 125.0,
+          "sampleMs": 117.2714,
+          "deriveMs": 0.5611,
+          "canopyMs": 0.2789,
+          "composeMs": 3.7367,
+          "totalMs": 121.8481,
+          "overviewHeightsMs": 92.6324,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 24.37,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.016,
+          "samplingOutsideSamplerMs": 0.2530000000000001
+        },
+        {
+          "totalThreadCpuMs": 109.375,
+          "sampleMs": 113.4713,
+          "deriveMs": 0.5526,
+          "canopyMs": 0.2778,
+          "composeMs": 3.7157,
+          "totalMs": 118.0174,
+          "overviewHeightsMs": 90.1551,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 22.9766,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0186,
+          "samplingOutsideSamplerMs": 0.32099999999999795
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.17.1",
+      "lod": 3,
+      "blockX": -5632,
+      "blockZ": -4864,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 125.0,
+        "sampleMs": 121.2193,
+        "deriveMs": 0.7422,
+        "canopyMs": 0.4218,
+        "composeMs": 3.8269,
+        "totalMs": 126.2102
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 140.625,
+        "sampleMs": 134.4131,
+        "deriveMs": 0.722,
+        "canopyMs": 0.4254,
+        "composeMs": 3.7683,
+        "totalMs": 139.349,
+        "overviewHeightsMs": 108.344,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 23.917,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0164,
+        "samplingOutsideSamplerMs": 0.2630999999999801
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 125.0,
+          "sampleMs": 121.2193,
+          "deriveMs": 0.7422,
+          "canopyMs": 0.4218,
+          "composeMs": 3.8269,
+          "totalMs": 126.2102
+        },
+        {
+          "totalThreadCpuMs": 125.0,
+          "sampleMs": 138.9671,
+          "deriveMs": 0.6494,
+          "canopyMs": 0.4035,
+          "composeMs": 3.6691,
+          "totalMs": 143.6891
+        },
+        {
+          "totalThreadCpuMs": 109.375,
+          "sampleMs": 110.4573,
+          "deriveMs": 0.8091,
+          "canopyMs": 0.4636,
+          "composeMs": 4.2149,
+          "totalMs": 115.9449
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 125.0,
+          "sampleMs": 115.5654,
+          "deriveMs": 0.6933,
+          "canopyMs": 0.4182,
+          "composeMs": 3.7683,
+          "totalMs": 120.4452,
+          "overviewHeightsMs": 91.3702,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 23.917,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0164,
+          "samplingOutsideSamplerMs": 0.2617999999999938
+        },
+        {
+          "totalThreadCpuMs": 156.25,
+          "sampleMs": 155.3903,
+          "deriveMs": 0.7644,
+          "canopyMs": 0.4315,
+          "composeMs": 3.6778,
+          "totalMs": 160.264,
+          "overviewHeightsMs": 131.2344,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 23.8455,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0182,
+          "samplingOutsideSamplerMs": 0.29220000000000823
+        },
+        {
+          "totalThreadCpuMs": 140.625,
+          "sampleMs": 134.4131,
+          "deriveMs": 0.722,
+          "canopyMs": 0.4254,
+          "composeMs": 3.7885,
+          "totalMs": 139.349,
+          "overviewHeightsMs": 108.344,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 25.7903,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0157,
+          "samplingOutsideSamplerMs": 0.2630999999999801
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.17.1",
+      "lod": 4,
+      "blockX": 0,
+      "blockZ": 0,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 203.125,
+        "sampleMs": 200.6761,
+        "deriveMs": 0.8062,
+        "canopyMs": 0.4811,
+        "composeMs": 4.5436,
+        "totalMs": 210.2065
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 156.25,
+        "sampleMs": 175.2485,
+        "deriveMs": 0.6707,
+        "canopyMs": 0.4366,
+        "composeMs": 3.8673,
+        "totalMs": 180.4458,
+        "overviewHeightsMs": 131.4758,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 43.2784,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0218,
+        "samplingOutsideSamplerMs": 0.34770000000000323
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 203.125,
+          "sampleMs": 200.6761,
+          "deriveMs": 1.0602,
+          "canopyMs": 0.6049,
+          "composeMs": 7.8653,
+          "totalMs": 210.2065
+        },
+        {
+          "totalThreadCpuMs": 234.375,
+          "sampleMs": 212.4526,
+          "deriveMs": 0.8062,
+          "canopyMs": 0.4811,
+          "composeMs": 4.5436,
+          "totalMs": 218.2835
+        },
+        {
+          "totalThreadCpuMs": 156.25,
+          "sampleMs": 149.079,
+          "deriveMs": 0.6657,
+          "canopyMs": 0.4395,
+          "composeMs": 3.8914,
+          "totalMs": 154.0756
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 156.25,
+          "sampleMs": 189.3158,
+          "deriveMs": 0.6627,
+          "canopyMs": 0.4204,
+          "composeMs": 3.8673,
+          "totalMs": 194.2662,
+          "overviewHeightsMs": 145.6604,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 43.2784,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0293,
+          "samplingOutsideSamplerMs": 0.34770000000000323
+        },
+        {
+          "totalThreadCpuMs": 187.5,
+          "sampleMs": 175.2485,
+          "deriveMs": 0.6791,
+          "canopyMs": 0.4458,
+          "composeMs": 4.0724,
+          "totalMs": 180.4458,
+          "overviewHeightsMs": 131.4758,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 43.3979,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0218,
+          "samplingOutsideSamplerMs": 0.35300000000000864
+        },
+        {
+          "totalThreadCpuMs": 156.25,
+          "sampleMs": 152.5371,
+          "deriveMs": 0.6707,
+          "canopyMs": 0.4366,
+          "composeMs": 3.8534,
+          "totalMs": 157.4978,
+          "overviewHeightsMs": 109.6784,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 42.5616,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.016,
+          "samplingOutsideSamplerMs": 0.28110000000000923
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.17.1",
+      "lod": 4,
+      "blockX": 4096,
+      "blockZ": -8192,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 187.5,
+        "sampleMs": 178.9401,
+        "deriveMs": 0.7605,
+        "canopyMs": 0.4378,
+        "composeMs": 3.7756,
+        "totalMs": 183.914
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 187.5,
+        "sampleMs": 185.8612,
+        "deriveMs": 0.7056,
+        "canopyMs": 0.4299,
+        "composeMs": 3.658,
+        "totalMs": 190.6716,
+        "overviewHeightsMs": 122.9504,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 62.6121,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0169,
+        "samplingOutsideSamplerMs": 0.27129999999999654
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 187.5,
+          "sampleMs": 178.9401,
+          "deriveMs": 0.7605,
+          "canopyMs": 0.4378,
+          "composeMs": 3.7756,
+          "totalMs": 183.914
+        },
+        {
+          "totalThreadCpuMs": 187.5,
+          "sampleMs": 175.3639,
+          "deriveMs": 0.7216,
+          "canopyMs": 0.4265,
+          "composeMs": 3.9598,
+          "totalMs": 180.4718
+        },
+        {
+          "totalThreadCpuMs": 187.5,
+          "sampleMs": 182.0921,
+          "deriveMs": 0.8251,
+          "canopyMs": 0.4431,
+          "composeMs": 3.689,
+          "totalMs": 187.0493
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 203.125,
+          "sampleMs": 203.5144,
+          "deriveMs": 0.7056,
+          "canopyMs": 0.4273,
+          "composeMs": 4.1325,
+          "totalMs": 208.7798,
+          "overviewHeightsMs": 121.1546,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 82.0759,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0165,
+          "samplingOutsideSamplerMs": 0.26739999999998076
+        },
+        {
+          "totalThreadCpuMs": 187.5,
+          "sampleMs": 185.8612,
+          "deriveMs": 0.7336,
+          "canopyMs": 0.4369,
+          "composeMs": 3.6399,
+          "totalMs": 190.6716,
+          "overviewHeightsMs": 122.9504,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 62.6121,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0169,
+          "samplingOutsideSamplerMs": 0.28180000000000405
+        },
+        {
+          "totalThreadCpuMs": 171.875,
+          "sampleMs": 185.2428,
+          "deriveMs": 0.6976,
+          "canopyMs": 0.4299,
+          "composeMs": 3.658,
+          "totalMs": 190.0283,
+          "overviewHeightsMs": 127.8933,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 57.0612,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.017,
+          "samplingOutsideSamplerMs": 0.27129999999999654
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.17.1",
+      "lod": 4,
+      "blockX": -5632,
+      "blockZ": -4864,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 156.25,
+        "sampleMs": 158.8276,
+        "deriveMs": 0.8565,
+        "canopyMs": 0.3034,
+        "composeMs": 5.0831,
+        "totalMs": 165.0706
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 171.875,
+        "sampleMs": 165.9406,
+        "deriveMs": 0.6533,
+        "canopyMs": 0.2552,
+        "composeMs": 4.4554,
+        "totalMs": 171.248,
+        "overviewHeightsMs": 131.2983,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 37.563,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.019,
+        "samplingOutsideSamplerMs": 0.43250000000000455
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 156.25,
+          "sampleMs": 153.0799,
+          "deriveMs": 0.6132,
+          "canopyMs": 0.2446,
+          "composeMs": 4.6581,
+          "totalMs": 158.5958
+        },
+        {
+          "totalThreadCpuMs": 156.25,
+          "sampleMs": 158.8276,
+          "deriveMs": 0.8565,
+          "canopyMs": 0.3034,
+          "composeMs": 5.0831,
+          "totalMs": 165.0706
+        },
+        {
+          "totalThreadCpuMs": 234.375,
+          "sampleMs": 204.2537,
+          "deriveMs": 1.1565,
+          "canopyMs": 0.4767,
+          "composeMs": 7.7098,
+          "totalMs": 213.5967
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 171.875,
+          "sampleMs": 165.9406,
+          "deriveMs": 0.5968,
+          "canopyMs": 0.2552,
+          "composeMs": 4.4554,
+          "totalMs": 171.248,
+          "overviewHeightsMs": 131.2983,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 34.3366,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.019,
+          "samplingOutsideSamplerMs": 0.2866999999999962
+        },
+        {
+          "totalThreadCpuMs": 187.5,
+          "sampleMs": 179.597,
+          "deriveMs": 1.4335,
+          "canopyMs": 0.3523,
+          "composeMs": 8.2008,
+          "totalMs": 189.5836,
+          "overviewHeightsMs": 133.5003,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 45.6474,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0168,
+          "samplingOutsideSamplerMs": 0.43250000000000455
+        },
+        {
+          "totalThreadCpuMs": 125.0,
+          "sampleMs": 158.1407,
+          "deriveMs": 0.6533,
+          "canopyMs": 0.251,
+          "composeMs": 4.0319,
+          "totalMs": 163.0769,
+          "overviewHeightsMs": 119.9782,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 37.563,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0532,
+          "samplingOutsideSamplerMs": 0.5463000000000022
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 1,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.21.4",
+      "lod": 0,
+      "blockX": 0,
+      "blockZ": 0,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 296.875,
+        "sampleMs": 279.476,
+        "deriveMs": 0.5812,
+        "canopyMs": 1.4076,
+        "composeMs": 3.4226,
+        "totalMs": 285.1537
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 281.25,
+        "sampleMs": 288.9492,
+        "deriveMs": 0.6272,
+        "canopyMs": 1.4617,
+        "composeMs": 3.8233,
+        "totalMs": 294.2288,
+        "overviewHeightsMs": 17.7269,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 240.9258,
+        "surfaceBiomesMs": 28.7225,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0,
+        "samplingOutsideSamplerMs": 1.3994000000000142
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 296.875,
+          "sampleMs": 279.476,
+          "deriveMs": 0.6074,
+          "canopyMs": 1.4076,
+          "composeMs": 3.6627,
+          "totalMs": 285.1537
+        },
+        {
+          "totalThreadCpuMs": 281.25,
+          "sampleMs": 276.5204,
+          "deriveMs": 0.5812,
+          "canopyMs": 1.6182,
+          "composeMs": 3.4156,
+          "totalMs": 282.1354
+        },
+        {
+          "totalThreadCpuMs": 296.875,
+          "sampleMs": 282.4447,
+          "deriveMs": 0.5765,
+          "canopyMs": 1.3676,
+          "composeMs": 3.4226,
+          "totalMs": 287.8114
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 281.25,
+          "sampleMs": 288.9492,
+          "deriveMs": 0.596,
+          "canopyMs": 1.3327,
+          "composeMs": 3.3509,
+          "totalMs": 294.2288,
+          "overviewHeightsMs": 18.431,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 240.9258,
+          "surfaceBiomesMs": 27.7276,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.8648000000000025
+        },
+        {
+          "totalThreadCpuMs": 390.625,
+          "sampleMs": 406.3557,
+          "deriveMs": 0.9811,
+          "canopyMs": 2.6296,
+          "composeMs": 6.2325,
+          "totalMs": 416.1989,
+          "overviewHeightsMs": 17.7269,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 338.5906,
+          "surfaceBiomesMs": 48.6388,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.3994000000000142
+        },
+        {
+          "totalThreadCpuMs": 281.25,
+          "sampleMs": 286.5486,
+          "deriveMs": 0.6272,
+          "canopyMs": 1.4617,
+          "composeMs": 3.8233,
+          "totalMs": 292.4608,
+          "overviewHeightsMs": 17.5642,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 238.9095,
+          "surfaceBiomesMs": 28.7225,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.3524000000000456
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        }
+      ]
+    },
+    {
+      "version": "1.21.4",
+      "lod": 0,
+      "blockX": 4096,
+      "blockZ": -8192,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 312.5,
+        "sampleMs": 310.0863,
+        "deriveMs": 0.6362,
+        "canopyMs": 3.1691,
+        "composeMs": 3.2073,
+        "totalMs": 317.072
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 328.125,
+        "sampleMs": 336.7099,
+        "deriveMs": 0.6228,
+        "canopyMs": 3.1251,
+        "composeMs": 3.3071,
+        "totalMs": 343.8568,
+        "overviewHeightsMs": 20.3164,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 254.5387,
+        "surfaceBiomesMs": 31.4187,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0,
+        "samplingOutsideSamplerMs": 1.5787000000000262
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 312.5,
+          "sampleMs": 310.0863,
+          "deriveMs": 0.6203,
+          "canopyMs": 3.1691,
+          "composeMs": 3.1963,
+          "totalMs": 317.072
+        },
+        {
+          "totalThreadCpuMs": 296.875,
+          "sampleMs": 293.8376,
+          "deriveMs": 0.6362,
+          "canopyMs": 2.6938,
+          "composeMs": 3.2073,
+          "totalMs": 300.3749
+        },
+        {
+          "totalThreadCpuMs": 390.625,
+          "sampleMs": 377.954,
+          "deriveMs": 1.5725,
+          "canopyMs": 5.9302,
+          "composeMs": 6.0642,
+          "totalMs": 391.5209
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 328.125,
+          "sampleMs": 336.7099,
+          "deriveMs": 0.6704,
+          "canopyMs": 3.1694,
+          "composeMs": 3.3071,
+          "totalMs": 343.8568,
+          "overviewHeightsMs": 20.3164,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 284.3049,
+          "surfaceBiomesMs": 30.816,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.2726000000000113
+        },
+        {
+          "totalThreadCpuMs": 281.25,
+          "sampleMs": 289.6945,
+          "deriveMs": 0.6228,
+          "canopyMs": 3.1251,
+          "composeMs": 3.8075,
+          "totalMs": 297.2499,
+          "overviewHeightsMs": 19.1818,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 237.5153,
+          "surfaceBiomesMs": 31.4187,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.5787000000000262
+        },
+        {
+          "totalThreadCpuMs": 343.75,
+          "sampleMs": 339.8236,
+          "deriveMs": 0.5854,
+          "canopyMs": 2.5371,
+          "composeMs": 3.2906,
+          "totalMs": 346.2367,
+          "overviewHeightsMs": 31.1738,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 254.5387,
+          "surfaceBiomesMs": 51.4332,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 2.6779000000000224
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        }
+      ]
+    },
+    {
+      "version": "1.21.4",
+      "lod": 0,
+      "blockX": -5632,
+      "blockZ": -4864,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 328.125,
+        "sampleMs": 330.1368,
+        "deriveMs": 0.5994,
+        "canopyMs": 2.2828,
+        "composeMs": 4.2867,
+        "totalMs": 337.3625
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 296.875,
+        "sampleMs": 284.9724,
+        "deriveMs": 0.6553,
+        "canopyMs": 2.3721,
+        "composeMs": 4.6801,
+        "totalMs": 291.215,
+        "overviewHeightsMs": 20.858,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 234.0582,
+        "surfaceBiomesMs": 25.782,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0,
+        "samplingOutsideSamplerMs": 2.5616000000000554
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 343.75,
+          "sampleMs": 338.8447,
+          "deriveMs": 0.6642,
+          "canopyMs": 2.0523,
+          "composeMs": 3.6398,
+          "totalMs": 345.201
+        },
+        {
+          "totalThreadCpuMs": 296.875,
+          "sampleMs": 302.1801,
+          "deriveMs": 0.5994,
+          "canopyMs": 2.3679,
+          "composeMs": 4.2867,
+          "totalMs": 309.4341
+        },
+        {
+          "totalThreadCpuMs": 328.125,
+          "sampleMs": 330.1368,
+          "deriveMs": 0.5988,
+          "canopyMs": 2.2828,
+          "composeMs": 4.3441,
+          "totalMs": 337.3625
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 296.875,
+          "sampleMs": 284.9724,
+          "deriveMs": 0.5653,
+          "canopyMs": 1.9866,
+          "composeMs": 3.6907,
+          "totalMs": 291.215,
+          "overviewHeightsMs": 19.826,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 235.7004,
+          "surfaceBiomesMs": 25.782,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 3.6639999999999873
+        },
+        {
+          "totalThreadCpuMs": 265.625,
+          "sampleMs": 278.0433,
+          "deriveMs": 0.6553,
+          "canopyMs": 2.3721,
+          "composeMs": 4.6801,
+          "totalMs": 285.7508,
+          "overviewHeightsMs": 20.8673,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 231.8041,
+          "surfaceBiomesMs": 23.9557,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.4162000000000035
+        },
+        {
+          "totalThreadCpuMs": 296.875,
+          "sampleMs": 289.5565,
+          "deriveMs": 0.8265,
+          "canopyMs": 2.5399,
+          "composeMs": 8.3845,
+          "totalMs": 301.3074,
+          "overviewHeightsMs": 20.858,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 234.0582,
+          "surfaceBiomesMs": 32.0787,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 2.5616000000000554
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        }
+      ]
+    },
+    {
+      "version": "1.21.4",
+      "lod": 1,
+      "blockX": 0,
+      "blockZ": 0,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 203.125,
+        "sampleMs": 202.9899,
+        "deriveMs": 0.6471,
+        "canopyMs": 2.4564,
+        "composeMs": 3.5602,
+        "totalMs": 209.6536
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 218.75,
+        "sampleMs": 202.4055,
+        "deriveMs": 0.6214,
+        "canopyMs": 2.3961,
+        "composeMs": 3.707,
+        "totalMs": 208.9093,
+        "overviewHeightsMs": 36.4545,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 70.8618,
+        "surfaceBiomesMs": 94.8018,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0,
+        "samplingOutsideSamplerMs": 1.091799999999978
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 171.875,
+          "sampleMs": 184.7635,
+          "deriveMs": 0.6479,
+          "canopyMs": 2.3307,
+          "composeMs": 3.4901,
+          "totalMs": 191.2322
+        },
+        {
+          "totalThreadCpuMs": 250.0,
+          "sampleMs": 229.8642,
+          "deriveMs": 0.5942,
+          "canopyMs": 3.5355,
+          "composeMs": 6.801,
+          "totalMs": 240.7949
+        },
+        {
+          "totalThreadCpuMs": 203.125,
+          "sampleMs": 202.9899,
+          "deriveMs": 0.6471,
+          "canopyMs": 2.4564,
+          "composeMs": 3.5602,
+          "totalMs": 209.6536
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 218.75,
+          "sampleMs": 202.4055,
+          "deriveMs": 0.7115,
+          "canopyMs": 2.3961,
+          "composeMs": 3.3962,
+          "totalMs": 208.9093,
+          "overviewHeightsMs": 35.7331,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 70.8618,
+          "surfaceBiomesMs": 94.8018,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.0087999999999795
+        },
+        {
+          "totalThreadCpuMs": 218.75,
+          "sampleMs": 235.5499,
+          "deriveMs": 0.5661,
+          "canopyMs": 2.393,
+          "composeMs": 3.707,
+          "totalMs": 242.216,
+          "overviewHeightsMs": 36.4545,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 100.1257,
+          "surfaceBiomesMs": 97.6034,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.3662999999999954
+        },
+        {
+          "totalThreadCpuMs": 203.125,
+          "sampleMs": 191.7411,
+          "deriveMs": 0.6214,
+          "canopyMs": 2.4988,
+          "composeMs": 5.0743,
+          "totalMs": 199.9356,
+          "overviewHeightsMs": 43.6619,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 67.0996,
+          "surfaceBiomesMs": 79.8878,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.091799999999978
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        }
+      ]
+    },
+    {
+      "version": "1.21.4",
+      "lod": 1,
+      "blockX": 4096,
+      "blockZ": -8192,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 218.75,
+        "sampleMs": 231.7003,
+        "deriveMs": 0.6278,
+        "canopyMs": 2.8097,
+        "composeMs": 3.444,
+        "totalMs": 238.6667
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 203.125,
+        "sampleMs": 191.4454,
+        "deriveMs": 0.6376,
+        "canopyMs": 2.8439,
+        "composeMs": 3.4867,
+        "totalMs": 199.23,
+        "overviewHeightsMs": 40.7069,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 63.9446,
+        "surfaceBiomesMs": 82.5682,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0,
+        "samplingOutsideSamplerMs": 1.04819999999998
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 218.75,
+          "sampleMs": 231.7003,
+          "deriveMs": 0.6497,
+          "canopyMs": 2.7733,
+          "composeMs": 3.5434,
+          "totalMs": 238.6667
+        },
+        {
+          "totalThreadCpuMs": 187.5,
+          "sampleMs": 194.8267,
+          "deriveMs": 0.607,
+          "canopyMs": 3.0919,
+          "composeMs": 3.444,
+          "totalMs": 201.9696
+        },
+        {
+          "totalThreadCpuMs": 234.375,
+          "sampleMs": 237.0026,
+          "deriveMs": 0.6278,
+          "canopyMs": 2.8097,
+          "composeMs": 3.3692,
+          "totalMs": 243.8093
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 203.125,
+          "sampleMs": 187.4895,
+          "deriveMs": 0.6376,
+          "canopyMs": 2.8439,
+          "composeMs": 3.4867,
+          "totalMs": 194.4577,
+          "overviewHeightsMs": 39.9285,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 63.9446,
+          "surfaceBiomesMs": 82.5682,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.04819999999998
+        },
+        {
+          "totalThreadCpuMs": 203.125,
+          "sampleMs": 235.8281,
+          "deriveMs": 0.6932,
+          "canopyMs": 3.2743,
+          "composeMs": 3.4195,
+          "totalMs": 243.2151,
+          "overviewHeightsMs": 40.7069,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 69.8415,
+          "surfaceBiomesMs": 123.8405,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.4391999999999996
+        },
+        {
+          "totalThreadCpuMs": 203.125,
+          "sampleMs": 191.4454,
+          "deriveMs": 0.588,
+          "canopyMs": 2.5599,
+          "composeMs": 4.6367,
+          "totalMs": 199.23,
+          "overviewHeightsMs": 49.5707,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 60.2498,
+          "surfaceBiomesMs": 80.6,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.0249000000000024
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        }
+      ]
+    },
+    {
+      "version": "1.21.4",
+      "lod": 1,
+      "blockX": -5632,
+      "blockZ": -4864,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 187.5,
+        "sampleMs": 188.523,
+        "deriveMs": 0.5793,
+        "canopyMs": 1.3353,
+        "composeMs": 4.3992,
+        "totalMs": 194.4371
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 171.875,
+        "sampleMs": 163.7803,
+        "deriveMs": 0.5663,
+        "canopyMs": 1.0959,
+        "composeMs": 4.142,
+        "totalMs": 169.5799,
+        "overviewHeightsMs": 27.7711,
+        "overviewHeightsCoarseMs": 0.0,
+        "surfaceColumnsMs": 68.4197,
+        "surfaceBiomesMs": 66.5663,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0,
+        "samplingOutsideSamplerMs": 1.0795999999999992
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 187.5,
+          "sampleMs": 188.523,
+          "deriveMs": 0.4963,
+          "canopyMs": 1.0186,
+          "composeMs": 4.3992,
+          "totalMs": 194.4371
+        },
+        {
+          "totalThreadCpuMs": 218.75,
+          "sampleMs": 208.5318,
+          "deriveMs": 0.5793,
+          "canopyMs": 1.3353,
+          "composeMs": 4.0203,
+          "totalMs": 214.4667
+        },
+        {
+          "totalThreadCpuMs": 171.875,
+          "sampleMs": 175.6182,
+          "deriveMs": 1.3473,
+          "canopyMs": 3.1129,
+          "composeMs": 9.7793,
+          "totalMs": 189.8577
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 156.25,
+          "sampleMs": 163.7803,
+          "deriveMs": 0.5663,
+          "canopyMs": 1.0913,
+          "composeMs": 4.142,
+          "totalMs": 169.5799,
+          "overviewHeightsMs": 27.7316,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 68.4197,
+          "surfaceBiomesMs": 66.5663,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.0627000000000066
+        },
+        {
+          "totalThreadCpuMs": 171.875,
+          "sampleMs": 161.6358,
+          "deriveMs": 0.5266,
+          "canopyMs": 1.0959,
+          "composeMs": 4.0689,
+          "totalMs": 167.3272,
+          "overviewHeightsMs": 27.7711,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 72.9098,
+          "surfaceBiomesMs": 59.8753,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.0795999999999992
+        },
+        {
+          "totalThreadCpuMs": 203.125,
+          "sampleMs": 183.5313,
+          "deriveMs": 1.2216,
+          "canopyMs": 2.6746,
+          "composeMs": 9.5533,
+          "totalMs": 196.9808,
+          "overviewHeightsMs": 40.7224,
+          "overviewHeightsCoarseMs": 0.0,
+          "surfaceColumnsMs": 67.9052,
+          "surfaceBiomesMs": 73.6572,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0,
+          "samplingOutsideSamplerMs": 1.2464999999999975
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        },
+        {
+          "overviewHeights": 2,
+          "overviewHeightsCoarse": 0,
+          "surfaceColumns": 1,
+          "surfaceBiomes": 1,
+          "biomes": 0,
+          "otherSampler": 0
+        }
+      ]
+    },
+    {
+      "version": "1.21.4",
+      "lod": 2,
+      "blockX": 0,
+      "blockZ": 0,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 250.0,
+        "sampleMs": 254.8591,
+        "deriveMs": 1.1697,
+        "canopyMs": 0.787,
+        "composeMs": 6.9743,
+        "totalMs": 263.973
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 296.875,
+        "sampleMs": 303.144,
+        "deriveMs": 0.9107,
+        "canopyMs": 1.123,
+        "composeMs": 4.4313,
+        "totalMs": 308.0073,
+        "overviewHeightsMs": 79.0097,
+        "overviewHeightsCoarseMs": 62.7157,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 125.1733,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0095,
+        "samplingOutsideSamplerMs": 2.5264000000000237
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 234.375,
+          "sampleMs": 254.2727,
+          "deriveMs": 0.7034,
+          "canopyMs": 0.7184,
+          "composeMs": 4.8671,
+          "totalMs": 260.5616
+        },
+        {
+          "totalThreadCpuMs": 250.0,
+          "sampleMs": 254.8591,
+          "deriveMs": 1.1697,
+          "canopyMs": 0.787,
+          "composeMs": 7.1572,
+          "totalMs": 263.973
+        },
+        {
+          "totalThreadCpuMs": 296.875,
+          "sampleMs": 303.9046,
+          "deriveMs": 2.4417,
+          "canopyMs": 1.7438,
+          "composeMs": 6.9743,
+          "totalMs": 315.0644
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 281.25,
+          "sampleMs": 266.458,
+          "deriveMs": 0.9107,
+          "canopyMs": 1.123,
+          "composeMs": 4.4313,
+          "totalMs": 272.923,
+          "overviewHeightsMs": 79.0097,
+          "overviewHeightsCoarseMs": 62.7157,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 122.0948,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0088,
+          "samplingOutsideSamplerMs": 2.629000000000019
+        },
+        {
+          "totalThreadCpuMs": 312.5,
+          "sampleMs": 307.3593,
+          "deriveMs": 0.92,
+          "canopyMs": 1.5936,
+          "composeMs": 7.9359,
+          "totalMs": 317.8088,
+          "overviewHeightsMs": 86.4378,
+          "overviewHeightsCoarseMs": 93.2096,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 125.1733,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0122,
+          "samplingOutsideSamplerMs": 2.5264000000000237
+        },
+        {
+          "totalThreadCpuMs": 296.875,
+          "sampleMs": 303.144,
+          "deriveMs": 0.6955,
+          "canopyMs": 0.6071,
+          "composeMs": 3.5607,
+          "totalMs": 308.0073,
+          "overviewHeightsMs": 61.0603,
+          "overviewHeightsCoarseMs": 59.2252,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 180.6256,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0095,
+          "samplingOutsideSamplerMs": 2.2234000000000265
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 7939,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1400,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 7939,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1400,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 7939,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1400,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.21.4",
+      "lod": 2,
+      "blockX": 4096,
+      "blockZ": -8192,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 281.25,
+        "sampleMs": 289.4293,
+        "deriveMs": 0.6515,
+        "canopyMs": 0.5306,
+        "composeMs": 3.6379,
+        "totalMs": 294.03
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 250.0,
+        "sampleMs": 235.4073,
+        "deriveMs": 0.616,
+        "canopyMs": 0.5404,
+        "composeMs": 4.3387,
+        "totalMs": 239.9761,
+        "overviewHeightsMs": 55.9705,
+        "overviewHeightsCoarseMs": 57.9238,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 111.1157,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0088,
+        "samplingOutsideSamplerMs": 2.270099999999985
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 281.25,
+          "sampleMs": 289.4293,
+          "deriveMs": 0.6107,
+          "canopyMs": 0.5085,
+          "composeMs": 3.4815,
+          "totalMs": 294.03
+        },
+        {
+          "totalThreadCpuMs": 234.375,
+          "sampleMs": 228.4069,
+          "deriveMs": 0.9932,
+          "canopyMs": 0.8766,
+          "composeMs": 7.5814,
+          "totalMs": 237.8581
+        },
+        {
+          "totalThreadCpuMs": 343.75,
+          "sampleMs": 340.5818,
+          "deriveMs": 0.6515,
+          "canopyMs": 0.5306,
+          "composeMs": 3.6379,
+          "totalMs": 345.4018
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 218.75,
+          "sampleMs": 226.9511,
+          "deriveMs": 0.5668,
+          "canopyMs": 0.514,
+          "composeMs": 4.3387,
+          "totalMs": 232.3706,
+          "overviewHeightsMs": 55.9705,
+          "overviewHeightsCoarseMs": 57.9238,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 111.1157,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0082,
+          "samplingOutsideSamplerMs": 1.9328999999999894
+        },
+        {
+          "totalThreadCpuMs": 265.625,
+          "sampleMs": 258.8467,
+          "deriveMs": 0.7687,
+          "canopyMs": 0.5881,
+          "composeMs": 6.1186,
+          "totalMs": 266.3221,
+          "overviewHeightsMs": 53.6612,
+          "overviewHeightsCoarseMs": 102.5685,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 100.3242,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0116,
+          "samplingOutsideSamplerMs": 2.2812000000000126
+        },
+        {
+          "totalThreadCpuMs": 250.0,
+          "sampleMs": 235.4073,
+          "deriveMs": 0.616,
+          "canopyMs": 0.5404,
+          "composeMs": 3.4124,
+          "totalMs": 239.9761,
+          "overviewHeightsMs": 57.9273,
+          "overviewHeightsCoarseMs": 53.7806,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 121.4205,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0088,
+          "samplingOutsideSamplerMs": 2.270099999999985
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 6895,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1359,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 6895,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1359,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 6895,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1359,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.21.4",
+      "lod": 2,
+      "blockX": -5632,
+      "blockZ": -4864,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 250.0,
+        "sampleMs": 236.3279,
+        "deriveMs": 0.592,
+        "canopyMs": 0.2896,
+        "composeMs": 3.9688,
+        "totalMs": 241.5184
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 234.375,
+        "sampleMs": 243.2784,
+        "deriveMs": 0.7984,
+        "canopyMs": 0.3863,
+        "composeMs": 6.8607,
+        "totalMs": 251.3238,
+        "overviewHeightsMs": 74.9705,
+        "overviewHeightsCoarseMs": 56.0679,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 91.2328,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0085,
+        "samplingOutsideSamplerMs": 2.2560000000000002
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 250.0,
+          "sampleMs": 236.3279,
+          "deriveMs": 0.5797,
+          "canopyMs": 0.2968,
+          "composeMs": 4.314,
+          "totalMs": 241.5184
+        },
+        {
+          "totalThreadCpuMs": 234.375,
+          "sampleMs": 235.1984,
+          "deriveMs": 0.592,
+          "canopyMs": 0.2711,
+          "composeMs": 3.9338,
+          "totalMs": 239.9953
+        },
+        {
+          "totalThreadCpuMs": 281.25,
+          "sampleMs": 285.669,
+          "deriveMs": 0.8856,
+          "canopyMs": 0.2896,
+          "composeMs": 3.9688,
+          "totalMs": 290.813
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 281.25,
+          "sampleMs": 295.5791,
+          "deriveMs": 0.9605,
+          "canopyMs": 0.4644,
+          "composeMs": 7.4412,
+          "totalMs": 304.4452,
+          "overviewHeightsMs": 74.9705,
+          "overviewHeightsCoarseMs": 74.5885,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 142.979,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.008,
+          "samplingOutsideSamplerMs": 3.0330999999999904
+        },
+        {
+          "totalThreadCpuMs": 234.375,
+          "sampleMs": 243.2784,
+          "deriveMs": 0.7984,
+          "canopyMs": 0.3863,
+          "composeMs": 6.8607,
+          "totalMs": 251.3238,
+          "overviewHeightsMs": 95.5805,
+          "overviewHeightsCoarseMs": 54.2001,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 91.2328,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.009,
+          "samplingOutsideSamplerMs": 2.2560000000000002
+        },
+        {
+          "totalThreadCpuMs": 187.5,
+          "sampleMs": 210.2392,
+          "deriveMs": 0.6343,
+          "canopyMs": 0.2857,
+          "composeMs": 3.8845,
+          "totalMs": 215.0437,
+          "overviewHeightsMs": 72.8149,
+          "overviewHeightsCoarseMs": 56.0679,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 79.3761,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0085,
+          "samplingOutsideSamplerMs": 1.9718000000000018
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 8731,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1060,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 8731,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1060,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 8731,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1060,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.21.4",
+      "lod": 3,
+      "blockX": 0,
+      "blockZ": 0,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 390.625,
+        "sampleMs": 404.036,
+        "deriveMs": 0.6715,
+        "canopyMs": 0.584,
+        "composeMs": 3.7262,
+        "totalMs": 409.9532
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 343.75,
+        "sampleMs": 344.2353,
+        "deriveMs": 0.6514,
+        "canopyMs": 0.5646,
+        "composeMs": 4.1831,
+        "totalMs": 349.6525,
+        "overviewHeightsMs": 120.257,
+        "overviewHeightsCoarseMs": 57.4812,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 158.711,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0154,
+        "samplingOutsideSamplerMs": 3.017400000000009
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 390.625,
+          "sampleMs": 387.8855,
+          "deriveMs": 0.6065,
+          "canopyMs": 0.5688,
+          "composeMs": 3.7262,
+          "totalMs": 392.787
+        },
+        {
+          "totalThreadCpuMs": 406.25,
+          "sampleMs": 404.036,
+          "deriveMs": 0.7097,
+          "canopyMs": 0.5872,
+          "composeMs": 4.6203,
+          "totalMs": 409.9532
+        },
+        {
+          "totalThreadCpuMs": 390.625,
+          "sampleMs": 409.3734,
+          "deriveMs": 0.6715,
+          "canopyMs": 0.584,
+          "composeMs": 3.6283,
+          "totalMs": 414.2572
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 343.75,
+          "sampleMs": 344.2353,
+          "deriveMs": 0.6507,
+          "canopyMs": 0.5834,
+          "composeMs": 4.1831,
+          "totalMs": 349.6525,
+          "overviewHeightsMs": 120.257,
+          "overviewHeightsCoarseMs": 57.1928,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 163.8732,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0228,
+          "samplingOutsideSamplerMs": 2.889499999999998
+        },
+        {
+          "totalThreadCpuMs": 406.25,
+          "sampleMs": 412.9789,
+          "deriveMs": 0.6514,
+          "canopyMs": 0.5646,
+          "composeMs": 3.8026,
+          "totalMs": 417.9975,
+          "overviewHeightsMs": 177.4025,
+          "overviewHeightsCoarseMs": 73.2085,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 158.711,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0154,
+          "samplingOutsideSamplerMs": 3.6415000000000077
+        },
+        {
+          "totalThreadCpuMs": 328.125,
+          "sampleMs": 329.4072,
+          "deriveMs": 0.9329,
+          "canopyMs": 0.5439,
+          "composeMs": 5.9591,
+          "totalMs": 336.8431,
+          "overviewHeightsMs": 116.232,
+          "overviewHeightsCoarseMs": 57.4812,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 152.6692,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0074,
+          "samplingOutsideSamplerMs": 3.017400000000009
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 13505,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 2054,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 13505,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 2054,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 13505,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 2054,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.21.4",
+      "lod": 3,
+      "blockX": 4096,
+      "blockZ": -8192,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 343.75,
+        "sampleMs": 328.2902,
+        "deriveMs": 0.921,
+        "canopyMs": 0.601,
+        "composeMs": 3.7012,
+        "totalMs": 332.9911
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 296.875,
+        "sampleMs": 288.7635,
+        "deriveMs": 0.6364,
+        "canopyMs": 0.5132,
+        "composeMs": 3.848,
+        "totalMs": 293.7833,
+        "overviewHeightsMs": 69.2443,
+        "overviewHeightsCoarseMs": 61.5007,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 155.4744,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0089,
+        "samplingOutsideSamplerMs": 2.280300000000011
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 343.75,
+          "sampleMs": 328.2902,
+          "deriveMs": 0.6057,
+          "canopyMs": 0.4907,
+          "composeMs": 3.6045,
+          "totalMs": 332.9911
+        },
+        {
+          "totalThreadCpuMs": 281.25,
+          "sampleMs": 294.7251,
+          "deriveMs": 0.921,
+          "canopyMs": 0.601,
+          "composeMs": 3.7326,
+          "totalMs": 299.9797
+        },
+        {
+          "totalThreadCpuMs": 343.75,
+          "sampleMs": 355.6509,
+          "deriveMs": 1.1158,
+          "canopyMs": 0.8331,
+          "composeMs": 3.7012,
+          "totalMs": 361.301
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 296.875,
+          "sampleMs": 290.5656,
+          "deriveMs": 0.8052,
+          "canopyMs": 0.5265,
+          "composeMs": 3.848,
+          "totalMs": 295.7453,
+          "overviewHeightsMs": 69.2443,
+          "overviewHeightsCoarseMs": 61.5007,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 157.3321,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0089,
+          "samplingOutsideSamplerMs": 2.479600000000005
+        },
+        {
+          "totalThreadCpuMs": 281.25,
+          "sampleMs": 286.1868,
+          "deriveMs": 0.6364,
+          "canopyMs": 0.5132,
+          "composeMs": 3.7491,
+          "totalMs": 291.0855,
+          "overviewHeightsMs": 71.2679,
+          "overviewHeightsCoarseMs": 61.1311,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 151.4995,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.008,
+          "samplingOutsideSamplerMs": 2.280300000000011
+        },
+        {
+          "totalThreadCpuMs": 296.875,
+          "sampleMs": 288.7635,
+          "deriveMs": 0.6025,
+          "canopyMs": 0.51,
+          "composeMs": 3.9073,
+          "totalMs": 293.7833,
+          "overviewHeightsMs": 69.1878,
+          "overviewHeightsCoarseMs": 61.849,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 155.4744,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0094,
+          "samplingOutsideSamplerMs": 2.24290000000002
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 7940,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1928,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 7940,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1928,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 7940,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1928,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.21.4",
+      "lod": 3,
+      "blockX": -5632,
+      "blockZ": -4864,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 390.625,
+        "sampleMs": 372.0478,
+        "deriveMs": 0.9106,
+        "canopyMs": 0.429,
+        "composeMs": 4.4616,
+        "totalMs": 377.1456
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 359.375,
+        "sampleMs": 362.6121,
+        "deriveMs": 1.0663,
+        "canopyMs": 0.6285,
+        "composeMs": 3.9332,
+        "totalMs": 368.2757,
+        "overviewHeightsMs": 158.2539,
+        "overviewHeightsCoarseMs": 63.2077,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 140.0261,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.01,
+        "samplingOutsideSamplerMs": 3.126800000000003
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 437.5,
+          "sampleMs": 443.8909,
+          "deriveMs": 1.3556,
+          "canopyMs": 0.461,
+          "composeMs": 5.5702,
+          "totalMs": 451.2777
+        },
+        {
+          "totalThreadCpuMs": 343.75,
+          "sampleMs": 359.1665,
+          "deriveMs": 0.8535,
+          "canopyMs": 0.4197,
+          "composeMs": 4.4616,
+          "totalMs": 364.9013
+        },
+        {
+          "totalThreadCpuMs": 390.625,
+          "sampleMs": 372.0478,
+          "deriveMs": 0.9106,
+          "canopyMs": 0.429,
+          "composeMs": 3.7582,
+          "totalMs": 377.1456
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 359.375,
+          "sampleMs": 362.6121,
+          "deriveMs": 1.0663,
+          "canopyMs": 0.6641,
+          "composeMs": 3.9332,
+          "totalMs": 368.2757,
+          "overviewHeightsMs": 156.3186,
+          "overviewHeightsCoarseMs": 63.2077,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 140.0261,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0117,
+          "samplingOutsideSamplerMs": 3.048000000000002
+        },
+        {
+          "totalThreadCpuMs": 359.375,
+          "sampleMs": 360.0788,
+          "deriveMs": 1.2119,
+          "canopyMs": 0.6285,
+          "composeMs": 4.1668,
+          "totalMs": 366.086,
+          "overviewHeightsMs": 159.473,
+          "overviewHeightsCoarseMs": 62.0063,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 135.463,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0097,
+          "samplingOutsideSamplerMs": 3.126800000000003
+        },
+        {
+          "totalThreadCpuMs": 375.0,
+          "sampleMs": 371.9124,
+          "deriveMs": 0.9133,
+          "canopyMs": 0.43,
+          "composeMs": 3.6255,
+          "totalMs": 376.8812,
+          "overviewHeightsMs": 158.2539,
+          "overviewHeightsCoarseMs": 68.9698,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 141.5057,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.01,
+          "samplingOutsideSamplerMs": 3.173000000000002
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 18261,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1801,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 18261,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1801,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 18261,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1801,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.21.4",
+      "lod": 4,
+      "blockX": 0,
+      "blockZ": 0,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 515.625,
+        "sampleMs": 500.9239,
+        "deriveMs": 0.7045,
+        "canopyMs": 0.5143,
+        "composeMs": 4.1977,
+        "totalMs": 508.2941
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 453.125,
+        "sampleMs": 453.2467,
+        "deriveMs": 0.6921,
+        "canopyMs": 0.5145,
+        "composeMs": 3.8588,
+        "totalMs": 458.2214,
+        "overviewHeightsMs": 176.6483,
+        "overviewHeightsCoarseMs": 63.4675,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 211.3611,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0092,
+        "samplingOutsideSamplerMs": 3.542100000000005
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 453.125,
+          "sampleMs": 445.2067,
+          "deriveMs": 0.7904,
+          "canopyMs": 0.5243,
+          "composeMs": 4.1977,
+          "totalMs": 450.7191
+        },
+        {
+          "totalThreadCpuMs": 515.625,
+          "sampleMs": 500.9239,
+          "deriveMs": 0.6768,
+          "canopyMs": 0.5143,
+          "composeMs": 6.1791,
+          "totalMs": 508.2941
+        },
+        {
+          "totalThreadCpuMs": 515.625,
+          "sampleMs": 510.7411,
+          "deriveMs": 0.7045,
+          "canopyMs": 0.5122,
+          "composeMs": 4.1376,
+          "totalMs": 516.0954
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 453.125,
+          "sampleMs": 471.2056,
+          "deriveMs": 0.6921,
+          "canopyMs": 0.5075,
+          "composeMs": 3.8588,
+          "totalMs": 476.264,
+          "overviewHeightsMs": 177.7825,
+          "overviewHeightsCoarseMs": 63.3156,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 226.4883,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0096,
+          "samplingOutsideSamplerMs": 3.6096000000000004
+        },
+        {
+          "totalThreadCpuMs": 453.125,
+          "sampleMs": 452.5358,
+          "deriveMs": 0.6776,
+          "canopyMs": 0.5145,
+          "composeMs": 3.9573,
+          "totalMs": 457.6852,
+          "overviewHeightsMs": 176.6483,
+          "overviewHeightsCoarseMs": 70.5738,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 201.763,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0086,
+          "samplingOutsideSamplerMs": 3.542100000000005
+        },
+        {
+          "totalThreadCpuMs": 468.75,
+          "sampleMs": 453.2467,
+          "deriveMs": 0.7321,
+          "canopyMs": 0.516,
+          "composeMs": 3.7266,
+          "totalMs": 458.2214,
+          "overviewHeightsMs": 174.9699,
+          "overviewHeightsCoarseMs": 63.4675,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 211.3611,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0092,
+          "samplingOutsideSamplerMs": 3.4389999999999645
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 18990,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 2161,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 18990,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 2161,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 18990,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 2161,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.21.4",
+      "lod": 4,
+      "blockX": 4096,
+      "blockZ": -8192,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 500.0,
+        "sampleMs": 516.2777,
+        "deriveMs": 0.6996,
+        "canopyMs": 0.5486,
+        "composeMs": 4.4964,
+        "totalMs": 522.0223
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 484.375,
+        "sampleMs": 466.9341,
+        "deriveMs": 0.6877,
+        "canopyMs": 0.6324,
+        "composeMs": 4.0296,
+        "totalMs": 475.7211,
+        "overviewHeightsMs": 190.8908,
+        "overviewHeightsCoarseMs": 65.8393,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 208.4358,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.0083,
+        "samplingOutsideSamplerMs": 3.639499999999998
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 593.75,
+          "sampleMs": 570.7357,
+          "deriveMs": 0.7103,
+          "canopyMs": 0.5202,
+          "composeMs": 4.5489,
+          "totalMs": 576.5151
+        },
+        {
+          "totalThreadCpuMs": 468.75,
+          "sampleMs": 457.0193,
+          "deriveMs": 0.6953,
+          "canopyMs": 0.5606,
+          "composeMs": 3.9256,
+          "totalMs": 462.2008
+        },
+        {
+          "totalThreadCpuMs": 500.0,
+          "sampleMs": 516.2777,
+          "deriveMs": 0.6996,
+          "canopyMs": 0.5486,
+          "composeMs": 4.4964,
+          "totalMs": 522.0223
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 484.375,
+          "sampleMs": 495.8355,
+          "deriveMs": 0.6817,
+          "canopyMs": 0.6324,
+          "composeMs": 3.9215,
+          "totalMs": 501.0711,
+          "overviewHeightsMs": 193.5838,
+          "overviewHeightsCoarseMs": 88.0392,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 208.4358,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0071,
+          "samplingOutsideSamplerMs": 5.769600000000025
+        },
+        {
+          "totalThreadCpuMs": 484.375,
+          "sampleMs": 466.9341,
+          "deriveMs": 0.8272,
+          "canopyMs": 0.8898,
+          "composeMs": 7.07,
+          "totalMs": 475.7211,
+          "overviewHeightsMs": 182.1182,
+          "overviewHeightsCoarseMs": 65.8393,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 215.4342,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0083,
+          "samplingOutsideSamplerMs": 3.5341000000000236
+        },
+        {
+          "totalThreadCpuMs": 468.75,
+          "sampleMs": 456.2301,
+          "deriveMs": 0.6877,
+          "canopyMs": 0.5447,
+          "composeMs": 4.0296,
+          "totalMs": 461.4921,
+          "overviewHeightsMs": 190.8908,
+          "overviewHeightsCoarseMs": 61.149,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 200.5406,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0102,
+          "samplingOutsideSamplerMs": 3.639499999999998
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 20539,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 2127,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 20539,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 2127,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 20539,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 2127,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    },
+    {
+      "version": "1.21.4",
+      "lod": 4,
+      "blockX": -5632,
+      "blockZ": -4864,
+      "plainMedianMs": {
+        "totalThreadCpuMs": 390.625,
+        "sampleMs": 381.999,
+        "deriveMs": 1.1452,
+        "canopyMs": 0.4057,
+        "composeMs": 4.1838,
+        "totalMs": 387.5342
+      },
+      "attributedMedianMs": {
+        "totalThreadCpuMs": 406.25,
+        "sampleMs": 397.3577,
+        "deriveMs": 1.0793,
+        "canopyMs": 0.4148,
+        "composeMs": 3.7237,
+        "totalMs": 402.5429,
+        "overviewHeightsMs": 155.7289,
+        "overviewHeightsCoarseMs": 61.5912,
+        "surfaceColumnsMs": 0.0,
+        "surfaceBiomesMs": 173.5685,
+        "biomesMs": 0.0,
+        "otherSamplerMs": 0.009,
+        "samplingOutsideSamplerMs": 3.0353000000000065
+      },
+      "plainRunsMs": [
+        {
+          "totalThreadCpuMs": 390.625,
+          "sampleMs": 381.2461,
+          "deriveMs": 1.0694,
+          "canopyMs": 0.4057,
+          "composeMs": 4.1838,
+          "totalMs": 386.905
+        },
+        {
+          "totalThreadCpuMs": 453.125,
+          "sampleMs": 453.765,
+          "deriveMs": 1.241,
+          "canopyMs": 0.4045,
+          "composeMs": 5.2214,
+          "totalMs": 460.6319
+        },
+        {
+          "totalThreadCpuMs": 390.625,
+          "sampleMs": 381.999,
+          "deriveMs": 1.1452,
+          "canopyMs": 0.4471,
+          "composeMs": 3.9429,
+          "totalMs": 387.5342
+        }
+      ],
+      "attributedRunsMs": [
+        {
+          "totalThreadCpuMs": 406.25,
+          "sampleMs": 397.3577,
+          "deriveMs": 1.0271,
+          "canopyMs": 0.4344,
+          "composeMs": 3.7237,
+          "totalMs": 402.5429,
+          "overviewHeightsMs": 155.7289,
+          "overviewHeightsCoarseMs": 61.5912,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 177.0277,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.008,
+          "samplingOutsideSamplerMs": 3.0019000000000347
+        },
+        {
+          "totalThreadCpuMs": 468.75,
+          "sampleMs": 463.767,
+          "deriveMs": 1.0966,
+          "canopyMs": 0.4148,
+          "composeMs": 3.6616,
+          "totalMs": 468.94,
+          "overviewHeightsMs": 178.5724,
+          "overviewHeightsCoarseMs": 108.4437,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 173.5685,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.0103,
+          "samplingOutsideSamplerMs": 3.1721000000000004
+        },
+        {
+          "totalThreadCpuMs": 390.625,
+          "sampleMs": 390.7067,
+          "deriveMs": 1.0793,
+          "canopyMs": 0.4096,
+          "composeMs": 3.9132,
+          "totalMs": 396.1088,
+          "overviewHeightsMs": 154.0696,
+          "overviewHeightsCoarseMs": 61.3903,
+          "surfaceColumnsMs": 0.0,
+          "surfaceBiomesMs": 172.2025,
+          "biomesMs": 0.0,
+          "otherSamplerMs": 0.009,
+          "samplingOutsideSamplerMs": 3.0353000000000065
+        }
+      ],
+      "samplerCallRuns": [
+        {
+          "overviewHeights": 16769,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1944,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 16769,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1944,
+          "biomes": 0,
+          "otherSampler": 1
+        },
+        {
+          "overviewHeights": 16769,
+          "overviewHeightsCoarse": 1,
+          "surfaceColumns": 0,
+          "surfaceBiomes": 1944,
+          "biomes": 0,
+          "otherSampler": 1
+        }
+      ]
+    }
+  ]
+}
