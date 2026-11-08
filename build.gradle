@@ -88,7 +88,7 @@ tasks.register('buildWebPredictor', Exec) {
     outputs.file outFile
     workingDir rootProject.projectDir
     commandLine([
-        'zig', 'cc', '-target', 'wasm32-wasi', '-O3', '-g0', '-fno-fast-math',
+        'zig', 'cc', '-target', 'wasm32-wasi', '-mexec-model=reactor', '-O3', '-g0', '-fno-fast-math',
         '-ffp-contract=off', '-fvisibility=hidden', '-ffunction-sections',
         '-fdata-sections', '-msimd128', '-Inative/cubiomes', '-Wl,--no-entry',
         '-Wl,--gc-sections', '-Wl,--export=cfxWebInit',

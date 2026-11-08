@@ -48,6 +48,12 @@ for what it predicts; this file is only the build/maintenance side.
   (GPL-3.0). The Anvil scanner receives already-decompressed chunk NBT from
   Java and retains only the status, heightmap, palette and biome fields needed
   by LOD-3/4 correction columns; unrelated NBT payloads are skipped in-place.
+  `bench_legacy.c`, `test_legacy_matrix.c` and `test_web_legacy.c` next to
+  this README are standalone C harnesses for the pre-1.18 overview paths:
+  the benchmark times each LOD against real tile geometry, the matrix test
+  pins the accelerated heights to master's per-pixel reference and cubiomes'
+  exact generation, and the cross-check pins the web predictor to the JNI
+  shim bit for bit. Compile them like the shim (see their header comments).
 - `web/confluxpredict.c` - the browser-only cubiomes wrapper. It produces the
   same margin-inclusive biome, overview-height, exact-residual and fluid
   baseline used by the Java predictor. A Web Worker composes that baseline;
@@ -60,8 +66,10 @@ for what it predicts; this file is only the build/maintenance side.
 
 ## Building
 
-`buildWebPredictor` uses `zig cc -target wasm32-wasi` to refresh the browser
-predictor. It is intentionally separate from normal builds, which package the
+`buildWebPredictor` uses `zig cc -target wasm32-wasi -mexec-model=reactor` to
+refresh the browser predictor (the reactor model is what the wasm32-wasi libc
+of current zig releases needs to link a `--no-entry` library module). It is
+intentionally separate from normal builds, which package the
 committed WASM artifact and therefore do not require Zig:
 
 ```

@@ -339,25 +339,42 @@ static int cfxWebGenerateBiomesStrided(
         return CFX_WEB_OK;
     }
 
-    int j;
-    for (j = 0; j < h; j++)
+    /* Scales above the Voronoi zoom are pure zoom/island layer output, which
+     * is query-shape invariant, so the sample rows can share one dense 2D
+     * generation instead of re-running the whole layer stack per row (mirrors
+     * the JNI shim's cfxGenerateBiomesStrided). For a 258x258 LOD4 tile the
+     * per-row form issues 258 full stack traversals over a 1029-cell span;
+     * banded dense generation covers the same cells with bit-identical values
+     * and caps each band at 1M cells. */
+    const int64_t unitsBudget = (int64_t) (1 << 20) / rawWidth64;
+    const int64_t bandRows = (unitsBudget - 1) / stride + 1;
+    int j0 = 0;
+    while (j0 < h)
     {
-        Range range = {scale, x, z + j*stride, rawWidth, 1, 0, 1};
+        const int rows = (int64_t) (h - j0) < bandRows ? h - j0 : (int) bandRows;
+        const int bandUnitsH = (rows - 1) * stride + 1;
+        Range range = {scale, x, z + j0*stride, rawWidth, bandUnitsH, 0, 1};
         if (dimension == DIM_NETHER)
             range.y = CFX_WEB_NETHER_ROOF_Y / 4;
-        int *row = allocCache(&generator, range);
-        if (row == NULL)
+        int *band = allocCache(&generator, range);
+        if (band == NULL)
             return CFX_WEB_ALLOC;
-        const int err = genBiomes(&generator, row, range);
+        const int err = genBiomes(&generator, band, range);
         if (err != 0)
         {
-            free(row);
+            free(band);
             return CFX_WEB_GENERATION;
         }
-        int i;
-        for (i = 0; i < w; i++)
-            sampled[j*w+i] = row[i*stride];
-        free(row);
+        int j, i;
+        for (j = 0; j < rows; j++)
+        {
+            int *dst = sampled + (size_t) (j0 + j) * w;
+            const int *src = band + (size_t) j * stride * rawWidth;
+            for (i = 0; i < w; i++)
+                dst[i] = src[i*stride];
+        }
+        free(band);
+        j0 += rows;
     }
     return CFX_WEB_OK;
 }
@@ -577,18 +594,56 @@ static int cfxWebModernOverviewHeight(
     return (int) floor(y);
 }
 
-static int cfxWebLegacyOverviewHeight(int biome, int blockX, int blockZ)
+/* sampleOctaveAmp over the octave suffix [firstOct, octcnt). octdepth stores
+ * its octaves finest-first (see cfxWebLegacyDepthOctaveFloor), so a suffix
+ * start drops the shortest-wavelength octaves while keeping the accumulation
+ * order of the survivors identical to sampleOctaveAmp. */
+static double cfxWebSampleOctaveAmpSuffix(const OctaveNoise *noise, double x, double y, double z,
+        double yamp, double ymin, int ydefault, int firstOct)
 {
-    double biomeDepth, biomeScale;
-    getBiomeDepthAndScale(biome, &biomeDepth, &biomeScale, NULL);
-    (void) biomeScale;
-    const double blendedDepth = ((biomeDepth * 4.0 - 1.0) / 8.0)
-        * (17.0 / 64.0);
-    const double quartX = blockX / 4.0;
-    const double quartZ = blockZ / 4.0;
-    double offset = sampleOctaveAmp(
-        &surfaceNoise.octdepth, quartX * 200.0, 10.0, quartZ * 200.0,
-        1.0, 0.0, 1.0
+    double v = 0;
+    int i;
+    for (i = firstOct > 0 ? firstOct : 0; i < noise->octcnt; i++)
+    {
+        PerlinNoise *p = noise->octaves + i;
+        double lf = p->lacunarity;
+        double ax = maintainPrecision(x * lf);
+        double ay = ydefault ? -p->b : maintainPrecision(y * lf);
+        double az = maintainPrecision(z * lf);
+        double pv = samplePerlin(p, ax, ay, az, yamp * lf, ymin * lf);
+        v += p->amplitude * pv;
+    }
+    return v;
+}
+
+/*
+ * Octave truncation for the legacy depth noise on coarse LOD windows
+ * (mirrors the JNI shim's cfxLegacyDepthOctaveFloor). octdepth is built with
+ * omin=-15 and 16 octaves, finest-first: octave i carries wavelength
+ * 2^i/50 blocks at the overview's sampling argument and the eight finest
+ * octaves hold just 0.39% of the total amplitude. Coarse windows skip the
+ * octaves shorter than half the sampling stride - the same "one octave
+ * beyond the strict stride Nyquist limit" cut the modern coarse lattices
+ * apply. Waterline micro queries and small exact-anchor grids stay on the
+ * full-detail per-pixel entry (see CFX_WEB_LEGACY_TRUNCATE_MIN_CELLS).
+ */
+static int cfxWebLegacyDepthOctaveFloor(int stride)
+{
+    int k = 0;
+    while (k < 16 && (double) (1 << k) < 25.0 * stride)
+        k++;
+    return k;
+}
+
+/* Biome-independent part of the legacy overview height, as the per-pixel
+ * formula: the depth-noise offset with its full clamp chain. */
+static double cfxWebLegacyDensityOffset(
+    const SurfaceNoise *sn, double quartX, double quartZ, int firstOct
+)
+{
+    double offset = cfxWebSampleOctaveAmpSuffix(
+        &sn->octdepth, quartX * 200.0, 10.0, quartZ * 200.0,
+        1.0, 0.0, 1.0, firstOct
     );
     offset *= 65535.0 / 8000.0;
     if (offset < 0.0)
@@ -597,9 +652,105 @@ static int cfxWebLegacyOverviewHeight(int biome, int blockX, int blockZ)
     if (offset > 1.0)
         offset = 1.0;
     offset *= 17.0 / 64.0;
-    const double densityOffset = offset < 0.0 ? offset / 28.0 : offset / 40.0;
+    return offset < 0.0 ? offset / 28.0 : offset / 40.0;
+}
+
+static int cfxWebLegacyOverviewHeight(int biome, int blockX, int blockZ)
+{
+    double biomeDepth, biomeScale;
+    getBiomeDepthAndScale(biome, &biomeDepth, &biomeScale, NULL);
+    (void) biomeScale;
+    const double blendedDepth = ((biomeDepth * 4.0 - 1.0) / 8.0)
+        * (17.0 / 64.0);
+    const double densityOffset = cfxWebLegacyDensityOffset(
+        &surfaceNoise, blockX / 4.0, blockZ / 4.0, 0
+    );
     return (int) floor(128.0 * (0.53125 + densityOffset + blendedDepth));
 }
+
+/*
+ * Memo-aware wrapper for the legacy overview biome grid (mirrors the JNI
+ * shim's cfxGenerateOverviewBiomes): the tile flow requests the identical
+ * strided window twice per tile - once inside the overview heights, once for
+ * the biome layer, with the LOD0-1 exact-residual anchor window interleaved -
+ * so two slots turn the second full layer-stack pass into a memcpy. WASM
+ * generator state is a single instance driven by one worker, so statics are
+ * safe. Memoize tile-sized windows only (see CFX_WEB_OVERVIEW_MEMO_MAX_CELLS).
+ */
+#define CFX_WEB_OVERVIEW_MEMO_MAX_CELLS (1 << 17)
+#define CFX_WEB_OVERVIEW_MEMO_SLOTS 2
+
+static int webOverviewMemoValid[CFX_WEB_OVERVIEW_MEMO_SLOTS];
+static int webOverviewMemoX[CFX_WEB_OVERVIEW_MEMO_SLOTS];
+static int webOverviewMemoZ[CFX_WEB_OVERVIEW_MEMO_SLOTS];
+static int webOverviewMemoW[CFX_WEB_OVERVIEW_MEMO_SLOTS];
+static int webOverviewMemoH[CFX_WEB_OVERVIEW_MEMO_SLOTS];
+static int webOverviewMemoStride[CFX_WEB_OVERVIEW_MEMO_SLOTS];
+static int *webOverviewMemoBiomes[CFX_WEB_OVERVIEW_MEMO_SLOTS];
+static size_t webOverviewMemoCap[CFX_WEB_OVERVIEW_MEMO_SLOTS];
+static int webOverviewMemoNext;
+
+static int cfxWebOverviewBiomes(
+    int blockX, int blockZ, int w, int h, int blockStride, int *out
+)
+{
+    const int cells = w * h;
+    int slot;
+    for (slot = 0; slot < CFX_WEB_OVERVIEW_MEMO_SLOTS; slot++)
+    {
+        if (webOverviewMemoValid[slot]
+            && webOverviewMemoX[slot] == blockX
+            && webOverviewMemoZ[slot] == blockZ
+            && webOverviewMemoW[slot] == w
+            && webOverviewMemoH[slot] == h
+            && webOverviewMemoStride[slot] == blockStride)
+        {
+            memcpy(out, webOverviewMemoBiomes[slot], sizeof(int) * (size_t) cells);
+            return CFX_WEB_OK;
+        }
+    }
+
+    const int scale = blockStride < 4 ? 1 : 4;
+    const int err = cfxWebGenerateBiomesStrided(
+        scale, floordiv(blockX, scale), floordiv(blockZ, scale),
+        w, h, blockStride < 4 ? blockStride : blockStride / 4, out
+    );
+    if (err != CFX_WEB_OK)
+        return err;
+
+    if (cells <= CFX_WEB_OVERVIEW_MEMO_MAX_CELLS)
+    {
+        const int target = webOverviewMemoNext;
+        webOverviewMemoNext = (target + 1) % CFX_WEB_OVERVIEW_MEMO_SLOTS;
+        if (webOverviewMemoCap[target] < (size_t) cells)
+        {
+            int *grown = realloc(
+                webOverviewMemoBiomes[target], sizeof(int) * (size_t) cells);
+            if (grown != NULL)
+            {
+                webOverviewMemoBiomes[target] = grown;
+                webOverviewMemoCap[target] = (size_t) cells;
+            }
+        }
+        if (webOverviewMemoCap[target] >= (size_t) cells)
+        {
+            memcpy(webOverviewMemoBiomes[target], out, sizeof(int) * (size_t) cells);
+            webOverviewMemoValid[target] = 1;
+            webOverviewMemoX[target] = blockX;
+            webOverviewMemoZ[target] = blockZ;
+            webOverviewMemoW[target] = w;
+            webOverviewMemoH[target] = h;
+            webOverviewMemoStride[target] = blockStride;
+        }
+    }
+    return CFX_WEB_OK;
+}
+
+/* Coarse legacy overview windows at or above this cell count skip the
+ * sub-Nyquist depth-noise octaves; the exact-residual anchor grids and the
+ * stride-4 waterline micro queries stay below the bar and keep full detail
+ * (mirrors the JNI shim's CFX_LEGACY_TRUNCATE_MIN_CELLS). */
+#define CFX_WEB_LEGACY_TRUNCATE_MIN_CELLS 4096
 
 static int cfxWebOverviewHeightsImpl(
     int blockX, int blockZ, int w, int h, int stride, int *out,
@@ -661,23 +812,112 @@ static int cfxWebOverviewHeightsImpl(
         return CFX_WEB_OK;
     }
 
-    const int scale = stride < 4 ? 1 : 4;
-    const int nativeStride = stride < 4 ? stride : stride / 4;
-    const int err = cfxWebGenerateBiomesStrided(
-        scale, floordiv(blockX, scale), floordiv(blockZ, scale),
-        w, h, nativeStride, out
-    );
+    /* --- pre-1.18 dispatch (mirrors the JNI shim) -----------------------
+     * The legacy height is a closed form: floor(128 * (0.53125 +
+     * densityOffset(x,z) + blendedDepth(biome))). stride < 4 solves the
+     * depth noise once per world-aligned quart corner - vanilla 1.17 itself
+     * evaluates the depth noise per quart column - and bilinearly
+     * interpolates the biome-independent base per output pixel; stride >= 4
+     * windows above CFX_WEB_LEGACY_TRUNCATE_MIN_CELLS skip the depth-noise
+     * octaves shorter than half the sampling stride. Waterline micro
+     * queries and small anchor grids keep the full-detail per-pixel entry. */
+    const int cells = w * h;
+    int *biomes = malloc(sizeof(int) * (size_t) cells);
+    if (biomes == NULL)
+        return CFX_WEB_ALLOC;
+    const int err = cfxWebOverviewBiomes(blockX, blockZ, w, h, stride, biomes);
     if (err != CFX_WEB_OK)
+    {
+        free(biomes);
         return err;
-    int j, i;
-    for (j = 0; j < h; j++)
-        for (i = 0; i < w; i++)
+    }
+
+    if (stride < 4 && (w > 1 || h > 1))
+    {
+        const int lastX = blockX + (w - 1) * stride;
+        const int lastZ = blockZ + (h - 1) * stride;
+        const int minX4 = floordiv(blockX, 4);
+        const int minZ4 = floordiv(blockZ, 4);
+        const int maxX4 = floordiv(lastX, 4) + 1;
+        const int maxZ4 = floordiv(lastZ, 4) + 1;
+        const int gridW = maxX4 - minX4 + 1;
+        const int gridH = maxZ4 - minZ4 + 1;
+        double *base = malloc(sizeof(double) * (size_t) gridW * gridH);
+        if (base == NULL)
         {
-            const int index = j*w+i;
-            out[index] = cfxWebLegacyOverviewHeight(
-                out[index], blockX + i*stride, blockZ + j*stride
-            );
+            free(biomes);
+            return CFX_WEB_ALLOC;
         }
+        int j, i;
+        /* The lattice resolves one offset per 4x4-block cell, so the corner
+         * solves apply the same coarse-window octave cut as a stride-4
+         * window: octaves shorter than half the cell size hold 0.39% of the
+         * amplitude and only alias inside the bilinear interpolation. */
+        const int latticeFirstOct = cfxWebLegacyDepthOctaveFloor(4);
+        for (j = 0; j < gridH; j++)
+            for (i = 0; i < gridW; i++)
+                base[j*gridW+i] = 0.53125 + cfxWebLegacyDensityOffset(
+                    &surfaceNoise, (double) (minX4 + i), (double) (minZ4 + j),
+                    latticeFirstOct
+                );
+        for (j = 0; j < h; j++)
+        {
+            const int sampleZ = blockZ + j * stride;
+            const int z4 = floordiv(sampleZ, 4);
+            const double fz = (double) (sampleZ - z4*4) / 4.0;
+            const int iz = z4 - minZ4;
+            for (i = 0; i < w; i++)
+            {
+                const int sampleX = blockX + i * stride;
+                const int x4 = floordiv(sampleX, 4);
+                const double fx = (double) (sampleX - x4*4) / 4.0;
+                const int ix = x4 - minX4;
+                double biomeDepth, biomeScale;
+                getBiomeDepthAndScale(biomes[j*w+i], &biomeDepth, &biomeScale, NULL);
+                (void) biomeScale;
+                const double blendedDepth = ((biomeDepth * 4.0 - 1.0) / 8.0)
+                    * (17.0 / 64.0);
+                const double b00 = base[iz*gridW+ix];
+                const double top = b00 + (base[iz*gridW+ix+1] - b00) * fx;
+                const double b01 = base[(iz+1)*gridW+ix];
+                const double bottom = b01 + (base[(iz+1)*gridW+ix+1] - b01) * fx;
+                const double lerped = top + (bottom - top) * fz;
+                out[j*w+i] = (int) floor(128.0 * (lerped + blendedDepth));
+            }
+        }
+        free(base);
+    }
+    else if (stride >= 4 && (w > 1 || h > 1)
+        && cells >= CFX_WEB_LEGACY_TRUNCATE_MIN_CELLS)
+    {
+        const int firstOct = cfxWebLegacyDepthOctaveFloor(stride);
+        int j, i;
+        for (j = 0; j < h; j++)
+            for (i = 0; i < w; i++)
+            {
+                double biomeDepth, biomeScale;
+                getBiomeDepthAndScale(biomes[j*w+i], &biomeDepth, &biomeScale, NULL);
+                (void) biomeScale;
+                const double blendedDepth = ((biomeDepth * 4.0 - 1.0) / 8.0)
+                    * (17.0 / 64.0);
+                const double densityOffset = cfxWebLegacyDensityOffset(
+                    &surfaceNoise, (blockX + i*stride) / 4.0,
+                    (blockZ + j*stride) / 4.0, firstOct
+                );
+                out[j*w+i] =
+                    (int) floor(128.0 * (0.53125 + densityOffset + blendedDepth));
+            }
+    }
+    else
+    {
+        int j, i;
+        for (j = 0; j < h; j++)
+            for (i = 0; i < w; i++)
+                out[j*w+i] = cfxWebLegacyOverviewHeight(
+                    biomes[j*w+i], blockX + i*stride, blockZ + j*stride
+                );
+    }
+    free(biomes);
     return CFX_WEB_OK;
 }
 
@@ -1093,11 +1333,9 @@ static int cfxWebGenerateOverworld(int blockX, int blockZ, int lod, int exact)
         }
         else
         {
-            const int scale = blockStride < 4 ? 1 : 4;
-            err = cfxWebGenerateBiomesStrided(
-                scale, floordiv(originX, scale), floordiv(originZ, scale),
-                CFX_WEB_GRID_SIZE, CFX_WEB_GRID_SIZE,
-                blockStride / scale, biomeData
+            err = cfxWebOverviewBiomes(
+                originX, originZ, CFX_WEB_GRID_SIZE, CFX_WEB_GRID_SIZE,
+                blockStride, biomeData
             );
         }
     }
@@ -1358,6 +1596,9 @@ int cfxWebInit(int mcVersion, int64_t seed, int dim, int flags)
     worldSeed = (uint64_t) seed;
     mc = mcVersion;
     dimension = dim;
+    /* The overview biome memo keys on geometry alone; a new seed or version
+     * invalidates every stored window. */
+    memset(webOverviewMemoValid, 0, sizeof(webOverviewMemoValid));
     ready = 1;
     return CFX_WEB_OK;
 }

@@ -63,6 +63,19 @@ world spacing naturally grows with the LOD's blocks per pixel.
 The Java layout, correction density, biome pass, fluid pass, and tests are identical across every
 supported build from 1.17.1 through 26.2. Only the internal cubiomes overview-height formula follows
 the version's own terrain generator.
+
+Both terrain families solve their overview the same accelerated way. The pre-1.18 depth noise is
+solved once per world-aligned quart corner (vanilla 1.17 itself evaluates that noise per quart
+column) and each output pixel bilinearly interpolates the biome-independent base before adding its
+own per-biome depth term; coarse windows and the quart lattice itself skip the depth-noise octaves
+shorter than half the sampling stride, which hold 0.39% of the noise's amplitude - the same shape
+the 1.18+ density solve uses. The pre-1.18 paths additionally share one dense two-dimensional biome
+generation per strided scale-4-and-above window instead of re-running the layer stack per sample
+row, and the two overview-sized biome windows a tile needs are memoized so the surface-biome pass
+reads back the grid the overview pass already built. Waterline micro queries and the small
+exact-anchor grids keep the
+full-detail per-pixel entry, so the residual correction and shoreline refinement above see the
+values they always did.
 Final surface biomes use the corrected heights. Fluid is categorical and resolved independently at
 every output pixel. Exact anchors provide water confidence, which is bilinearly interpolated before
 being combined with the corrected terrain floor and final ocean/river biome. The categorical flag
