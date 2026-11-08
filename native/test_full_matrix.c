@@ -195,21 +195,22 @@ int main(void) {
             int strides[] = {1, 2, 4};
             for (int st = 0; st < 3; st++) {
                 int stride = strides[st];
-                int sh_idx = (s + l + st) % 4;
-                Shape sh = shapes[sh_idx];
+                for (int sh_idx = 0; sh_idx < 4; sh_idx++) {
+                    Shape sh = shapes[sh_idx];
 
-                CaseResult res;
-                run_case(p_env, &ctx, seeds[s], locs[l].x + sh.ox, locs[l].z + sh.oz, sh.w, sh.h, stride, &res);
+                    CaseResult res;
+                    run_case(p_env, &ctx, seeds[s], locs[l].x + sh.ox, locs[l].z + sh.oz, sh.w, sh.h, stride, &res);
 
-                char bFlip[32], wFlip[32];
-                snprintf(bFlip, sizeof(bFlip), "%4.1f%%/%4.1f%%", res.biome_flip_opt, res.biome_flip_master);
-                snprintf(wFlip, sizeof(wFlip), "%4.1f%%/%4.1f%%", res.water_flip_opt, res.water_flip_master);
+                    char bFlip[32], wFlip[32];
+                    snprintf(bFlip, sizeof(bFlip), "%4.1f%%/%4.1f%%", res.biome_flip_opt, res.biome_flip_master);
+                    snprintf(wFlip, sizeof(wFlip), "%4.1f%%/%4.1f%%", res.water_flip_opt, res.water_flip_master);
 
-                printf("%-10llu | %-16s | Stride%-1d | %-22s | %7.3f | %6.2f%% | %6d | %10.2f%% | %-14s | %-14s | %6.2f%%\n",
-                       (unsigned long long)seeds[s], locs[l].name, stride, sh.name,
-                       res.y_mae, res.le2_rate, res.max_err, res.vs_master_le2,
-                       bFlip, wFlip, res.coast_biome_flip);
-                fflush(stdout);
+                    printf("%-10llu | %-16s | Stride%-1d | %-22s | %7.3f | %6.2f%% | %6d | %10.2f%% | %-14s | %-14s | %6.2f%%\n",
+                           (unsigned long long)seeds[s], locs[l].name, stride, sh.name,
+                           res.y_mae, res.le2_rate, res.max_err, res.vs_master_le2,
+                           bFlip, wFlip, res.coast_biome_flip);
+                    fflush(stdout);
+                }
             }
         }
     }
