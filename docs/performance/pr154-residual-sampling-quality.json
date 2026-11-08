@@ -1,0 +1,3465 @@
+{
+  "version": "1.21.4",
+  "samplesPerTile": 1024,
+  "sampling": "32x32 uniform pixel centers at 4+8*k; exact solid/fluid columns and their production surface biomes",
+  "baseline": "PR154 original residual strides 8/16; use saved baseline main/api classpath when production sources change",
+  "timingNote": "Single-run sample timings are diagnostic; use PredictionPipelineBenchmarkTest for warmed throughput.",
+  "cases": [
+    {
+      "seed": 146008555,
+      "scene": "coast",
+      "blockX": -256,
+      "blockZ": -384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 283.4566,
+      "againstExactColumns": {
+        "heightMae": 1.615234375,
+        "heightBias": -0.453125,
+        "heightWithin2Pct": 83.3984375,
+        "kindChangedPct": 3.22265625,
+        "biomeChangedPct": 0.09765625,
+        "fluidChangedPct": 3.125,
+        "waterToLandPctOfAllSamples": 1.85546875,
+        "landToWaterPctOfAllSamples": 1.26953125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "coast",
+      "blockX": -256,
+      "blockZ": -384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 113.6039,
+      "againstExactColumns": {
+        "heightMae": 2.1708984375,
+        "heightBias": -0.5888671875,
+        "heightWithin2Pct": 73.73046875,
+        "kindChangedPct": 3.80859375,
+        "biomeChangedPct": 0.09765625,
+        "fluidChangedPct": 3.7109375,
+        "waterToLandPctOfAllSamples": 2.34375,
+        "landToWaterPctOfAllSamples": 1.3671875
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.3955078125,
+        "heightBias": -0.1357421875,
+        "heightWithin2Pct": 84.66796875,
+        "kindChangedPct": 2.734375,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 2.734375,
+        "waterToLandPctOfAllSamples": 1.5625,
+        "landToWaterPctOfAllSamples": 1.171875
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 2.6200782485640555,
+        "landToOceanPct": 2.056105885290935,
+        "visibleDiffPct": 15.20233154296875,
+        "changedArgbPct": 64.3890380859375
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "coast",
+      "blockX": -256,
+      "blockZ": -384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 57.8064,
+      "againstExactColumns": {
+        "heightMae": 2.6767578125,
+        "heightBias": 0.1943359375,
+        "heightWithin2Pct": 72.55859375,
+        "kindChangedPct": 7.12890625,
+        "biomeChangedPct": 0.09765625,
+        "fluidChangedPct": 7.03125,
+        "waterToLandPctOfAllSamples": 5.17578125,
+        "landToWaterPctOfAllSamples": 1.85546875
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.2548828125,
+        "heightBias": 0.6474609375,
+        "heightWithin2Pct": 75.09765625,
+        "kindChangedPct": 5.859375,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 5.859375,
+        "waterToLandPctOfAllSamples": 4.296875,
+        "landToWaterPctOfAllSamples": 1.5625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 6.5699658703071675,
+        "landToOceanPct": 1.9582951802214268,
+        "visibleDiffPct": 19.76318359375,
+        "changedArgbPct": 81.1737060546875
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "coast",
+      "blockX": -256,
+      "blockZ": -384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 30.3055,
+      "againstExactColumns": {
+        "heightMae": 2.12109375,
+        "heightBias": 1.669921875,
+        "heightWithin2Pct": 87.79296875,
+        "kindChangedPct": 12.3046875,
+        "biomeChangedPct": 0.09765625,
+        "fluidChangedPct": 12.20703125,
+        "waterToLandPctOfAllSamples": 12.109375,
+        "landToWaterPctOfAllSamples": 0.09765625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.416015625,
+        "heightBias": 2.123046875,
+        "heightWithin2Pct": 78.515625,
+        "kindChangedPct": 11.62109375,
+        "biomeChangedPct": 0.1953125,
+        "fluidChangedPct": 11.42578125,
+        "waterToLandPctOfAllSamples": 11.42578125,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 16.076333971530843,
+        "landToOceanPct": 0.0020810788312661285,
+        "visibleDiffPct": 24.59259033203125,
+        "changedArgbPct": 88.5894775390625
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "coast",
+      "blockX": -256,
+      "blockZ": -384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 172.4239,
+      "againstExactColumns": {
+        "heightMae": 1.9130859375,
+        "heightBias": -0.3623046875,
+        "heightWithin2Pct": 81.640625,
+        "kindChangedPct": 5.859375,
+        "biomeChangedPct": 0.29296875,
+        "fluidChangedPct": 5.76171875,
+        "waterToLandPctOfAllSamples": 1.85546875,
+        "landToWaterPctOfAllSamples": 3.90625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "coast",
+      "blockX": -256,
+      "blockZ": -384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 136.1388,
+      "againstExactColumns": {
+        "heightMae": 2.166015625,
+        "heightBias": -0.53125,
+        "heightWithin2Pct": 80.76171875,
+        "kindChangedPct": 6.93359375,
+        "biomeChangedPct": 0.29296875,
+        "fluidChangedPct": 6.93359375,
+        "waterToLandPctOfAllSamples": 1.3671875,
+        "landToWaterPctOfAllSamples": 5.56640625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.3154296875,
+        "heightBias": -0.1689453125,
+        "heightWithin2Pct": 86.71875,
+        "kindChangedPct": 5.95703125,
+        "biomeChangedPct": 0.390625,
+        "fluidChangedPct": 5.859375,
+        "waterToLandPctOfAllSamples": 1.85546875,
+        "landToWaterPctOfAllSamples": 4.00390625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 5.113470747449511,
+        "landToOceanPct": 11.055590256089944,
+        "visibleDiffPct": 12.58087158203125,
+        "changedArgbPct": 74.090576171875
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "coast",
+      "blockX": -256,
+      "blockZ": -384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 119.2596,
+      "againstExactColumns": {
+        "heightMae": 2.166015625,
+        "heightBias": -0.53125,
+        "heightWithin2Pct": 80.76171875,
+        "kindChangedPct": 6.93359375,
+        "biomeChangedPct": 0.29296875,
+        "fluidChangedPct": 6.93359375,
+        "waterToLandPctOfAllSamples": 1.3671875,
+        "landToWaterPctOfAllSamples": 5.56640625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.3154296875,
+        "heightBias": -0.1689453125,
+        "heightWithin2Pct": 86.71875,
+        "kindChangedPct": 5.95703125,
+        "biomeChangedPct": 0.390625,
+        "fluidChangedPct": 5.859375,
+        "waterToLandPctOfAllSamples": 1.85546875,
+        "landToWaterPctOfAllSamples": 4.00390625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 5.113470747449511,
+        "landToOceanPct": 11.055590256089944,
+        "visibleDiffPct": 12.58087158203125,
+        "changedArgbPct": 74.090576171875
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "coast",
+      "blockX": -256,
+      "blockZ": -384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 93.2233,
+      "againstExactColumns": {
+        "heightMae": 1.46875,
+        "heightBias": 0.548828125,
+        "heightWithin2Pct": 92.67578125,
+        "kindChangedPct": 4.78515625,
+        "biomeChangedPct": 0.09765625,
+        "fluidChangedPct": 4.6875,
+        "waterToLandPctOfAllSamples": 2.734375,
+        "landToWaterPctOfAllSamples": 1.953125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.2939453125,
+        "heightBias": 0.9111328125,
+        "heightWithin2Pct": 87.98828125,
+        "kindChangedPct": 4.98046875,
+        "biomeChangedPct": 0.1953125,
+        "fluidChangedPct": 4.98046875,
+        "waterToLandPctOfAllSamples": 3.90625,
+        "landToWaterPctOfAllSamples": 1.07421875
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 10.197793046012908,
+        "landToOceanPct": 2.7316260670414323,
+        "visibleDiffPct": 9.91973876953125,
+        "changedArgbPct": 72.92938232421875
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "plains",
+      "blockX": -128,
+      "blockZ": -128,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 281.4183,
+      "againstExactColumns": {
+        "heightMae": 1.42578125,
+        "heightBias": -0.154296875,
+        "heightWithin2Pct": 87.3046875,
+        "kindChangedPct": 0.87890625,
+        "biomeChangedPct": 0.87890625,
+        "fluidChangedPct": 0.5859375,
+        "waterToLandPctOfAllSamples": 0.390625,
+        "landToWaterPctOfAllSamples": 0.1953125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "plains",
+      "blockX": -128,
+      "blockZ": -128,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 103.8773,
+      "againstExactColumns": {
+        "heightMae": 1.50390625,
+        "heightBias": -0.083984375,
+        "heightWithin2Pct": 86.1328125,
+        "kindChangedPct": 0.9765625,
+        "biomeChangedPct": 0.9765625,
+        "fluidChangedPct": 0.87890625,
+        "waterToLandPctOfAllSamples": 0.68359375,
+        "landToWaterPctOfAllSamples": 0.1953125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.919921875,
+        "heightBias": 0.0703125,
+        "heightWithin2Pct": 93.65234375,
+        "kindChangedPct": 0.78125,
+        "biomeChangedPct": 0.29296875,
+        "fluidChangedPct": 0.68359375,
+        "waterToLandPctOfAllSamples": 0.48828125,
+        "landToWaterPctOfAllSamples": 0.1953125
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 38.61584754262788,
+        "landToOceanPct": 9.929789368104313,
+        "visibleDiffPct": 28.95050048828125,
+        "changedArgbPct": 61.93695068359375
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "plains",
+      "blockX": -128,
+      "blockZ": -128,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 55.8242,
+      "againstExactColumns": {
+        "heightMae": 1.6025390625,
+        "heightBias": -0.1005859375,
+        "heightWithin2Pct": 84.1796875,
+        "kindChangedPct": 1.26953125,
+        "biomeChangedPct": 0.29296875,
+        "fluidChangedPct": 1.171875,
+        "waterToLandPctOfAllSamples": 1.07421875,
+        "landToWaterPctOfAllSamples": 0.09765625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.3935546875,
+        "heightBias": 0.0537109375,
+        "heightWithin2Pct": 85.64453125,
+        "kindChangedPct": 0.9765625,
+        "biomeChangedPct": 0.5859375,
+        "fluidChangedPct": 0.78125,
+        "waterToLandPctOfAllSamples": 0.78125,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 71.6148445336008,
+        "landToOceanPct": 1.2036108324974926,
+        "visibleDiffPct": 30.40924072265625,
+        "changedArgbPct": 73.614501953125
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "plains",
+      "blockX": -128,
+      "blockZ": -128,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 34.6919,
+      "againstExactColumns": {
+        "heightMae": 1.244140625,
+        "heightBias": 0.40625,
+        "heightWithin2Pct": 92.08984375,
+        "kindChangedPct": 1.66015625,
+        "biomeChangedPct": 0.1953125,
+        "fluidChangedPct": 1.5625,
+        "waterToLandPctOfAllSamples": 1.5625,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.5,
+        "heightBias": 0.560546875,
+        "heightWithin2Pct": 86.9140625,
+        "kindChangedPct": 1.5625,
+        "biomeChangedPct": 0.68359375,
+        "fluidChangedPct": 1.3671875,
+        "waterToLandPctOfAllSamples": 1.3671875,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 98.69608826479438,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 27.35443115234375,
+        "changedArgbPct": 73.6297607421875
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "plains",
+      "blockX": -128,
+      "blockZ": -128,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 167.866,
+      "againstExactColumns": {
+        "heightMae": 1.5859375,
+        "heightBias": -0.5,
+        "heightWithin2Pct": 84.27734375,
+        "kindChangedPct": 3.61328125,
+        "biomeChangedPct": 0.78125,
+        "fluidChangedPct": 3.515625,
+        "waterToLandPctOfAllSamples": 1.66015625,
+        "landToWaterPctOfAllSamples": 1.85546875
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "plains",
+      "blockX": -128,
+      "blockZ": -128,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 122.9556,
+      "againstExactColumns": {
+        "heightMae": 1.6611328125,
+        "heightBias": -0.2958984375,
+        "heightWithin2Pct": 85.25390625,
+        "kindChangedPct": 4.4921875,
+        "biomeChangedPct": 0.87890625,
+        "fluidChangedPct": 4.39453125,
+        "waterToLandPctOfAllSamples": 2.5390625,
+        "landToWaterPctOfAllSamples": 1.85546875
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.2783203125,
+        "heightBias": 0.2041015625,
+        "heightWithin2Pct": 87.59765625,
+        "kindChangedPct": 4.58984375,
+        "biomeChangedPct": 0.68359375,
+        "fluidChangedPct": 4.58984375,
+        "waterToLandPctOfAllSamples": 2.734375,
+        "landToWaterPctOfAllSamples": 1.85546875
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 10.852713178294573,
+        "landToOceanPct": 7.4082199795231825,
+        "visibleDiffPct": 10.97564697265625,
+        "changedArgbPct": 75.00152587890625
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "plains",
+      "blockX": -128,
+      "blockZ": -128,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 130.2097,
+      "againstExactColumns": {
+        "heightMae": 1.6611328125,
+        "heightBias": -0.2958984375,
+        "heightWithin2Pct": 85.25390625,
+        "kindChangedPct": 4.4921875,
+        "biomeChangedPct": 0.87890625,
+        "fluidChangedPct": 4.39453125,
+        "waterToLandPctOfAllSamples": 2.5390625,
+        "landToWaterPctOfAllSamples": 1.85546875
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.2783203125,
+        "heightBias": 0.2041015625,
+        "heightWithin2Pct": 87.59765625,
+        "kindChangedPct": 4.58984375,
+        "biomeChangedPct": 0.68359375,
+        "fluidChangedPct": 4.58984375,
+        "waterToLandPctOfAllSamples": 2.734375,
+        "landToWaterPctOfAllSamples": 1.85546875
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 10.852713178294573,
+        "landToOceanPct": 7.4082199795231825,
+        "visibleDiffPct": 10.97564697265625,
+        "changedArgbPct": 75.00152587890625
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "plains",
+      "blockX": -128,
+      "blockZ": -128,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 101.0498,
+      "againstExactColumns": {
+        "heightMae": 1.052734375,
+        "heightBias": -0.02734375,
+        "heightWithin2Pct": 95.99609375,
+        "kindChangedPct": 2.44140625,
+        "biomeChangedPct": 0.48828125,
+        "fluidChangedPct": 2.44140625,
+        "waterToLandPctOfAllSamples": 1.953125,
+        "landToWaterPctOfAllSamples": 0.48828125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.224609375,
+        "heightBias": 0.47265625,
+        "heightWithin2Pct": 89.16015625,
+        "kindChangedPct": 3.7109375,
+        "biomeChangedPct": 0.68359375,
+        "fluidChangedPct": 3.61328125,
+        "waterToLandPctOfAllSamples": 2.63671875,
+        "landToWaterPctOfAllSamples": 0.9765625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 11.679099020038029,
+        "landToOceanPct": 3.810150650870265,
+        "visibleDiffPct": 9.35821533203125,
+        "changedArgbPct": 71.514892578125
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "mountain",
+      "blockX": 128,
+      "blockZ": 896,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 296.7783,
+      "againstExactColumns": {
+        "heightMae": 2.8056640625,
+        "heightBias": -1.0791015625,
+        "heightWithin2Pct": 60.44921875,
+        "kindChangedPct": 1.5625,
+        "biomeChangedPct": 4.296875,
+        "fluidChangedPct": 0.29296875,
+        "waterToLandPctOfAllSamples": 0.09765625,
+        "landToWaterPctOfAllSamples": 0.1953125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "mountain",
+      "blockX": 128,
+      "blockZ": 896,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 123.534,
+      "againstExactColumns": {
+        "heightMae": 2.931640625,
+        "heightBias": -0.89453125,
+        "heightWithin2Pct": 57.8125,
+        "kindChangedPct": 2.05078125,
+        "biomeChangedPct": 4.19921875,
+        "fluidChangedPct": 0.5859375,
+        "waterToLandPctOfAllSamples": 0.5859375,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.5576171875,
+        "heightBias": 0.1845703125,
+        "heightWithin2Pct": 82.421875,
+        "kindChangedPct": 1.26953125,
+        "biomeChangedPct": 2.44140625,
+        "fluidChangedPct": 0.68359375,
+        "waterToLandPctOfAllSamples": 0.68359375,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 11.382488479262673,
+        "landToOceanPct": 1.0138248847926268,
+        "visibleDiffPct": 24.4964599609375,
+        "changedArgbPct": 51.544189453125
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "mountain",
+      "blockX": 128,
+      "blockZ": 896,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 74.6839,
+      "againstExactColumns": {
+        "heightMae": 3.1474609375,
+        "heightBias": -0.4658203125,
+        "heightWithin2Pct": 59.1796875,
+        "kindChangedPct": 2.44140625,
+        "biomeChangedPct": 4.6875,
+        "fluidChangedPct": 1.3671875,
+        "waterToLandPctOfAllSamples": 1.3671875,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.5390625,
+        "heightBias": 0.61328125,
+        "heightWithin2Pct": 68.06640625,
+        "kindChangedPct": 2.63671875,
+        "biomeChangedPct": 3.3203125,
+        "fluidChangedPct": 1.46484375,
+        "waterToLandPctOfAllSamples": 1.46484375,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 31.889400921658986,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 28.2196044921875,
+        "changedArgbPct": 57.29827880859375
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "mountain",
+      "blockX": 128,
+      "blockZ": 896,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 50.2308,
+      "againstExactColumns": {
+        "heightMae": 2.310546875,
+        "heightBias": 1.44140625,
+        "heightWithin2Pct": 84.1796875,
+        "kindChangedPct": 1.66015625,
+        "biomeChangedPct": 2.83203125,
+        "fluidChangedPct": 0.9765625,
+        "waterToLandPctOfAllSamples": 0.9765625,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "againstPr154Baseline": {
+        "heightMae": 3.4873046875,
+        "heightBias": 2.5205078125,
+        "heightWithin2Pct": 59.9609375,
+        "kindChangedPct": 2.63671875,
+        "biomeChangedPct": 4.00390625,
+        "fluidChangedPct": 1.07421875,
+        "waterToLandPctOfAllSamples": 1.07421875,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 23.179723502304146,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 25.70648193359375,
+        "changedArgbPct": 56.73828125
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "mountain",
+      "blockX": 128,
+      "blockZ": 896,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 182.0413,
+      "againstExactColumns": {
+        "heightMae": 2.154296875,
+        "heightBias": -0.4453125,
+        "heightWithin2Pct": 75.78125,
+        "kindChangedPct": 2.63671875,
+        "biomeChangedPct": 1.7578125,
+        "fluidChangedPct": 2.34375,
+        "waterToLandPctOfAllSamples": 0.68359375,
+        "landToWaterPctOfAllSamples": 1.66015625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "mountain",
+      "blockX": 128,
+      "blockZ": 896,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 137.4904,
+      "againstExactColumns": {
+        "heightMae": 2.2294921875,
+        "heightBias": 0.0166015625,
+        "heightWithin2Pct": 79.98046875,
+        "kindChangedPct": 2.05078125,
+        "biomeChangedPct": 1.66015625,
+        "fluidChangedPct": 1.7578125,
+        "waterToLandPctOfAllSamples": 0.78125,
+        "landToWaterPctOfAllSamples": 0.9765625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.5615234375,
+        "heightBias": 0.4619140625,
+        "heightWithin2Pct": 81.25,
+        "kindChangedPct": 2.34375,
+        "biomeChangedPct": 1.85546875,
+        "fluidChangedPct": 1.7578125,
+        "waterToLandPctOfAllSamples": 1.26953125,
+        "landToWaterPctOfAllSamples": 0.48828125
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 7.428107815739656,
+        "landToOceanPct": 4.588479221130442,
+        "visibleDiffPct": 11.4715576171875,
+        "changedArgbPct": 70.001220703125
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "mountain",
+      "blockX": 128,
+      "blockZ": 896,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 141.2573,
+      "againstExactColumns": {
+        "heightMae": 2.2294921875,
+        "heightBias": 0.0166015625,
+        "heightWithin2Pct": 79.98046875,
+        "kindChangedPct": 2.05078125,
+        "biomeChangedPct": 1.66015625,
+        "fluidChangedPct": 1.7578125,
+        "waterToLandPctOfAllSamples": 0.78125,
+        "landToWaterPctOfAllSamples": 0.9765625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.5615234375,
+        "heightBias": 0.4619140625,
+        "heightWithin2Pct": 81.25,
+        "kindChangedPct": 2.34375,
+        "biomeChangedPct": 1.85546875,
+        "fluidChangedPct": 1.7578125,
+        "waterToLandPctOfAllSamples": 1.26953125,
+        "landToWaterPctOfAllSamples": 0.48828125
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 7.428107815739656,
+        "landToOceanPct": 4.588479221130442,
+        "visibleDiffPct": 11.4715576171875,
+        "changedArgbPct": 70.001220703125
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "mountain",
+      "blockX": 128,
+      "blockZ": 896,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 122.6632,
+      "againstExactColumns": {
+        "heightMae": 1.669921875,
+        "heightBias": 0.552734375,
+        "heightWithin2Pct": 92.08984375,
+        "kindChangedPct": 1.7578125,
+        "biomeChangedPct": 1.5625,
+        "fluidChangedPct": 1.3671875,
+        "waterToLandPctOfAllSamples": 0.78125,
+        "landToWaterPctOfAllSamples": 0.5859375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.55859375,
+        "heightBias": 0.998046875,
+        "heightWithin2Pct": 80.76171875,
+        "kindChangedPct": 2.44140625,
+        "biomeChangedPct": 1.3671875,
+        "fluidChangedPct": 1.953125,
+        "waterToLandPctOfAllSamples": 1.5625,
+        "landToWaterPctOfAllSamples": 0.390625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 8.203371495537727,
+        "landToOceanPct": 2.8576579825114936,
+        "visibleDiffPct": 10.24169921875,
+        "changedArgbPct": 68.80645751953125
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 255.8025,
+      "againstExactColumns": {
+        "heightMae": 1.2177734375,
+        "heightBias": -0.6201171875,
+        "heightWithin2Pct": 87.59765625,
+        "kindChangedPct": 5.078125,
+        "biomeChangedPct": 0.87890625,
+        "fluidChangedPct": 4.58984375,
+        "waterToLandPctOfAllSamples": 2.05078125,
+        "landToWaterPctOfAllSamples": 2.5390625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 104.3514,
+      "againstExactColumns": {
+        "heightMae": 1.5927734375,
+        "heightBias": -0.6572265625,
+        "heightWithin2Pct": 81.73828125,
+        "kindChangedPct": 8.10546875,
+        "biomeChangedPct": 1.07421875,
+        "fluidChangedPct": 7.51953125,
+        "waterToLandPctOfAllSamples": 3.80859375,
+        "landToWaterPctOfAllSamples": 3.7109375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.90625,
+        "heightBias": -0.037109375,
+        "heightWithin2Pct": 92.1875,
+        "kindChangedPct": 5.17578125,
+        "biomeChangedPct": 0.78125,
+        "fluidChangedPct": 4.6875,
+        "waterToLandPctOfAllSamples": 2.63671875,
+        "landToWaterPctOfAllSamples": 2.05078125
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 7.00836820083682,
+        "landToOceanPct": 7.015839808726838,
+        "visibleDiffPct": 18.29986572265625,
+        "changedArgbPct": 56.66656494140625
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 55.8725,
+      "againstExactColumns": {
+        "heightMae": 2.369140625,
+        "heightBias": -0.76171875,
+        "heightWithin2Pct": 73.73046875,
+        "kindChangedPct": 12.5,
+        "biomeChangedPct": 0.87890625,
+        "fluidChangedPct": 12.01171875,
+        "waterToLandPctOfAllSamples": 4.296875,
+        "landToWaterPctOfAllSamples": 7.71484375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.9658203125,
+        "heightBias": -0.1416015625,
+        "heightWithin2Pct": 77.83203125,
+        "kindChangedPct": 10.9375,
+        "biomeChangedPct": 0.5859375,
+        "fluidChangedPct": 10.7421875,
+        "waterToLandPctOfAllSamples": 3.90625,
+        "landToWaterPctOfAllSamples": 6.8359375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 8.790346682606097,
+        "landToOceanPct": 18.182157800358638,
+        "visibleDiffPct": 27.02484130859375,
+        "changedArgbPct": 75.24871826171875
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 34.061,
+      "againstExactColumns": {
+        "heightMae": 1.3505859375,
+        "heightBias": 0.5263671875,
+        "heightWithin2Pct": 91.015625,
+        "kindChangedPct": 26.85546875,
+        "biomeChangedPct": 0.87890625,
+        "fluidChangedPct": 26.26953125,
+        "waterToLandPctOfAllSamples": 25.87890625,
+        "landToWaterPctOfAllSamples": 0.390625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.517578125,
+        "heightBias": 1.146484375,
+        "heightWithin2Pct": 84.86328125,
+        "kindChangedPct": 27.05078125,
+        "biomeChangedPct": 0.5859375,
+        "fluidChangedPct": 26.5625,
+        "waterToLandPctOfAllSamples": 26.26953125,
+        "landToWaterPctOfAllSamples": 0.29296875
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 62.548565451285114,
+        "landToOceanPct": 0.5267483562462641,
+        "visibleDiffPct": 38.84735107421875,
+        "changedArgbPct": 71.40350341796875
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 150.1756,
+      "againstExactColumns": {
+        "heightMae": 1.7353515625,
+        "heightBias": -0.5244140625,
+        "heightWithin2Pct": 84.86328125,
+        "kindChangedPct": 4.296875,
+        "biomeChangedPct": 0.29296875,
+        "fluidChangedPct": 4.00390625,
+        "waterToLandPctOfAllSamples": 1.3671875,
+        "landToWaterPctOfAllSamples": 2.63671875
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 105.2351,
+      "againstExactColumns": {
+        "heightMae": 1.791015625,
+        "heightBias": -0.46484375,
+        "heightWithin2Pct": 87.59765625,
+        "kindChangedPct": 4.296875,
+        "biomeChangedPct": 0.1953125,
+        "fluidChangedPct": 4.1015625,
+        "waterToLandPctOfAllSamples": 1.07421875,
+        "landToWaterPctOfAllSamples": 3.02734375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.1318359375,
+        "heightBias": 0.0595703125,
+        "heightWithin2Pct": 92.48046875,
+        "kindChangedPct": 4.8828125,
+        "biomeChangedPct": 0.09765625,
+        "fluidChangedPct": 4.78515625,
+        "waterToLandPctOfAllSamples": 2.05078125,
+        "landToWaterPctOfAllSamples": 2.734375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 2.5388450554237862,
+        "landToOceanPct": 3.9474321119124838,
+        "visibleDiffPct": 8.3648681640625,
+        "changedArgbPct": 58.1878662109375
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 107.7593,
+      "againstExactColumns": {
+        "heightMae": 1.791015625,
+        "heightBias": -0.46484375,
+        "heightWithin2Pct": 87.59765625,
+        "kindChangedPct": 4.296875,
+        "biomeChangedPct": 0.1953125,
+        "fluidChangedPct": 4.1015625,
+        "waterToLandPctOfAllSamples": 1.07421875,
+        "landToWaterPctOfAllSamples": 3.02734375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.1318359375,
+        "heightBias": 0.0595703125,
+        "heightWithin2Pct": 92.48046875,
+        "kindChangedPct": 4.8828125,
+        "biomeChangedPct": 0.09765625,
+        "fluidChangedPct": 4.78515625,
+        "waterToLandPctOfAllSamples": 2.05078125,
+        "landToWaterPctOfAllSamples": 2.734375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 2.5388450554237862,
+        "landToOceanPct": 3.9474321119124838,
+        "visibleDiffPct": 8.3648681640625,
+        "changedArgbPct": 58.1878662109375
+      }
+    },
+    {
+      "seed": 146008555,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 83.4144,
+      "againstExactColumns": {
+        "heightMae": 1.3134765625,
+        "heightBias": 0.7158203125,
+        "heightWithin2Pct": 92.87109375,
+        "kindChangedPct": 3.22265625,
+        "biomeChangedPct": 0.09765625,
+        "fluidChangedPct": 3.125,
+        "waterToLandPctOfAllSamples": 2.5390625,
+        "landToWaterPctOfAllSamples": 0.5859375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.4140625,
+        "heightBias": 1.240234375,
+        "heightWithin2Pct": 90.33203125,
+        "kindChangedPct": 4.19921875,
+        "biomeChangedPct": 0.1953125,
+        "fluidChangedPct": 4.00390625,
+        "waterToLandPctOfAllSamples": 3.61328125,
+        "landToWaterPctOfAllSamples": 0.390625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 5.3899027058424895,
+        "landToOceanPct": 0.4162834599932233,
+        "visibleDiffPct": 7.5897216796875,
+        "changedArgbPct": 74.43389892578125
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "coast",
+      "blockX": 256,
+      "blockZ": -384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 292.227,
+      "againstExactColumns": {
+        "heightMae": 1.4638671875,
+        "heightBias": -0.7021484375,
+        "heightWithin2Pct": 83.88671875,
+        "kindChangedPct": 3.02734375,
+        "biomeChangedPct": 0.29296875,
+        "fluidChangedPct": 2.83203125,
+        "waterToLandPctOfAllSamples": 1.66015625,
+        "landToWaterPctOfAllSamples": 1.171875
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "coast",
+      "blockX": 256,
+      "blockZ": -384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 120.1112,
+      "againstExactColumns": {
+        "heightMae": 1.8427734375,
+        "heightBias": -0.8935546875,
+        "heightWithin2Pct": 76.26953125,
+        "kindChangedPct": 4.98046875,
+        "biomeChangedPct": 0.48828125,
+        "fluidChangedPct": 4.78515625,
+        "waterToLandPctOfAllSamples": 2.34375,
+        "landToWaterPctOfAllSamples": 2.44140625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.958984375,
+        "heightBias": -0.19140625,
+        "heightWithin2Pct": 91.9921875,
+        "kindChangedPct": 3.7109375,
+        "biomeChangedPct": 0.1953125,
+        "fluidChangedPct": 3.7109375,
+        "waterToLandPctOfAllSamples": 1.5625,
+        "landToWaterPctOfAllSamples": 2.1484375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 4.952820798662261,
+        "landToOceanPct": 6.266671975156268,
+        "visibleDiffPct": 19.78759765625,
+        "changedArgbPct": 58.77838134765625
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "coast",
+      "blockX": 256,
+      "blockZ": -384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 60.2952,
+      "againstExactColumns": {
+        "heightMae": 2.2255859375,
+        "heightBias": -1.2099609375,
+        "heightWithin2Pct": 69.53125,
+        "kindChangedPct": 7.32421875,
+        "biomeChangedPct": 0.48828125,
+        "fluidChangedPct": 7.12890625,
+        "waterToLandPctOfAllSamples": 2.24609375,
+        "landToWaterPctOfAllSamples": 4.8828125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.501953125,
+        "heightBias": -0.5078125,
+        "heightWithin2Pct": 81.8359375,
+        "kindChangedPct": 6.4453125,
+        "biomeChangedPct": 0.390625,
+        "fluidChangedPct": 6.4453125,
+        "waterToLandPctOfAllSamples": 1.66015625,
+        "landToWaterPctOfAllSamples": 4.78515625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 4.777640641796393,
+        "landToOceanPct": 12.294461918222718,
+        "visibleDiffPct": 22.75848388671875,
+        "changedArgbPct": 70.97930908203125
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "coast",
+      "blockX": 256,
+      "blockZ": -384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 32.399,
+      "againstExactColumns": {
+        "heightMae": 1.0712890625,
+        "heightBias": 0.1630859375,
+        "heightWithin2Pct": 95.3125,
+        "kindChangedPct": 12.20703125,
+        "biomeChangedPct": 0.390625,
+        "fluidChangedPct": 12.109375,
+        "waterToLandPctOfAllSamples": 11.5234375,
+        "landToWaterPctOfAllSamples": 0.5859375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.4921875,
+        "heightBias": 0.865234375,
+        "heightWithin2Pct": 85.83984375,
+        "kindChangedPct": 11.23046875,
+        "biomeChangedPct": 0.29296875,
+        "fluidChangedPct": 11.03515625,
+        "waterToLandPctOfAllSamples": 10.7421875,
+        "landToWaterPctOfAllSamples": 0.29296875
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 28.486682326710994,
+        "landToOceanPct": 0.44193175936616635,
+        "visibleDiffPct": 26.46026611328125,
+        "changedArgbPct": 77.61993408203125
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "coast",
+      "blockX": 256,
+      "blockZ": -384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 162.6086,
+      "againstExactColumns": {
+        "heightMae": 1.5498046875,
+        "heightBias": -0.5322265625,
+        "heightWithin2Pct": 84.765625,
+        "kindChangedPct": 3.7109375,
+        "biomeChangedPct": 0.5859375,
+        "fluidChangedPct": 3.3203125,
+        "waterToLandPctOfAllSamples": 1.171875,
+        "landToWaterPctOfAllSamples": 2.1484375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "coast",
+      "blockX": 256,
+      "blockZ": -384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 116.4602,
+      "againstExactColumns": {
+        "heightMae": 1.48046875,
+        "heightBias": -0.37890625,
+        "heightWithin2Pct": 88.28125,
+        "kindChangedPct": 3.80859375,
+        "biomeChangedPct": 0.390625,
+        "fluidChangedPct": 3.515625,
+        "waterToLandPctOfAllSamples": 1.46484375,
+        "landToWaterPctOfAllSamples": 2.05078125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.8564453125,
+        "heightBias": 0.1533203125,
+        "heightWithin2Pct": 92.96875,
+        "kindChangedPct": 2.44140625,
+        "biomeChangedPct": 0.1953125,
+        "fluidChangedPct": 2.34375,
+        "waterToLandPctOfAllSamples": 1.3671875,
+        "landToWaterPctOfAllSamples": 0.9765625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 3.438417260702169,
+        "landToOceanPct": 2.3405634124957113,
+        "visibleDiffPct": 6.55670166015625,
+        "changedArgbPct": 59.86785888671875
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "coast",
+      "blockX": 256,
+      "blockZ": -384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 118.6813,
+      "againstExactColumns": {
+        "heightMae": 1.48046875,
+        "heightBias": -0.37890625,
+        "heightWithin2Pct": 88.28125,
+        "kindChangedPct": 3.80859375,
+        "biomeChangedPct": 0.390625,
+        "fluidChangedPct": 3.515625,
+        "waterToLandPctOfAllSamples": 1.46484375,
+        "landToWaterPctOfAllSamples": 2.05078125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.8564453125,
+        "heightBias": 0.1533203125,
+        "heightWithin2Pct": 92.96875,
+        "kindChangedPct": 2.44140625,
+        "biomeChangedPct": 0.1953125,
+        "fluidChangedPct": 2.34375,
+        "waterToLandPctOfAllSamples": 1.3671875,
+        "landToWaterPctOfAllSamples": 0.9765625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 3.438417260702169,
+        "landToOceanPct": 2.3405634124957113,
+        "visibleDiffPct": 6.55670166015625,
+        "changedArgbPct": 59.86785888671875
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "coast",
+      "blockX": 256,
+      "blockZ": -384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 93.8194,
+      "againstExactColumns": {
+        "heightMae": 1.1337890625,
+        "heightBias": 0.2783203125,
+        "heightWithin2Pct": 95.01953125,
+        "kindChangedPct": 3.125,
+        "biomeChangedPct": 0.390625,
+        "fluidChangedPct": 2.83203125,
+        "waterToLandPctOfAllSamples": 1.85546875,
+        "landToWaterPctOfAllSamples": 0.9765625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.08203125,
+        "heightBias": 0.810546875,
+        "heightWithin2Pct": 91.30859375,
+        "kindChangedPct": 2.734375,
+        "biomeChangedPct": 0.390625,
+        "fluidChangedPct": 2.44140625,
+        "waterToLandPctOfAllSamples": 2.1484375,
+        "landToWaterPctOfAllSamples": 0.29296875
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 5.714176800213472,
+        "landToOceanPct": 0.8958182441962413,
+        "visibleDiffPct": 6.92291259765625,
+        "changedArgbPct": 69.2657470703125
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "plains",
+      "blockX": -384,
+      "blockZ": -128,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 269.9485,
+      "againstExactColumns": {
+        "heightMae": 2.001953125,
+        "heightBias": -0.1796875,
+        "heightWithin2Pct": 70.21484375,
+        "kindChangedPct": 2.83203125,
+        "biomeChangedPct": 0.68359375,
+        "fluidChangedPct": 2.83203125,
+        "waterToLandPctOfAllSamples": 1.5625,
+        "landToWaterPctOfAllSamples": 1.26953125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "plains",
+      "blockX": -384,
+      "blockZ": -128,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 103.2332,
+      "againstExactColumns": {
+        "heightMae": 2.03515625,
+        "heightBias": 0.060546875,
+        "heightWithin2Pct": 68.26171875,
+        "kindChangedPct": 3.90625,
+        "biomeChangedPct": 0.87890625,
+        "fluidChangedPct": 3.90625,
+        "waterToLandPctOfAllSamples": 2.63671875,
+        "landToWaterPctOfAllSamples": 1.26953125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.228515625,
+        "heightBias": 0.240234375,
+        "heightWithin2Pct": 87.40234375,
+        "kindChangedPct": 2.83203125,
+        "biomeChangedPct": 0.5859375,
+        "fluidChangedPct": 2.83203125,
+        "waterToLandPctOfAllSamples": 1.953125,
+        "landToWaterPctOfAllSamples": 0.87890625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 18.761313679855185,
+        "landToOceanPct": 8.766485647788985,
+        "visibleDiffPct": 33.43658447265625,
+        "changedArgbPct": 69.05364990234375
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "plains",
+      "blockX": -384,
+      "blockZ": -128,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 58.0753,
+      "againstExactColumns": {
+        "heightMae": 2.2568359375,
+        "heightBias": -0.3212890625,
+        "heightWithin2Pct": 66.796875,
+        "kindChangedPct": 6.54296875,
+        "biomeChangedPct": 0.78125,
+        "fluidChangedPct": 6.54296875,
+        "waterToLandPctOfAllSamples": 4.296875,
+        "landToWaterPctOfAllSamples": 2.24609375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.0166015625,
+        "heightBias": -0.1416015625,
+        "heightWithin2Pct": 71.77734375,
+        "kindChangedPct": 6.25,
+        "biomeChangedPct": 0.48828125,
+        "fluidChangedPct": 6.25,
+        "waterToLandPctOfAllSamples": 4.00390625,
+        "landToWaterPctOfAllSamples": 2.24609375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 33.772950607706235,
+        "landToOceanPct": 16.718386346004653,
+        "visibleDiffPct": 38.73748779296875,
+        "changedArgbPct": 80.62896728515625
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "plains",
+      "blockX": -384,
+      "blockZ": -128,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 36.1917,
+      "againstExactColumns": {
+        "heightMae": 1.1982421875,
+        "heightBias": -0.0830078125,
+        "heightWithin2Pct": 90.4296875,
+        "kindChangedPct": 5.95703125,
+        "biomeChangedPct": 0.09765625,
+        "fluidChangedPct": 5.95703125,
+        "waterToLandPctOfAllSamples": 5.56640625,
+        "landToWaterPctOfAllSamples": 0.390625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.0791015625,
+        "heightBias": 0.0966796875,
+        "heightWithin2Pct": 68.84765625,
+        "kindChangedPct": 5.859375,
+        "biomeChangedPct": 0.5859375,
+        "fluidChangedPct": 5.859375,
+        "waterToLandPctOfAllSamples": 5.37109375,
+        "landToWaterPctOfAllSamples": 0.48828125
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 45.09956038272563,
+        "landToOceanPct": 2.1851564520299975,
+        "visibleDiffPct": 35.45379638671875,
+        "changedArgbPct": 84.1796875
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "plains",
+      "blockX": -384,
+      "blockZ": -128,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 166.8455,
+      "againstExactColumns": {
+        "heightMae": 1.5,
+        "heightBias": -0.810546875,
+        "heightWithin2Pct": 84.08203125,
+        "kindChangedPct": 4.4921875,
+        "biomeChangedPct": 0.29296875,
+        "fluidChangedPct": 4.39453125,
+        "waterToLandPctOfAllSamples": 1.5625,
+        "landToWaterPctOfAllSamples": 2.83203125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "plains",
+      "blockX": -384,
+      "blockZ": -128,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 129.9082,
+      "againstExactColumns": {
+        "heightMae": 1.4326171875,
+        "heightBias": -0.6650390625,
+        "heightWithin2Pct": 86.03515625,
+        "kindChangedPct": 5.078125,
+        "biomeChangedPct": 0.390625,
+        "fluidChangedPct": 5.078125,
+        "waterToLandPctOfAllSamples": 1.3671875,
+        "landToWaterPctOfAllSamples": 3.7109375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.0771484375,
+        "heightBias": 0.1455078125,
+        "heightWithin2Pct": 90.52734375,
+        "kindChangedPct": 3.90625,
+        "biomeChangedPct": 0.29296875,
+        "fluidChangedPct": 3.80859375,
+        "waterToLandPctOfAllSamples": 1.3671875,
+        "landToWaterPctOfAllSamples": 2.44140625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 5.796430931923331,
+        "landToOceanPct": 10.17184401850628,
+        "visibleDiffPct": 9.478759765625,
+        "changedArgbPct": 66.4764404296875
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "plains",
+      "blockX": -384,
+      "blockZ": -128,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 123.5077,
+      "againstExactColumns": {
+        "heightMae": 1.4326171875,
+        "heightBias": -0.6650390625,
+        "heightWithin2Pct": 86.03515625,
+        "kindChangedPct": 5.078125,
+        "biomeChangedPct": 0.390625,
+        "fluidChangedPct": 5.078125,
+        "waterToLandPctOfAllSamples": 1.3671875,
+        "landToWaterPctOfAllSamples": 3.7109375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.0771484375,
+        "heightBias": 0.1455078125,
+        "heightWithin2Pct": 90.52734375,
+        "kindChangedPct": 3.90625,
+        "biomeChangedPct": 0.29296875,
+        "fluidChangedPct": 3.80859375,
+        "waterToLandPctOfAllSamples": 1.3671875,
+        "landToWaterPctOfAllSamples": 2.44140625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 5.796430931923331,
+        "landToOceanPct": 10.17184401850628,
+        "visibleDiffPct": 9.478759765625,
+        "changedArgbPct": 66.4764404296875
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "plains",
+      "blockX": -384,
+      "blockZ": -128,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 102.2056,
+      "againstExactColumns": {
+        "heightMae": 0.92578125,
+        "heightBias": -0.138671875,
+        "heightWithin2Pct": 96.2890625,
+        "kindChangedPct": 3.3203125,
+        "biomeChangedPct": 0.390625,
+        "fluidChangedPct": 3.3203125,
+        "waterToLandPctOfAllSamples": 1.46484375,
+        "landToWaterPctOfAllSamples": 1.85546875
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.228515625,
+        "heightBias": 0.671875,
+        "heightWithin2Pct": 88.671875,
+        "kindChangedPct": 2.9296875,
+        "biomeChangedPct": 0.48828125,
+        "fluidChangedPct": 2.83203125,
+        "waterToLandPctOfAllSamples": 1.85546875,
+        "landToWaterPctOfAllSamples": 0.9765625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 11.4738929279577,
+        "landToOceanPct": 4.309319233311302,
+        "visibleDiffPct": 9.14306640625,
+        "changedArgbPct": 70.8465576171875
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "mountain",
+      "blockX": 1152,
+      "blockZ": 128,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 256.4172,
+      "againstExactColumns": {
+        "heightMae": 1.8095703125,
+        "heightBias": 0.3056640625,
+        "heightWithin2Pct": 78.90625,
+        "kindChangedPct": 1.5625,
+        "biomeChangedPct": 1.3671875,
+        "fluidChangedPct": 1.07421875,
+        "waterToLandPctOfAllSamples": 0.78125,
+        "landToWaterPctOfAllSamples": 0.29296875
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "mountain",
+      "blockX": 1152,
+      "blockZ": 128,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 119.7962,
+      "againstExactColumns": {
+        "heightMae": 2.134765625,
+        "heightBias": 0.4453125,
+        "heightWithin2Pct": 75.09765625,
+        "kindChangedPct": 2.34375,
+        "biomeChangedPct": 1.5625,
+        "fluidChangedPct": 1.66015625,
+        "waterToLandPctOfAllSamples": 0.9765625,
+        "landToWaterPctOfAllSamples": 0.68359375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.3271484375,
+        "heightBias": 0.1396484375,
+        "heightWithin2Pct": 85.64453125,
+        "kindChangedPct": 1.5625,
+        "biomeChangedPct": 0.9765625,
+        "fluidChangedPct": 1.171875,
+        "waterToLandPctOfAllSamples": 0.48828125,
+        "landToWaterPctOfAllSamples": 0.68359375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 4.79002079002079,
+        "landToOceanPct": 3.95010395010395,
+        "visibleDiffPct": 24.66583251953125,
+        "changedArgbPct": 62.48931884765625
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "mountain",
+      "blockX": 1152,
+      "blockZ": 128,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 53.4176,
+      "againstExactColumns": {
+        "heightMae": 2.6259765625,
+        "heightBias": 0.7314453125,
+        "heightWithin2Pct": 75.5859375,
+        "kindChangedPct": 4.1015625,
+        "biomeChangedPct": 1.7578125,
+        "fluidChangedPct": 3.3203125,
+        "waterToLandPctOfAllSamples": 1.3671875,
+        "landToWaterPctOfAllSamples": 1.953125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.53125,
+        "heightBias": 0.42578125,
+        "heightWithin2Pct": 76.85546875,
+        "kindChangedPct": 3.7109375,
+        "biomeChangedPct": 1.7578125,
+        "fluidChangedPct": 3.22265625,
+        "waterToLandPctOfAllSamples": 1.07421875,
+        "landToWaterPctOfAllSamples": 2.1484375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 5.696465696465697,
+        "landToOceanPct": 9.796257796257796,
+        "visibleDiffPct": 28.96728515625,
+        "changedArgbPct": 70.4803466796875
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "mountain",
+      "blockX": 1152,
+      "blockZ": 128,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 33.1169,
+      "againstExactColumns": {
+        "heightMae": 1.4892578125,
+        "heightBias": 0.7060546875,
+        "heightWithin2Pct": 91.89453125,
+        "kindChangedPct": 2.83203125,
+        "biomeChangedPct": 1.26953125,
+        "fluidChangedPct": 2.44140625,
+        "waterToLandPctOfAllSamples": 2.34375,
+        "landToWaterPctOfAllSamples": 0.09765625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.146484375,
+        "heightBias": 0.400390625,
+        "heightWithin2Pct": 79.4921875,
+        "kindChangedPct": 3.02734375,
+        "biomeChangedPct": 1.85546875,
+        "fluidChangedPct": 2.34375,
+        "waterToLandPctOfAllSamples": 2.05078125,
+        "landToWaterPctOfAllSamples": 0.29296875
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 11.758835758835758,
+        "landToOceanPct": 1.1226611226611227,
+        "visibleDiffPct": 25.3692626953125,
+        "changedArgbPct": 75.83770751953125
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "mountain",
+      "blockX": 1152,
+      "blockZ": 128,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 169.2297,
+      "againstExactColumns": {
+        "heightMae": 1.5234375,
+        "heightBias": -0.2578125,
+        "heightWithin2Pct": 84.66796875,
+        "kindChangedPct": 0.87890625,
+        "biomeChangedPct": 1.171875,
+        "fluidChangedPct": 0.1953125,
+        "waterToLandPctOfAllSamples": 0.09765625,
+        "landToWaterPctOfAllSamples": 0.09765625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "mountain",
+      "blockX": 1152,
+      "blockZ": 128,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 135.0358,
+      "againstExactColumns": {
+        "heightMae": 1.6259765625,
+        "heightBias": -0.7158203125,
+        "heightWithin2Pct": 82.71484375,
+        "kindChangedPct": 0.78125,
+        "biomeChangedPct": 1.171875,
+        "fluidChangedPct": 0.1953125,
+        "waterToLandPctOfAllSamples": 0.09765625,
+        "landToWaterPctOfAllSamples": 0.09765625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.0791015625,
+        "heightBias": -0.4580078125,
+        "heightWithin2Pct": 91.30859375,
+        "kindChangedPct": 0.29296875,
+        "biomeChangedPct": 0.78125,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 2.8490920475892296,
+        "visibleDiffPct": 7.34405517578125,
+        "changedArgbPct": 56.81915283203125
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "mountain",
+      "blockX": 1152,
+      "blockZ": 128,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 128.8451,
+      "againstExactColumns": {
+        "heightMae": 1.6259765625,
+        "heightBias": -0.7158203125,
+        "heightWithin2Pct": 82.71484375,
+        "kindChangedPct": 0.78125,
+        "biomeChangedPct": 1.171875,
+        "fluidChangedPct": 0.1953125,
+        "waterToLandPctOfAllSamples": 0.09765625,
+        "landToWaterPctOfAllSamples": 0.09765625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.0791015625,
+        "heightBias": -0.4580078125,
+        "heightWithin2Pct": 91.30859375,
+        "kindChangedPct": 0.29296875,
+        "biomeChangedPct": 0.78125,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 2.8490920475892296,
+        "visibleDiffPct": 7.34405517578125,
+        "changedArgbPct": 56.81915283203125
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "mountain",
+      "blockX": 1152,
+      "blockZ": 128,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 140.0635,
+      "againstExactColumns": {
+        "heightMae": 1.1328125,
+        "heightBias": 0.087890625,
+        "heightWithin2Pct": 94.3359375,
+        "kindChangedPct": 0.48828125,
+        "biomeChangedPct": 0.68359375,
+        "fluidChangedPct": 0.09765625,
+        "waterToLandPctOfAllSamples": 0.09765625,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.171875,
+        "heightBias": 0.345703125,
+        "heightWithin2Pct": 91.11328125,
+        "kindChangedPct": 0.5859375,
+        "biomeChangedPct": 0.78125,
+        "fluidChangedPct": 0.09765625,
+        "waterToLandPctOfAllSamples": 0.09765625,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 1.6906700062617408,
+        "landToOceanPct": 0.8453350031308704,
+        "visibleDiffPct": 6.829833984375,
+        "changedArgbPct": 58.44879150390625
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 251.1377,
+      "againstExactColumns": {
+        "heightMae": 2.1416015625,
+        "heightBias": -0.2529296875,
+        "heightWithin2Pct": 80.17578125,
+        "kindChangedPct": 4.98046875,
+        "biomeChangedPct": 1.07421875,
+        "fluidChangedPct": 4.98046875,
+        "waterToLandPctOfAllSamples": 2.734375,
+        "landToWaterPctOfAllSamples": 2.24609375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 106.41,
+      "againstExactColumns": {
+        "heightMae": 2.720703125,
+        "heightBias": -0.19140625,
+        "heightWithin2Pct": 76.5625,
+        "kindChangedPct": 8.0078125,
+        "biomeChangedPct": 1.07421875,
+        "fluidChangedPct": 8.0078125,
+        "waterToLandPctOfAllSamples": 4.6875,
+        "landToWaterPctOfAllSamples": 3.3203125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.8310546875,
+        "heightBias": 0.0615234375,
+        "heightWithin2Pct": 82.8125,
+        "kindChangedPct": 6.15234375,
+        "biomeChangedPct": 0.78125,
+        "fluidChangedPct": 6.15234375,
+        "waterToLandPctOfAllSamples": 3.515625,
+        "landToWaterPctOfAllSamples": 2.63671875
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 16.30865368520895,
+        "landToOceanPct": 10.857557328572225,
+        "visibleDiffPct": 28.59344482421875,
+        "changedArgbPct": 58.258056640625
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 59.6604,
+      "againstExactColumns": {
+        "heightMae": 3.3896484375,
+        "heightBias": -0.9423828125,
+        "heightWithin2Pct": 69.62890625,
+        "kindChangedPct": 15.234375,
+        "biomeChangedPct": 1.171875,
+        "fluidChangedPct": 15.234375,
+        "waterToLandPctOfAllSamples": 9.08203125,
+        "landToWaterPctOfAllSamples": 6.15234375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.78125,
+        "heightBias": -0.689453125,
+        "heightWithin2Pct": 72.94921875,
+        "kindChangedPct": 14.74609375,
+        "biomeChangedPct": 0.87890625,
+        "fluidChangedPct": 14.74609375,
+        "waterToLandPctOfAllSamples": 8.59375,
+        "landToWaterPctOfAllSamples": 6.15234375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 34.39714333537912,
+        "landToOceanPct": 21.865759080511076,
+        "visibleDiffPct": 37.80364990234375,
+        "changedArgbPct": 70.31097412109375
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 38.5323,
+      "againstExactColumns": {
+        "heightMae": 2.8125,
+        "heightBias": 0.546875,
+        "heightWithin2Pct": 84.66796875,
+        "kindChangedPct": 26.46484375,
+        "biomeChangedPct": 0.68359375,
+        "fluidChangedPct": 26.46484375,
+        "waterToLandPctOfAllSamples": 26.46484375,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "againstPr154Baseline": {
+        "heightMae": 3.0166015625,
+        "heightBias": 0.7998046875,
+        "heightWithin2Pct": 77.24609375,
+        "kindChangedPct": 25.9765625,
+        "biomeChangedPct": 0.78125,
+        "fluidChangedPct": 25.9765625,
+        "waterToLandPctOfAllSamples": 25.9765625,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 99.36952519109524,
+        "landToOceanPct": 0.07811192322713831,
+        "visibleDiffPct": 46.258544921875,
+        "changedArgbPct": 68.13812255859375
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 164.1998,
+      "againstExactColumns": {
+        "heightMae": 2.9912109375,
+        "heightBias": -1.5107421875,
+        "heightWithin2Pct": 71.97265625,
+        "kindChangedPct": 8.0078125,
+        "biomeChangedPct": 1.07421875,
+        "fluidChangedPct": 7.91015625,
+        "waterToLandPctOfAllSamples": 2.34375,
+        "landToWaterPctOfAllSamples": 5.56640625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 114.9182,
+      "againstExactColumns": {
+        "heightMae": 3.3369140625,
+        "heightBias": -1.4052734375,
+        "heightWithin2Pct": 68.06640625,
+        "kindChangedPct": 10.3515625,
+        "biomeChangedPct": 1.171875,
+        "fluidChangedPct": 10.3515625,
+        "waterToLandPctOfAllSamples": 2.5390625,
+        "landToWaterPctOfAllSamples": 7.8125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.060546875,
+        "heightBias": 0.10546875,
+        "heightWithin2Pct": 77.5390625,
+        "kindChangedPct": 9.5703125,
+        "biomeChangedPct": 0.87890625,
+        "fluidChangedPct": 9.47265625,
+        "waterToLandPctOfAllSamples": 3.7109375,
+        "landToWaterPctOfAllSamples": 5.76171875
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 5.651627862042314,
+        "landToOceanPct": 9.77683315621679,
+        "visibleDiffPct": 18.48297119140625,
+        "changedArgbPct": 69.57244873046875
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 113.2189,
+      "againstExactColumns": {
+        "heightMae": 3.3369140625,
+        "heightBias": -1.4052734375,
+        "heightWithin2Pct": 68.06640625,
+        "kindChangedPct": 10.3515625,
+        "biomeChangedPct": 1.171875,
+        "fluidChangedPct": 10.3515625,
+        "waterToLandPctOfAllSamples": 2.5390625,
+        "landToWaterPctOfAllSamples": 7.8125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.060546875,
+        "heightBias": 0.10546875,
+        "heightWithin2Pct": 77.5390625,
+        "kindChangedPct": 9.5703125,
+        "biomeChangedPct": 0.87890625,
+        "fluidChangedPct": 9.47265625,
+        "waterToLandPctOfAllSamples": 3.7109375,
+        "landToWaterPctOfAllSamples": 5.76171875
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 5.651627862042314,
+        "landToOceanPct": 9.77683315621679,
+        "visibleDiffPct": 18.48297119140625,
+        "changedArgbPct": 69.57244873046875
+      }
+    },
+    {
+      "seed": 123456789,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 95.638,
+      "againstExactColumns": {
+        "heightMae": 2.30078125,
+        "heightBias": -0.0859375,
+        "heightWithin2Pct": 86.328125,
+        "kindChangedPct": 7.91015625,
+        "biomeChangedPct": 0.78125,
+        "fluidChangedPct": 7.8125,
+        "waterToLandPctOfAllSamples": 4.6875,
+        "landToWaterPctOfAllSamples": 3.125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.2333984375,
+        "heightBias": 1.4248046875,
+        "heightWithin2Pct": 76.85546875,
+        "kindChangedPct": 10.25390625,
+        "biomeChangedPct": 0.29296875,
+        "fluidChangedPct": 10.25390625,
+        "waterToLandPctOfAllSamples": 7.51953125,
+        "landToWaterPctOfAllSamples": 2.734375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 11.670370012559173,
+        "landToOceanPct": 3.27263066370399,
+        "visibleDiffPct": 18.2403564453125,
+        "changedArgbPct": 74.16229248046875
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "coast",
+      "blockX": -768,
+      "blockZ": 384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 262.8751,
+      "againstExactColumns": {
+        "heightMae": 2.4873046875,
+        "heightBias": -0.4873046875,
+        "heightWithin2Pct": 69.7265625,
+        "kindChangedPct": 3.125,
+        "biomeChangedPct": 1.26953125,
+        "fluidChangedPct": 2.63671875,
+        "waterToLandPctOfAllSamples": 1.3671875,
+        "landToWaterPctOfAllSamples": 1.26953125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "coast",
+      "blockX": -768,
+      "blockZ": 384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 105.4637,
+      "againstExactColumns": {
+        "heightMae": 3.0859375,
+        "heightBias": -0.392578125,
+        "heightWithin2Pct": 62.59765625,
+        "kindChangedPct": 5.17578125,
+        "biomeChangedPct": 1.26953125,
+        "fluidChangedPct": 4.6875,
+        "waterToLandPctOfAllSamples": 2.5390625,
+        "landToWaterPctOfAllSamples": 2.1484375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.0810546875,
+        "heightBias": 0.0947265625,
+        "heightWithin2Pct": 75.29296875,
+        "kindChangedPct": 4.98046875,
+        "biomeChangedPct": 0.78125,
+        "fluidChangedPct": 4.58984375,
+        "waterToLandPctOfAllSamples": 2.44140625,
+        "landToWaterPctOfAllSamples": 2.1484375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 4.560063643595863,
+        "landToOceanPct": 3.560859188544153,
+        "visibleDiffPct": 23.15216064453125,
+        "changedArgbPct": 71.40655517578125
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "coast",
+      "blockX": -768,
+      "blockZ": 384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 58.5694,
+      "againstExactColumns": {
+        "heightMae": 4.3935546875,
+        "heightBias": -1.1064453125,
+        "heightWithin2Pct": 50.9765625,
+        "kindChangedPct": 8.69140625,
+        "biomeChangedPct": 1.46484375,
+        "fluidChangedPct": 8.203125,
+        "waterToLandPctOfAllSamples": 3.90625,
+        "landToWaterPctOfAllSamples": 4.296875
+      },
+      "againstPr154Baseline": {
+        "heightMae": 3.666015625,
+        "heightBias": -0.619140625,
+        "heightWithin2Pct": 55.56640625,
+        "kindChangedPct": 8.30078125,
+        "biomeChangedPct": 1.171875,
+        "fluidChangedPct": 7.71484375,
+        "waterToLandPctOfAllSamples": 3.61328125,
+        "landToWaterPctOfAllSamples": 4.1015625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 6.758949880668258,
+        "landToOceanPct": 7.8154335719968175,
+        "visibleDiffPct": 30.04302978515625,
+        "changedArgbPct": 84.698486328125
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "coast",
+      "blockX": -768,
+      "blockZ": 384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 37.4136,
+      "againstExactColumns": {
+        "heightMae": 1.521484375,
+        "heightBias": 0.61328125,
+        "heightWithin2Pct": 90.72265625,
+        "kindChangedPct": 18.45703125,
+        "biomeChangedPct": 0.87890625,
+        "fluidChangedPct": 18.1640625,
+        "waterToLandPctOfAllSamples": 17.96875,
+        "landToWaterPctOfAllSamples": 0.1953125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.7158203125,
+        "heightBias": 1.1005859375,
+        "heightWithin2Pct": 69.140625,
+        "kindChangedPct": 18.06640625,
+        "biomeChangedPct": 1.171875,
+        "fluidChangedPct": 17.67578125,
+        "waterToLandPctOfAllSamples": 17.67578125,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 36.12092283214002,
+        "landToOceanPct": 0.10182975338106603,
+        "visibleDiffPct": 36.9232177734375,
+        "changedArgbPct": 82.33489990234375
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "coast",
+      "blockX": -768,
+      "blockZ": 384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 176.2018,
+      "againstExactColumns": {
+        "heightMae": 2.1298828125,
+        "heightBias": -0.9404296875,
+        "heightWithin2Pct": 73.92578125,
+        "kindChangedPct": 1.66015625,
+        "biomeChangedPct": 1.26953125,
+        "fluidChangedPct": 1.26953125,
+        "waterToLandPctOfAllSamples": 0.390625,
+        "landToWaterPctOfAllSamples": 0.87890625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "coast",
+      "blockX": -768,
+      "blockZ": 384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 129.0352,
+      "againstExactColumns": {
+        "heightMae": 2.072265625,
+        "heightBias": -0.595703125,
+        "heightWithin2Pct": 78.125,
+        "kindChangedPct": 1.85546875,
+        "biomeChangedPct": 1.07421875,
+        "fluidChangedPct": 1.5625,
+        "waterToLandPctOfAllSamples": 0.78125,
+        "landToWaterPctOfAllSamples": 0.78125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.4873046875,
+        "heightBias": 0.3447265625,
+        "heightWithin2Pct": 85.44921875,
+        "kindChangedPct": 1.3671875,
+        "biomeChangedPct": 0.9765625,
+        "fluidChangedPct": 1.07421875,
+        "waterToLandPctOfAllSamples": 0.78125,
+        "landToWaterPctOfAllSamples": 0.29296875
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 3.0568079350766455,
+        "landToOceanPct": 1.2263300270513977,
+        "visibleDiffPct": 9.17816162109375,
+        "changedArgbPct": 73.406982421875
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "coast",
+      "blockX": -768,
+      "blockZ": 384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 124.9807,
+      "againstExactColumns": {
+        "heightMae": 2.072265625,
+        "heightBias": -0.595703125,
+        "heightWithin2Pct": 78.125,
+        "kindChangedPct": 1.85546875,
+        "biomeChangedPct": 1.07421875,
+        "fluidChangedPct": 1.5625,
+        "waterToLandPctOfAllSamples": 0.78125,
+        "landToWaterPctOfAllSamples": 0.78125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.4873046875,
+        "heightBias": 0.3447265625,
+        "heightWithin2Pct": 85.44921875,
+        "kindChangedPct": 1.3671875,
+        "biomeChangedPct": 0.9765625,
+        "fluidChangedPct": 1.07421875,
+        "waterToLandPctOfAllSamples": 0.78125,
+        "landToWaterPctOfAllSamples": 0.29296875
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 3.0568079350766455,
+        "landToOceanPct": 1.2263300270513977,
+        "visibleDiffPct": 9.17816162109375,
+        "changedArgbPct": 73.406982421875
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "coast",
+      "blockX": -768,
+      "blockZ": 384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 108.0383,
+      "againstExactColumns": {
+        "heightMae": 1.3369140625,
+        "heightBias": 0.2431640625,
+        "heightWithin2Pct": 94.23828125,
+        "kindChangedPct": 1.46484375,
+        "biomeChangedPct": 1.07421875,
+        "fluidChangedPct": 1.171875,
+        "waterToLandPctOfAllSamples": 0.9765625,
+        "landToWaterPctOfAllSamples": 0.1953125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.55859375,
+        "heightBias": 1.18359375,
+        "heightWithin2Pct": 83.59375,
+        "kindChangedPct": 1.3671875,
+        "biomeChangedPct": 0.78125,
+        "fluidChangedPct": 1.26953125,
+        "waterToLandPctOfAllSamples": 1.26953125,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 4.283137962128043,
+        "landToOceanPct": 0.3155996393146979,
+        "visibleDiffPct": 8.154296875,
+        "changedArgbPct": 73.7457275390625
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "plains",
+      "blockX": -128,
+      "blockZ": 384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 278.9381,
+      "againstExactColumns": {
+        "heightMae": 2.87890625,
+        "heightBias": -0.49609375,
+        "heightWithin2Pct": 66.11328125,
+        "kindChangedPct": 0.87890625,
+        "biomeChangedPct": 1.171875,
+        "fluidChangedPct": 0.87890625,
+        "waterToLandPctOfAllSamples": 0.78125,
+        "landToWaterPctOfAllSamples": 0.09765625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "plains",
+      "blockX": -128,
+      "blockZ": 384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 107.7805,
+      "againstExactColumns": {
+        "heightMae": 3.1708984375,
+        "heightBias": -0.2060546875,
+        "heightWithin2Pct": 62.109375,
+        "kindChangedPct": 1.3671875,
+        "biomeChangedPct": 1.07421875,
+        "fluidChangedPct": 1.3671875,
+        "waterToLandPctOfAllSamples": 0.87890625,
+        "landToWaterPctOfAllSamples": 0.48828125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.5732421875,
+        "heightBias": 0.2900390625,
+        "heightWithin2Pct": 85.44921875,
+        "kindChangedPct": 1.07421875,
+        "biomeChangedPct": 0.48828125,
+        "fluidChangedPct": 1.07421875,
+        "waterToLandPctOfAllSamples": 0.390625,
+        "landToWaterPctOfAllSamples": 0.68359375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 5.888350751975529,
+        "landToOceanPct": 10.068824878919195,
+        "visibleDiffPct": 35.22796630859375,
+        "changedArgbPct": 71.063232421875
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "plains",
+      "blockX": -128,
+      "blockZ": 384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 60.32,
+      "againstExactColumns": {
+        "heightMae": 3.9052734375,
+        "heightBias": 0.5283203125,
+        "heightWithin2Pct": 55.46875,
+        "kindChangedPct": 2.83203125,
+        "biomeChangedPct": 1.07421875,
+        "fluidChangedPct": 2.83203125,
+        "waterToLandPctOfAllSamples": 1.5625,
+        "landToWaterPctOfAllSamples": 1.26953125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.7705078125,
+        "heightBias": 1.0244140625,
+        "heightWithin2Pct": 73.73046875,
+        "kindChangedPct": 2.1484375,
+        "biomeChangedPct": 0.68359375,
+        "fluidChangedPct": 2.1484375,
+        "waterToLandPctOfAllSamples": 0.87890625,
+        "landToWaterPctOfAllSamples": 1.26953125
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 13.815957175630894,
+        "landToOceanPct": 20.061177670150396,
+        "visibleDiffPct": 39.0625,
+        "changedArgbPct": 80.19256591796875
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "plains",
+      "blockX": -128,
+      "blockZ": 384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 38.3357,
+      "againstExactColumns": {
+        "heightMae": 2.43359375,
+        "heightBias": 1.267578125,
+        "heightWithin2Pct": 89.55078125,
+        "kindChangedPct": 3.41796875,
+        "biomeChangedPct": 1.171875,
+        "fluidChangedPct": 3.41796875,
+        "waterToLandPctOfAllSamples": 3.41796875,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "againstPr154Baseline": {
+        "heightMae": 3.142578125,
+        "heightBias": 1.763671875,
+        "heightWithin2Pct": 65.33203125,
+        "kindChangedPct": 2.734375,
+        "biomeChangedPct": 0.9765625,
+        "fluidChangedPct": 2.734375,
+        "waterToLandPctOfAllSamples": 2.734375,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 48.84017333673209,
+        "landToOceanPct": 0.5098139179199592,
+        "visibleDiffPct": 36.80267333984375,
+        "changedArgbPct": 83.01239013671875
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "plains",
+      "blockX": -128,
+      "blockZ": 384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 195.7146,
+      "againstExactColumns": {
+        "heightMae": 2.3369140625,
+        "heightBias": -0.4326171875,
+        "heightWithin2Pct": 75.78125,
+        "kindChangedPct": 3.02734375,
+        "biomeChangedPct": 1.7578125,
+        "fluidChangedPct": 2.83203125,
+        "waterToLandPctOfAllSamples": 1.171875,
+        "landToWaterPctOfAllSamples": 1.66015625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "plains",
+      "blockX": -128,
+      "blockZ": 384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 129.2863,
+      "againstExactColumns": {
+        "heightMae": 3.138671875,
+        "heightBias": -1.494140625,
+        "heightWithin2Pct": 71.484375,
+        "kindChangedPct": 5.17578125,
+        "biomeChangedPct": 1.5625,
+        "fluidChangedPct": 4.98046875,
+        "waterToLandPctOfAllSamples": 1.46484375,
+        "landToWaterPctOfAllSamples": 3.515625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.2177734375,
+        "heightBias": -1.0615234375,
+        "heightWithin2Pct": 77.1484375,
+        "kindChangedPct": 4.4921875,
+        "biomeChangedPct": 0.9765625,
+        "fluidChangedPct": 4.4921875,
+        "waterToLandPctOfAllSamples": 1.46484375,
+        "landToWaterPctOfAllSamples": 3.02734375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 5.030035463559384,
+        "landToOceanPct": 13.483390026778606,
+        "visibleDiffPct": 15.771484375,
+        "changedArgbPct": 76.10015869140625
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "plains",
+      "blockX": -128,
+      "blockZ": 384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 133.1764,
+      "againstExactColumns": {
+        "heightMae": 3.138671875,
+        "heightBias": -1.494140625,
+        "heightWithin2Pct": 71.484375,
+        "kindChangedPct": 5.17578125,
+        "biomeChangedPct": 1.5625,
+        "fluidChangedPct": 4.98046875,
+        "waterToLandPctOfAllSamples": 1.46484375,
+        "landToWaterPctOfAllSamples": 3.515625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.2177734375,
+        "heightBias": -1.0615234375,
+        "heightWithin2Pct": 77.1484375,
+        "kindChangedPct": 4.4921875,
+        "biomeChangedPct": 0.9765625,
+        "fluidChangedPct": 4.4921875,
+        "waterToLandPctOfAllSamples": 1.46484375,
+        "landToWaterPctOfAllSamples": 3.02734375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 5.030035463559384,
+        "landToOceanPct": 13.483390026778606,
+        "visibleDiffPct": 15.771484375,
+        "changedArgbPct": 76.10015869140625
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "plains",
+      "blockX": -128,
+      "blockZ": 384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 123.7664,
+      "againstExactColumns": {
+        "heightMae": 1.5849609375,
+        "heightBias": 0.4072265625,
+        "heightWithin2Pct": 92.1875,
+        "kindChangedPct": 2.05078125,
+        "biomeChangedPct": 0.87890625,
+        "fluidChangedPct": 1.953125,
+        "waterToLandPctOfAllSamples": 1.7578125,
+        "landToWaterPctOfAllSamples": 0.1953125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.76953125,
+        "heightBias": 0.83984375,
+        "heightWithin2Pct": 82.03125,
+        "kindChangedPct": 2.9296875,
+        "biomeChangedPct": 1.26953125,
+        "fluidChangedPct": 2.83203125,
+        "waterToLandPctOfAllSamples": 2.44140625,
+        "landToWaterPctOfAllSamples": 0.390625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 8.359267568936817,
+        "landToOceanPct": 1.3027429977563871,
+        "visibleDiffPct": 10.955810546875,
+        "changedArgbPct": 77.9449462890625
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "mountain",
+      "blockX": 640,
+      "blockZ": 384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 273.8637,
+      "againstExactColumns": {
+        "heightMae": 1.97265625,
+        "heightBias": -0.216796875,
+        "heightWithin2Pct": 76.07421875,
+        "kindChangedPct": 1.3671875,
+        "biomeChangedPct": 0.87890625,
+        "fluidChangedPct": 0.68359375,
+        "waterToLandPctOfAllSamples": 0.5859375,
+        "landToWaterPctOfAllSamples": 0.09765625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "mountain",
+      "blockX": 640,
+      "blockZ": 384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 102.3536,
+      "againstExactColumns": {
+        "heightMae": 2.1748046875,
+        "heightBias": 0.0029296875,
+        "heightWithin2Pct": 70.80078125,
+        "kindChangedPct": 1.5625,
+        "biomeChangedPct": 0.9765625,
+        "fluidChangedPct": 0.87890625,
+        "waterToLandPctOfAllSamples": 0.87890625,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.2158203125,
+        "heightBias": 0.2197265625,
+        "heightWithin2Pct": 90.234375,
+        "kindChangedPct": 0.9765625,
+        "biomeChangedPct": 0.68359375,
+        "fluidChangedPct": 0.5859375,
+        "waterToLandPctOfAllSamples": 0.48828125,
+        "landToWaterPctOfAllSamples": 0.09765625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 9.24092409240924,
+        "landToOceanPct": 2.42024202420242,
+        "visibleDiffPct": 26.02081298828125,
+        "changedArgbPct": 53.6407470703125
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "mountain",
+      "blockX": 640,
+      "blockZ": 384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 63.8904,
+      "againstExactColumns": {
+        "heightMae": 2.5068359375,
+        "heightBias": -0.3017578125,
+        "heightWithin2Pct": 67.7734375,
+        "kindChangedPct": 2.44140625,
+        "biomeChangedPct": 1.46484375,
+        "fluidChangedPct": 1.7578125,
+        "waterToLandPctOfAllSamples": 0.68359375,
+        "landToWaterPctOfAllSamples": 1.07421875
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.1064453125,
+        "heightBias": -0.0849609375,
+        "heightWithin2Pct": 76.953125,
+        "kindChangedPct": 2.63671875,
+        "biomeChangedPct": 1.3671875,
+        "fluidChangedPct": 1.85546875,
+        "waterToLandPctOfAllSamples": 0.48828125,
+        "landToWaterPctOfAllSamples": 1.3671875
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 6.435643564356436,
+        "landToOceanPct": 15.30986431976531,
+        "visibleDiffPct": 28.7322998046875,
+        "changedArgbPct": 61.6546630859375
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "mountain",
+      "blockX": 640,
+      "blockZ": 384,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 35.8994,
+      "againstExactColumns": {
+        "heightMae": 1.5556640625,
+        "heightBias": 0.5107421875,
+        "heightWithin2Pct": 90.91796875,
+        "kindChangedPct": 2.34375,
+        "biomeChangedPct": 1.171875,
+        "fluidChangedPct": 1.66015625,
+        "waterToLandPctOfAllSamples": 1.66015625,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.1123046875,
+        "heightBias": 0.7275390625,
+        "heightWithin2Pct": 76.07421875,
+        "kindChangedPct": 1.7578125,
+        "biomeChangedPct": 0.87890625,
+        "fluidChangedPct": 1.171875,
+        "waterToLandPctOfAllSamples": 1.171875,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 18.06013934726806,
+        "landToOceanPct": 0.3116978364503117,
+        "visibleDiffPct": 25.75225830078125,
+        "changedArgbPct": 62.3077392578125
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "mountain",
+      "blockX": 640,
+      "blockZ": 384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 182.4826,
+      "againstExactColumns": {
+        "heightMae": 2.3994140625,
+        "heightBias": -0.4072265625,
+        "heightWithin2Pct": 71.875,
+        "kindChangedPct": 1.5625,
+        "biomeChangedPct": 1.7578125,
+        "fluidChangedPct": 1.171875,
+        "waterToLandPctOfAllSamples": 0.48828125,
+        "landToWaterPctOfAllSamples": 0.68359375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "mountain",
+      "blockX": 640,
+      "blockZ": 384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 136.076,
+      "againstExactColumns": {
+        "heightMae": 2.2919921875,
+        "heightBias": 0.0634765625,
+        "heightWithin2Pct": 78.515625,
+        "kindChangedPct": 1.46484375,
+        "biomeChangedPct": 1.171875,
+        "fluidChangedPct": 1.26953125,
+        "waterToLandPctOfAllSamples": 0.48828125,
+        "landToWaterPctOfAllSamples": 0.78125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.474609375,
+        "heightBias": 0.470703125,
+        "heightWithin2Pct": 83.49609375,
+        "kindChangedPct": 1.26953125,
+        "biomeChangedPct": 1.3671875,
+        "fluidChangedPct": 1.07421875,
+        "waterToLandPctOfAllSamples": 0.48828125,
+        "landToWaterPctOfAllSamples": 0.5859375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 4.591970611388087,
+        "landToOceanPct": 6.08764103909735,
+        "visibleDiffPct": 14.3035888671875,
+        "changedArgbPct": 41.11175537109375
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "mountain",
+      "blockX": 640,
+      "blockZ": 384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 134.428,
+      "againstExactColumns": {
+        "heightMae": 2.2919921875,
+        "heightBias": 0.0634765625,
+        "heightWithin2Pct": 78.515625,
+        "kindChangedPct": 1.46484375,
+        "biomeChangedPct": 1.171875,
+        "fluidChangedPct": 1.26953125,
+        "waterToLandPctOfAllSamples": 0.48828125,
+        "landToWaterPctOfAllSamples": 0.78125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.474609375,
+        "heightBias": 0.470703125,
+        "heightWithin2Pct": 83.49609375,
+        "kindChangedPct": 1.26953125,
+        "biomeChangedPct": 1.3671875,
+        "fluidChangedPct": 1.07421875,
+        "waterToLandPctOfAllSamples": 0.48828125,
+        "landToWaterPctOfAllSamples": 0.5859375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 4.591970611388087,
+        "landToOceanPct": 6.08764103909735,
+        "visibleDiffPct": 14.3035888671875,
+        "changedArgbPct": 41.11175537109375
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "mountain",
+      "blockX": 640,
+      "blockZ": 384,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 112.5815,
+      "againstExactColumns": {
+        "heightMae": 1.7490234375,
+        "heightBias": 0.6103515625,
+        "heightWithin2Pct": 89.16015625,
+        "kindChangedPct": 0.9765625,
+        "biomeChangedPct": 1.66015625,
+        "fluidChangedPct": 0.68359375,
+        "waterToLandPctOfAllSamples": 0.5859375,
+        "landToWaterPctOfAllSamples": 0.09765625
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.755859375,
+        "heightBias": 1.017578125,
+        "heightWithin2Pct": 80.078125,
+        "kindChangedPct": 1.171875,
+        "biomeChangedPct": 1.46484375,
+        "fluidChangedPct": 1.07421875,
+        "waterToLandPctOfAllSamples": 0.87890625,
+        "landToWaterPctOfAllSamples": 0.1953125
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 7.268433482025715,
+        "landToOceanPct": 2.374704801889268,
+        "visibleDiffPct": 13.68408203125,
+        "changedArgbPct": 42.08984375
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 254.9965,
+      "againstExactColumns": {
+        "heightMae": 1.5234375,
+        "heightBias": -0.21484375,
+        "heightWithin2Pct": 86.62109375,
+        "kindChangedPct": 3.90625,
+        "biomeChangedPct": 0.87890625,
+        "fluidChangedPct": 3.80859375,
+        "waterToLandPctOfAllSamples": 1.85546875,
+        "landToWaterPctOfAllSamples": 1.953125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 98.3298,
+      "againstExactColumns": {
+        "heightMae": 1.9677734375,
+        "heightBias": -0.3876953125,
+        "heightWithin2Pct": 79.78515625,
+        "kindChangedPct": 5.2734375,
+        "biomeChangedPct": 0.9765625,
+        "fluidChangedPct": 5.2734375,
+        "waterToLandPctOfAllSamples": 2.24609375,
+        "landToWaterPctOfAllSamples": 3.02734375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 1.1240234375,
+        "heightBias": -0.1728515625,
+        "heightWithin2Pct": 89.35546875,
+        "kindChangedPct": 3.515625,
+        "biomeChangedPct": 0.29296875,
+        "fluidChangedPct": 3.80859375,
+        "waterToLandPctOfAllSamples": 1.5625,
+        "landToWaterPctOfAllSamples": 2.24609375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 7.486897928624907,
+        "landToOceanPct": 11.598452707761417,
+        "visibleDiffPct": 20.77178955078125,
+        "changedArgbPct": 39.07318115234375
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 50.0334,
+      "againstExactColumns": {
+        "heightMae": 2.708984375,
+        "heightBias": 0.224609375,
+        "heightWithin2Pct": 76.7578125,
+        "kindChangedPct": 9.47265625,
+        "biomeChangedPct": 0.390625,
+        "fluidChangedPct": 9.9609375,
+        "waterToLandPctOfAllSamples": 5.37109375,
+        "landToWaterPctOfAllSamples": 4.58984375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.224609375,
+        "heightBias": 0.439453125,
+        "heightWithin2Pct": 78.90625,
+        "kindChangedPct": 9.66796875,
+        "biomeChangedPct": 0.68359375,
+        "fluidChangedPct": 9.86328125,
+        "waterToLandPctOfAllSamples": 5.37109375,
+        "landToWaterPctOfAllSamples": 4.4921875
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 20.576491140504118,
+        "landToOceanPct": 16.758173196905414,
+        "visibleDiffPct": 26.5289306640625,
+        "changedArgbPct": 52.7618408203125
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 0,
+      "blocksPerPixel": 1,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 30.9689,
+      "againstExactColumns": {
+        "heightMae": 2.201171875,
+        "heightBias": 1.1640625,
+        "heightWithin2Pct": 89.94140625,
+        "kindChangedPct": 10.7421875,
+        "biomeChangedPct": 0.29296875,
+        "fluidChangedPct": 11.23046875,
+        "waterToLandPctOfAllSamples": 10.546875,
+        "landToWaterPctOfAllSamples": 0.68359375
+      },
+      "againstPr154Baseline": {
+        "heightMae": 2.125,
+        "heightBias": 1.37890625,
+        "heightWithin2Pct": 85.83984375,
+        "kindChangedPct": 11.1328125,
+        "biomeChangedPct": 0.9765625,
+        "fluidChangedPct": 10.9375,
+        "waterToLandPctOfAllSamples": 10.44921875,
+        "landToWaterPctOfAllSamples": 0.48828125
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 41.82680309458448,
+        "landToOceanPct": 1.2914898926877965,
+        "visibleDiffPct": 26.4556884765625,
+        "changedArgbPct": 55.2337646484375
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "baseline8_16",
+      "sampleMsSingleRun": 155.3467,
+      "againstExactColumns": {
+        "heightMae": 1.7744140625,
+        "heightBias": -0.3818359375,
+        "heightWithin2Pct": 87.01171875,
+        "kindChangedPct": 6.15234375,
+        "biomeChangedPct": 0.1953125,
+        "fluidChangedPct": 6.25,
+        "waterToLandPctOfAllSamples": 3.3203125,
+        "landToWaterPctOfAllSamples": 2.9296875
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.0,
+        "heightBias": 0.0,
+        "heightWithin2Pct": 100.0,
+        "kindChangedPct": 0.0,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 0.0,
+        "waterToLandPctOfAllSamples": 0.0,
+        "landToWaterPctOfAllSamples": 0.0
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 0.0,
+        "landToOceanPct": 0.0,
+        "visibleDiffPct": 0.0,
+        "changedArgbPct": 0.0
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride16_32",
+      "sampleMsSingleRun": 116.0589,
+      "againstExactColumns": {
+        "heightMae": 1.7060546875,
+        "heightBias": -0.1103515625,
+        "heightWithin2Pct": 87.890625,
+        "kindChangedPct": 5.37109375,
+        "biomeChangedPct": 0.1953125,
+        "fluidChangedPct": 5.56640625,
+        "waterToLandPctOfAllSamples": 3.61328125,
+        "landToWaterPctOfAllSamples": 1.953125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.9375,
+        "heightBias": 0.271484375,
+        "heightWithin2Pct": 92.28515625,
+        "kindChangedPct": 3.125,
+        "biomeChangedPct": 0.390625,
+        "fluidChangedPct": 3.22265625,
+        "waterToLandPctOfAllSamples": 2.24609375,
+        "landToWaterPctOfAllSamples": 0.9765625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 10.146589140938499,
+        "landToOceanPct": 7.091966259929571,
+        "visibleDiffPct": 20.84808349609375,
+        "changedArgbPct": 50.1556396484375
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "stride32_32",
+      "sampleMsSingleRun": 118.1133,
+      "againstExactColumns": {
+        "heightMae": 1.7060546875,
+        "heightBias": -0.1103515625,
+        "heightWithin2Pct": 87.890625,
+        "kindChangedPct": 5.37109375,
+        "biomeChangedPct": 0.1953125,
+        "fluidChangedPct": 5.56640625,
+        "waterToLandPctOfAllSamples": 3.61328125,
+        "landToWaterPctOfAllSamples": 1.953125
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.9375,
+        "heightBias": 0.271484375,
+        "heightWithin2Pct": 92.28515625,
+        "kindChangedPct": 3.125,
+        "biomeChangedPct": 0.390625,
+        "fluidChangedPct": 3.22265625,
+        "waterToLandPctOfAllSamples": 2.24609375,
+        "landToWaterPctOfAllSamples": 0.9765625
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 10.146589140938499,
+        "landToOceanPct": 7.091966259929571,
+        "visibleDiffPct": 20.84808349609375,
+        "changedArgbPct": 50.1556396484375
+      }
+    },
+    {
+      "seed": 987654321,
+      "scene": "negative",
+      "blockX": -5632,
+      "blockZ": -4864,
+      "lod": 1,
+      "blocksPerPixel": 2,
+      "variant": "noResidual",
+      "sampleMsSingleRun": 94.4219,
+      "againstExactColumns": {
+        "heightMae": 1.408203125,
+        "heightBias": 0.14453125,
+        "heightWithin2Pct": 94.3359375,
+        "kindChangedPct": 4.296875,
+        "biomeChangedPct": 0.0,
+        "fluidChangedPct": 4.39453125,
+        "waterToLandPctOfAllSamples": 3.02734375,
+        "landToWaterPctOfAllSamples": 1.3671875
+      },
+      "againstPr154Baseline": {
+        "heightMae": 0.9111328125,
+        "heightBias": 0.5263671875,
+        "heightWithin2Pct": 92.1875,
+        "kindChangedPct": 2.44140625,
+        "biomeChangedPct": 0.1953125,
+        "fluidChangedPct": 2.44140625,
+        "waterToLandPctOfAllSamples": 1.85546875,
+        "landToWaterPctOfAllSamples": 0.5859375
+      },
+      "renderAgainstPr154Baseline": {
+        "oceanToLandPct": 9.958234378838752,
+        "landToOceanPct": 5.3066906887232825,
+        "visibleDiffPct": 17.6483154296875,
+        "changedArgbPct": 46.40350341796875
+      }
+    }
+  ]
+}
