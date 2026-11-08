@@ -85,11 +85,6 @@ public final class BiomeTable {
         return END_IDS.contains(cubiomesBiomeId);
     }
 
-    /** Whether this biome is a swamp variant (swamp, swamp_hills, mangrove_swamp). */
-    public static boolean isSwamp(final int cubiomesBiomeId) {
-        return cubiomesBiomeId == 6 || cubiomesBiomeId == 134 || cubiomesBiomeId == 184;
-    }
-
     /** Whether a vanilla biome belongs to the requested generation dimension. */
     public static boolean supports(final DimensionId dimension, final int cubiomesBiomeId) {
         if (dimension.equals(DimensionId.NETHER)) {

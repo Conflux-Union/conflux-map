@@ -2,26 +2,44 @@
 #define ADAPTIVE_MACRO_H
 
 // ==============================================================================
-// 绝对位置纯性自适应宏观网格 (Strict Position-Pure Adaptive Macro Grid)
-// 1. 世界 16 方块大格子 (step 4 宏观格) 角点全局绝对求值;
-// 2. 严格半开区间世界归属: 每个世界宏观点 (x4, z4) 唯一定位于其所在的世界格子,
-//    无论切片起点与形状如何变化，同一坐标点必然命中同一格子与同一决策，彻底消除抢占 (0 mismatch);
-// 3. 单中心点两级自适应: 16x16 -> 8x8 -> 4x4, 达成 5.2x 提速与 >= 97% 精度;
-// 4. 严格边界安全: 零越界, 零行串位 (ASan clean).
+// Strict Position-Pure Spatial-Adaptive Macro Grid
+// 1. World 16-block macro cells (step 4 macro grid) corners evaluated globally;
+// 2. Strict half-open world coordinate partitioning: each world macro point (x4, z4)
+//    uniquely belongs to its enclosing cell, guaranteeing identical decisions
+//    regardless of tile slicing origins or boundary padding (0 mismatch);
+// 3. 5-point cross detection + two-tier quadtree refinement: 16x16 -> 8x8 -> 4x4;
+// 4. Memory safety: strict bounds-clamped indices with zero row overflow (ASan clean).
 // ==============================================================================
 
-// 二阶拉普拉斯弯曲与马鞍面对角畸变能量判据 (纯整数位运算，零额外噪声开销)
+// Strictly symmetric linear interpolation with unbiased rounding.
+// Guarantees algebraic invariant under endpoint exchange:
+// cfxLerpSymmetric(y0, y1, x, D) == cfxLerpSymmetric(y1, y0, D - x, D)
+static inline int cfxLerpSymmetric(int y0, int y1, int x, int D) {
+    const int numer = (D - x) * y0 + x * y1;
+    if (numer >= 0) {
+        return (numer + (D >> 1)) / D;
+    } else {
+        return (numer - (D >> 1)) / D;
+    }
+}
+
+// Second-order discrete Laplacian curvature and saddle-distortion energy metric.
+// Pure integer bitwise arithmetic without additional noise evaluation overhead.
 static inline int cfxEvaluateCurvatureEnergy(int c00, int c10, int c01, int c11, int cMid) {
     int min_h = c00, max_h = c00;
-    if (c10 < min_h) min_h = c10; if (c10 > max_h) max_h = c10;
-    if (c01 < min_h) min_h = c01; if (c01 > max_h) max_h = c01;
-    if (c11 < min_h) min_h = c11; if (c11 > max_h) max_h = c11;
-    if (cMid < min_h) min_h = cMid; if (cMid > max_h) max_h = cMid;
+    if (c10 < min_h) min_h = c10;
+    if (c10 > max_h) max_h = c10;
+    if (c01 < min_h) min_h = c01;
+    if (c01 > max_h) max_h = c01;
+    if (c11 < min_h) min_h = c11;
+    if (c11 > max_h) max_h = c11;
+    if (cMid < min_h) min_h = cMid;
+    if (cMid > max_h) max_h = cMid;
     const int drop = max_h - min_h;
 
-    // 二阶拉普拉斯弯曲能: 衡量中心凸出/凹陷程度
+    // Discrete 2nd-order Laplacian: measures local convexity/concavity
     const int laplacian = abs(4 * cMid - (c00 + c10 + c01 + c11));
-    // 马鞍面对角畸变能: 衡量双向对角翘曲程度
+    // Saddle-energy: measures diagonal twist
     const int saddle = abs((c00 + c11) - (c10 + c01));
 
     int energy = drop;
@@ -39,7 +57,7 @@ static inline int cfxEvaluateAdaptiveMacroGrid(
     const int H = gridH;
     if (W <= 0 || H <= 0) return CFX_OK;
 
-    // 1. 世界坐标下以 4 为步长的大格子对齐原点与包含的格子总数
+    // 1. Align world coordinates to 4-block macro cell bounds
     const int startCellX = floordiv(minX4, 4);
     const int endCellX   = floordiv(minX4 + W - 1, 4);
     const int startCellZ = floordiv(minZ4, 4);
@@ -54,7 +72,7 @@ static inline int cfxEvaluateAdaptiveMacroGrid(
     int *corners = (int *)malloc(cornerW * cornerH * sizeof(int));
     if (!corners) return CFX_ERR_ALLOC;
 
-    // 2. 计算所有世界对齐大格子的角点高度 (绝对世界坐标)
+    // 2. Evaluate all corner heights in absolute world coordinates
     for (int cz = 0; cz < cornerH; cz++) {
         int worldZ4 = (startCellZ + cz) * 4;
         for (int cx = 0; cx < cornerW; cx++) {
@@ -63,7 +81,7 @@ static inline int cfxEvaluateAdaptiveMacroGrid(
         }
     }
 
-    // 3. 逐个世界大格子独立填充
+    // 3. Fill individual macro cells independently
     for (int cz = 0; cz < numCellsZ; cz++) {
         const int cellWorldZ4 = (startCellZ + cz) * 4;
         int lz0 = cellWorldZ4 - minZ4;
@@ -148,9 +166,9 @@ static inline int cfxEvaluateAdaptiveMacroGrid(
                                 int dz = (minZ4 + lz) - qWorldZ4; // 0..1
                                 for (int lx = subX0; lx < subX1; lx++) {
                                     int dx = (minX4 + lx) - qWorldX4; // 0..1
-                                    int top = qc00 + floordiv((qc10 - qc00) * dx + 1, 2);
-                                    int bot = qc01 + floordiv((qc11 - qc01) * dx + 1, 2);
-                                    macro[lz * W + lx] = top + floordiv((bot - top) * dz + 1, 2);
+                                    int top = cfxLerpSymmetric(qc00, qc10, dx, 2);
+                                    int bot = cfxLerpSymmetric(qc01, qc11, dx, 2);
+                                    macro[lz * W + lx] = cfxLerpSymmetric(top, bot, dz, 2);
                                 }
                             }
                         }
@@ -161,9 +179,9 @@ static inline int cfxEvaluateAdaptiveMacroGrid(
                     int dz = (minZ4 + lz) - cellWorldZ4; // 0..3
                     for (int lx = clampX0; lx < clampX1; lx++) {
                         int dx = (minX4 + lx) - cellWorldX4; // 0..3
-                        int top = c00 + floordiv((c10 - c00) * dx + 2, 4);
-                        int bot = c01 + floordiv((c11 - c01) * dx + 2, 4);
-                        macro[lz * W + lx] = top + floordiv((bot - top) * dz + 2, 4);
+                        int top = cfxLerpSymmetric(c00, c10, dx, 4);
+                        int bot = cfxLerpSymmetric(c01, c11, dx, 4);
+                        macro[lz * W + lx] = cfxLerpSymmetric(top, bot, dz, 4);
                     }
                 }
             }

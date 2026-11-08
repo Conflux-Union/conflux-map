@@ -10,7 +10,7 @@
 #include "shim/confluxnative.c"
 #include "shim/master_clean_impl.h"
 
-// 静态验证两个编译快照结构体同构，防止类型双关读取脏数据
+// Static assertion ensuring generator snapshot structs remain binary isomorphic
 _Static_assert(sizeof(CfxContext) == sizeof(MasterCfxContext), "Context size mismatch between opt and master");
 _Static_assert(sizeof(CfxNoiseDetail) == sizeof(MasterCfxNoiseDetail), "NoiseDetail size mismatch");
 
@@ -47,15 +47,15 @@ static void run_case(
     int *truth_solid = calloc(total, sizeof(int));
     int *truth_fluid = calloc(total, sizeof(int));
 
-    // 1. 优化版生成
+    // 1. Optimized implementation solve
     CfxNoiseDetail detail_opt = cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
     cfxOverviewHeightsImpl(env, ctx, ox, oz, w, h, stride, (jintArray)pred_opt, &detail_opt);
 
-    // 2. 真实 Master 原版物理直接求值 (零文件 IO, 绝对保真)
+    // 2. Authentic master baseline solve (zero file IO)
     MasterCfxNoiseDetail detail_master = master_cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
     master_cfxOverviewHeightsImpl(env, (MasterCfxContext *)ctx, ox, oz, w, h, stride, (jintArray)pred_master, &detail_master);
 
-    // 3. 原生 Ground Truth 生成 (带错误校验)
+    // 3. Ground truth evaluation with error checks
     mapOverworldSurfaceHeightBlocks(truth_solid, truth_fluid, &ctx->g.bn, (int)ox, (int)oz, w, h, stride);
 
     double total_diff_y = 0;

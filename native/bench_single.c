@@ -63,7 +63,7 @@ int main(void) {
 
         CfxNoiseDetail detail = cfxNoiseDetailForStride(&ctx.g.bn.terrain, stride);
 
-        // 预热
+        // Warmup
         cfxOverviewHeightsImpl(p_env, &ctx, 0, 0, count_1d, count_1d, stride, (jintArray)heights, &detail);
 
         double total_time = 0.0;
@@ -71,7 +71,7 @@ int main(void) {
         const int iters = 5;
 
         for (int iter = 0; iter < iters; iter++) {
-            memset(heights, 0x5a, cells * sizeof(int)); // 毒化内存，未写则校验和必裂
+            memset(heights, 0x5a, cells * sizeof(int)); // Poison memory to detect unwritten slots
             double t0 = get_time_sec();
             cfxOverviewHeightsImpl(p_env, &ctx, 0, 0, count_1d, count_1d, stride, (jintArray)heights, &detail);
             double t1 = get_time_sec();

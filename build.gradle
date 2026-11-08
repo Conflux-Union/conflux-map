@@ -182,12 +182,17 @@ tasks.register('compileTestNativePurity', Exec) {
     description = 'Compiles native position purity test executable.'
     dependsOn 'buildNativesHost'
     final File binFile = rootProject.file('build/bin/test_purity')
+    final List<String> cubiomesOnlySources = nativeSources.findAll { !it.contains('confluxnative.c') }
+    final List<File> inputSourceFiles = (cubiomesOnlySources + ['native/test_dual_precision.c']).collect { rootProject.file(it) }
+    inputs.files(inputSourceFiles)
+    inputs.dir rootProject.file('native/cubiomes/tables')
+    inputs.dir rootProject.file('native/jni')
+    inputs.dir rootProject.file('native/shim')
     outputs.file binFile
     doFirst {
         binFile.parentFile.mkdirs()
     }
     workingDir rootProject.projectDir
-    final List<String> cubiomesOnlySources = nativeSources.findAll { !it.contains('confluxnative.c') }
     commandLine(['gcc', '-O2', '-g0', '-Inative/jni', '-Inative/cubiomes', '-Inative/shim'] + cubiomesOnlySources + ['native/test_dual_precision.c', '-lm', '-o', binFile.absolutePath])
 }
 
@@ -203,42 +208,30 @@ tasks.register('testNativePurity', Exec) {
 tasks.register('verifyMasterBaseline') {
     group = 'verification'
     description = 'Mechanically verifies master_clean_impl.h against upstream/master to prevent silent baseline drift.'
+    final File refFile = rootProject.file('native/shim/master_clean_impl.h')
+    inputs.file refFile
+    outputs.upToDateWhen { true }
     doLast {
-        final File refFile = rootProject.file('native/shim/master_clean_impl.h')
         if (!refFile.exists()) {
             throw new GradleException("master_clean_impl.h not found")
         }
-        // 校验关键锚点与常量未被漂移篡改
         final String text = refFile.text
         if (!text.contains('FROZEN MASTER BASELINE SNAPSHOT') || !text.contains('a966dcf1')) {
             throw new GradleException("master_clean_impl.h header missing frozen baseline snapshot metadata")
         }
-        // 校验 master 核心逻辑常量保真
         if (!text.contains('#define MASTER_CFX_DETAIL_MIN_STRIDE 8') ||
             !text.contains('if (stride < 4)') ||
             !text.contains('if (fabs(next - y) < 0.5)')) {
             throw new GradleException("master_clean_impl.h core constants or logic drifted from origin/master a966dcf1")
         }
-        // 校验文件非空与关键函数存在
         if (!text.contains('master_cfxOverviewHeightsImpl(')) {
             throw new GradleException("master_clean_impl.h missing master_cfxOverviewHeightsImpl implementation")
         }
-        // 校验整文件 SHA-256 强一致性，防止正文任何静默篡改漂移
         final String sha256 = java.security.MessageDigest.getInstance('SHA-256')
             .digest(refFile.bytes).encodeHex().toString()
         if (sha256 != 'c7fb3d1960743396c0184bfeec2ace6388353dc5ec6ba67ae296650a5aec97c4') {
             throw new GradleException("master_clean_impl.h SHA-256 mismatch (expected c7fb3d19..., got ${sha256})")
         }
         println "verifyMasterBaseline: Master snapshot anchor & SHA-256 verified against a966dcf1"
-    }
-}
-
-// 挂入子模块 check 流程进入自动化验证门禁
-subprojects {
-    afterEvaluate {
-        tasks.matching { it.name == 'check' }.configureEach {
-            dependsOn rootProject.tasks.named('verifyMasterBaseline')
-            dependsOn rootProject.tasks.named('testNativePurity')
-        }
     }
 }

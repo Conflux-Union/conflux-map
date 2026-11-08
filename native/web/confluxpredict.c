@@ -579,13 +579,30 @@ static int cfxWebModernOverviewHeight(
     return (int) lround(y);
 }
 
-// 二阶拉普拉斯弯曲与马鞍面对角畸变能量判据 (纯整数位运算，零额外噪声开销)
+// Strictly symmetric linear interpolation with unbiased rounding.
+// Guarantees algebraic invariant under endpoint exchange:
+// cfxLerpSymmetric(y0, y1, x, D) == cfxLerpSymmetric(y1, y0, D - x, D)
+static inline int cfxLerpSymmetric(int y0, int y1, int x, int D) {
+    const int numer = (D - x) * y0 + x * y1;
+    if (numer >= 0) {
+        return (numer + (D >> 1)) / D;
+    } else {
+        return (numer - (D >> 1)) / D;
+    }
+}
+
+// Second-order discrete Laplacian curvature and saddle-distortion energy metric.
+// Pure integer bitwise arithmetic without additional noise evaluation overhead.
 static inline int cfxEvaluateCurvatureEnergy(int c00, int c10, int c01, int c11, int cMid) {
     int min_h = c00, max_h = c00;
-    if (c10 < min_h) min_h = c10; if (c10 > max_h) max_h = c10;
-    if (c01 < min_h) min_h = c01; if (c01 > max_h) max_h = c01;
-    if (c11 < min_h) min_h = c11; if (c11 > max_h) max_h = c11;
-    if (cMid < min_h) min_h = cMid; if (cMid > max_h) max_h = cMid;
+    if (c10 < min_h) min_h = c10;
+    if (c10 > max_h) max_h = c10;
+    if (c01 < min_h) min_h = c01;
+    if (c01 > max_h) max_h = c01;
+    if (c11 < min_h) min_h = c11;
+    if (c11 > max_h) max_h = c11;
+    if (cMid < min_h) min_h = cMid;
+    if (cMid > max_h) max_h = cMid;
     const int drop = max_h - min_h;
 
     const int laplacian = abs(4 * cMid - (c00 + c10 + c01 + c11));
@@ -712,9 +729,9 @@ static inline int cfxWebEvaluateAdaptiveMacroGrid(
                                 int dz = (minZ4 + lz) - qWorldZ4;
                                 for (int lx = subX0; lx < subX1; lx++) {
                                     int dx = (minX4 + lx) - qWorldX4;
-                                    int top = qc00 + floordiv((qc10 - qc00) * dx + 1, 2);
-                                    int bot = qc01 + floordiv((qc11 - qc01) * dx + 1, 2);
-                                    macro[lz * W + lx] = top + floordiv((bot - top) * dz + 1, 2);
+                                    int top = cfxLerpSymmetric(qc00, qc10, dx, 2);
+                                    int bot = cfxLerpSymmetric(qc01, qc11, dx, 2);
+                                    macro[lz * W + lx] = cfxLerpSymmetric(top, bot, dz, 2);
                                 }
                             }
                         }
@@ -725,9 +742,9 @@ static inline int cfxWebEvaluateAdaptiveMacroGrid(
                     int dz = (minZ4 + lz) - cellWorldZ4;
                     for (int lx = clampX0; lx < clampX1; lx++) {
                         int dx = (minX4 + lx) - cellWorldX4;
-                        int top = c00 + floordiv((c10 - c00) * dx + 2, 4);
-                        int bot = c01 + floordiv((c11 - c01) * dx + 2, 4);
-                        macro[lz * W + lx] = top + floordiv((bot - top) * dz + 2, 4);
+                        int top = cfxLerpSymmetric(c00, c10, dx, 4);
+                        int bot = cfxLerpSymmetric(c01, c11, dx, 4);
+                        macro[lz * W + lx] = cfxLerpSymmetric(top, bot, dz, 4);
                     }
                 }
             }
@@ -802,11 +819,9 @@ static int cfxWebOverviewHeightsImpl(
                     const int x4 = floordiv(sampleX, 4);
                     const int fx = sampleX - x4 * 4;
                     const int ix = x4 - minX4;
-                    const int top = macro[iz*gridW+ix]
-                        + floordiv((macro[iz*gridW+ix+1] - macro[iz*gridW+ix])*fx + 2, 4);
-                    const int bottom = macro[(iz+1)*gridW+ix]
-                        + floordiv((macro[(iz+1)*gridW+ix+1] - macro[(iz+1)*gridW+ix])*fx + 2, 4);
-                    out[j*w+i] = top + floordiv((bottom-top)*fz + 2, 4);
+                    const int top = cfxLerpSymmetric(macro[iz*gridW+ix], macro[iz*gridW+ix+1], fx, 4);
+                    const int bottom = cfxLerpSymmetric(macro[(iz+1)*gridW+ix], macro[(iz+1)*gridW+ix+1], fx, 4);
+                    out[j*w+i] = cfxLerpSymmetric(top, bottom, fz, 4);
                 }
             }
             free(macro);

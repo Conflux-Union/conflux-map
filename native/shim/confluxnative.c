@@ -1026,11 +1026,9 @@ static jint cfxOverviewHeightsImpl(
                     const int x4 = floordiv(sampleX, 4);
                     const int fx = sampleX - x4*4;
                     const int ix = x4 - minX4;
-                    const int top = macro[iz*gridW+ix]
-                        + floordiv((macro[iz*gridW+ix+1] - macro[iz*gridW+ix])*fx + 2, 4);
-                    const int bottom = macro[(iz+1)*gridW+ix]
-                        + floordiv((macro[(iz+1)*gridW+ix+1] - macro[(iz+1)*gridW+ix])*fx + 2, 4);
-                    heights[j*w+i] = top + floordiv((bottom-top)*fz + 2, 4);
+                    const int top = cfxLerpSymmetric(macro[iz*gridW+ix], macro[iz*gridW+ix+1], fx, 4);
+                    const int bottom = cfxLerpSymmetric(macro[(iz+1)*gridW+ix], macro[(iz+1)*gridW+ix+1], fx, 4);
+                    heights[j*w+i] = cfxLerpSymmetric(top, bottom, fz, 4);
                 }
             }
             free(macro);

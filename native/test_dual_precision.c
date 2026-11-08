@@ -14,26 +14,26 @@ static void JNICALL dummy_SetIntArrayRegion(JNIEnv *env, jintArray array, jsize 
     (void)env; memcpy((int*)array + start, buf, len * sizeof(jint));
 }
 
-// 1. 位置纯性属性测试 (Position Purity Property Test)
+// 1. Position Purity Property Test
 void test_position_purity(JNIEnv *env, CfxContext *ctx) {
     printf("--- Running Position Purity Property Assertions ---\n");
-    // 形状 A: 干净大瓦片 (0, 0, 512, 512, stride 1)
+    // Shape A: clean macro tile (0, 0, 512, 512, stride 1)
     const int wA = 512, hA = 512;
     int *bufA = malloc(wA * hA * sizeof(int));
     CfxNoiseDetail detailA = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 1);
-    cfxOverviewHeightsImpl(env, ctx, 0, 0, wA, hA, 1, (jintArray)bufA, &detailA);
+    assert(cfxOverviewHeightsImpl(env, ctx, 0, 0, wA, hA, 1, (jintArray)bufA, &detailA) == CFX_OK);
 
-    // 形状 B: 标准生产瓦片 (-1, -1, 258, 258, stride 1)
+    // Shape B: standard production tile (-1, -1, 258, 258, stride 1)
     const int oxB = -1, ozB = -1, wB = 258, hB = 258;
     int *bufB = malloc(wB * hB * sizeof(int));
     CfxNoiseDetail detailB = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 1);
-    cfxOverviewHeightsImpl(env, ctx, oxB, ozB, wB, hB, 1, (jintArray)bufB, &detailB);
+    assert(cfxOverviewHeightsImpl(env, ctx, oxB, ozB, wB, hB, 1, (jintArray)bufB, &detailB) == CFX_OK);
 
-    // 形状 C: 异相位瓦片 (+2, +3, 258, 258, stride 1)
+    // Shape C: off-phase tile (+2, +3, 258, 258, stride 1)
     const int oxC = 2, ozC = 3, wC = 258, hC = 258;
     int *bufC = malloc(wC * hC * sizeof(int));
     CfxNoiseDetail detailC = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 1);
-    cfxOverviewHeightsImpl(env, ctx, oxC, ozC, wC, hC, 1, (jintArray)bufC, &detailC);
+    assert(cfxOverviewHeightsImpl(env, ctx, oxC, ozC, wC, hC, 1, (jintArray)bufC, &detailC) == CFX_OK);
 
     int mismatch_BA = 0;
     for (int z = 0; z < 256; z++) {

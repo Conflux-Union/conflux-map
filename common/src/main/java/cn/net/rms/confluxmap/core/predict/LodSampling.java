@@ -647,10 +647,8 @@ public final class LodSampling {
                 final int index = BaselineGrid.index(pixelX, pixelZ);
                 final int solidY = grid.terrainY[index];
                 final boolean belowSeaLevel = solidY < BaselineDeriver.WATER_LEVEL;
-                final boolean swampWater = BiomeTable.isSwamp(grid.biomeId[index]) && solidY <= PREDICTED_FLUID_CEILING;
                 final boolean fluid = solidY < PREDICTED_FLUID_CEILING
-                    || BiomeTable.get(grid.biomeId[index]).waterBiome()
-                    || swampWater;
+                    || BiomeTable.get(grid.biomeId[index]).waterBiome();
                 if (belowSeaLevel && fluid) {
                     grid.fluidY[index] = BaselineDeriver.WATER_LEVEL;
                     grid.baseSurfaceY[index] = BaselineDeriver.WATER_LEVEL;
@@ -666,10 +664,8 @@ public final class LodSampling {
                 for (int subZ = 0; subZ < grid.subPerAxis; subZ++) {
                     for (int subX = 0; subX < grid.subPerAxis; subX++) {
                         final int sub = grid.subIndex(index, subX, subZ);
-                        final boolean subSwampWater = BiomeTable.isSwamp(grid.subBiomeId[sub]) && solidY <= PREDICTED_FLUID_CEILING;
                         final boolean subFluid = solidY < PREDICTED_FLUID_CEILING
-                            || BiomeTable.get(grid.subBiomeId[sub]).waterBiome()
-                            || subSwampWater;
+                            || BiomeTable.get(grid.subBiomeId[sub]).waterBiome();
                         if (belowSeaLevel && subFluid) {
                             grid.subBaseSurfaceY[sub] = BaselineDeriver.WATER_LEVEL;
                             grid.subSurfaceFlags[sub] = BaselineGrid.SURFACE_FLUID;
@@ -1495,9 +1491,8 @@ public final class LodSampling {
             final boolean confidentFluid = anchorFluid
                 ? fluidConfidence[i] >= FLUID_CONFIDENCE_THRESHOLD
                 : solidY < PREDICTED_FLUID_CEILING;
-            final boolean swampWater = BiomeTable.isSwamp(grid.biomeId[i]);
             if (belowSeaLevel
-                && (confidentFluid || BiomeTable.get(grid.biomeId[i]).waterBiome() || swampWater)) {
+                && (confidentFluid || BiomeTable.get(grid.biomeId[i]).waterBiome())) {
                 grid.fluidY[i] = BaselineDeriver.WATER_LEVEL;
                 grid.baseSurfaceY[i] = BaselineDeriver.WATER_LEVEL;
                 grid.surfaceFlags[i] = BaselineGrid.SURFACE_FLUID;
@@ -1515,9 +1510,8 @@ public final class LodSampling {
             for (int sz = 0; sz < grid.subPerAxis; sz++) {
                 for (int sx = 0; sx < grid.subPerAxis; sx++) {
                     final int s = grid.subIndex(i, sx, sz);
-                    final boolean subSwampWater = BiomeTable.isSwamp(grid.subBiomeId[s]);
                     if (belowSeaLevel
-                        && (confidentFluid || BiomeTable.get(grid.subBiomeId[s]).waterBiome() || subSwampWater)) {
+                        && (confidentFluid || BiomeTable.get(grid.subBiomeId[s]).waterBiome())) {
                         grid.subBaseSurfaceY[s] = BaselineDeriver.WATER_LEVEL;
                         grid.subSurfaceFlags[s] = BaselineGrid.SURFACE_FLUID;
                     } else {
