@@ -54,6 +54,9 @@ for what it predicts; this file is only the build/maintenance side.
   pins the accelerated heights to master's per-pixel reference and cubiomes'
   exact generation, and the cross-check pins the web predictor to the JNI
   shim bit for bit. Compile them like the shim (see their header comments).
+  See the [performance report](../docs/performance/legacy-predict-overview.md)
+  and [full-scale validation](../docs/performance/legacy-predict-fullscale-validation.md)
+  for measurements and validation scope.
 - `web/confluxpredict.c` - the browser-only cubiomes wrapper. It produces the
   same margin-inclusive biome, overview-height, exact-residual and fluid
   baseline used by the Java predictor. A Web Worker composes that baseline;

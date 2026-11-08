@@ -41,6 +41,16 @@ class WebPredictorParityTest {
         for (int lod = 3; lod <= 4; lod++) {
             assertParity(current, PredictionDimensions.OVERWORLD, lod, wasm, dumpScript);
         }
+        final int legacy = McVersions.toCubiomes("1.17.1").orElseThrow();
+        for (int lod = 0; lod <= 4; lod++) {
+            if (lod >= 3) {
+                assertParity(legacy, PredictionDimensions.OVERWORLD, lod, wasm, dumpScript);
+            }
+            assertParity(
+                legacy, PredictionDimensions.OVERWORLD, lod, -65_539, -32_771,
+                wasm, dumpScript
+            );
+        }
         assertParity(
             current, PredictionDimensions.OVERWORLD, 4, -65_536, -65_536,
             wasm, dumpScript

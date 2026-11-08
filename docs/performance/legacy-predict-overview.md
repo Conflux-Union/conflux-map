@@ -115,3 +115,20 @@ Voronoi-margin biome behaviour itself is unchanged.
 The committed prebuilt binaries and `predictor.wasm` were refreshed with
 `buildNativesAll` and `buildWebPredictor` (zig 0.13.0; the wasm target needs
 the `-mexec-model=reactor` flag that this branch adds to `buildWebPredictor`).
+
+### WASM reproducibility check (2026-11-08)
+
+With Zig 0.13.0 on PATH and Java 21, the following forced rebuild succeeded:
+
+```powershell
+.\gradlew.bat buildWebPredictor --offline --configure-on-demand --console=plain --rerun-tasks
+```
+
+The resulting `common/src/main/resources/webmap/predictor.wasm` is 1,395,925
+bytes, with SHA-256
+`4dd7ffd27e7e2881f8e06337642e1566c36344b990c9fd1357dc284256bb9614`.
+It is byte-identical to the artifact already committed on this branch;
+no binary replacement was necessary. This check rebuilds WASM only, not
+the five native targets. `WebPredictorParityTest` additionally covers the
+actual committed JNI/WASM artifacts, including legacy LOD0-4 at negative,
+off-phase origins.

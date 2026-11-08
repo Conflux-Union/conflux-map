@@ -1,7 +1,7 @@
 # Pre-1.18 overview: full-scale block-by-block validation
 
 Three-way, per-block comparison over 10 random seeds x 5 regions x 4096x4096
-blocks (1.116 billion sampled columns across LOD strides 1/2/4/8/16):
+blocks (1,117,388,800 sampled columns across LOD strides 1/2/4/8/16):
 
 - **opt** - this branch's accelerated pre-1.18 overview dispatch
   (`cfxOverviewHeightsImpl` legacy paths + memoized biome windows).
@@ -22,15 +22,23 @@ to the 30M border, and cubiomes' precision wrap extends to +-33.5M, so the
 4539869800134215359, 374269928810421942, 1958584886842335593,
 4377252966816779461.
 
-Harness: `native/test_legacy_fullscale.c` (one process per unit, aggregated by
-`native/aggregate_fullscale.py`).
+Harness: `native/test_legacy_fullscale.c` (one process per seed/region unit).
+For each stride and comparator, pool MAE and percentage rates by cell count,
+sum artifact counters and histogram bins, and take the maximum of unit maxima.
+The one-off aggregation helper and original reports are retained only in an
+ignored local archive under `build/reports/legacy-predict/`.
+
+These are historical branch measurements, not a new billion-column run.
+On 2026-11-08, the retained 50 unit outputs were reaggregated to include all
+LOD3/4 units and correct the old helper's summation of maximum errors.
 
 ## Verdict
 
-**opt and mast are observationally identical against vanilla** - the
-acceleration changed no terrain behaviour, and the raw overview's distance to
-vanilla is master's own (downstream exact-anchor residuals correct it; the
-production output measured separately below lands at MAE 1.14 blocks).
+**The accelerated overview remains close to the master-equivalent reference
+on these samples**, with small measured differences rather than bit equality.
+Both retain the raw overview's approximation gap to the exact model;
+downstream exact-anchor residuals reduce it (the production output measured
+separately below lands at MAE 1.14 blocks).
 
 ## Raw overview vs vanilla exact (pooled, all 50 units)
 
@@ -39,12 +47,12 @@ production output measured separately below lands at MAE 1.14 blocks).
 | 1 | 838,860,800 | 7.7158 | 7.7152 | 18.3698% | 18.3698% | 22.8061% | 22.8059% | 100.0000% | 100.0000% |
 | 2 | 209,715,200 | 9.2987 | 9.2983 | 23.1414% | 23.1415% | 27.7523% | 27.7521% | 100.0000% | 100.0000% |
 | 4 | 52,428,800 | 11.0621 | 11.0621 | 28.6653% | 28.6653% | 33.4545% | 33.4545% | (scale-4) | (scale-4) |
-| 8 | 12,582,912 | 12.8414 | 12.8414 | 34.8161% | 34.8158% | 40.0182% | 40.0179% | (scale-4) | (scale-4) |
-| 16 | 3,145,728 | 14.2721 | 14.2721 | 39.3673% | 39.3663% | 44.3041% | 44.3035% | (scale-4) | (scale-4) |
+| 8 | 13,107,200 | 12.7869 | 12.7869 | 34.5708% | 34.5706% | 39.6680% | 39.6677% | (scale-4) | (scale-4) |
+| 16 | 3,276,800 | 14.1787 | 14.1787 | 38.9775% | 38.9765% | 43.8062% | 43.8054% | (scale-4) | (scale-4) |
 
-- Height: opt-mast mean-MAE delta 0.0006 blocks at stride 1; every other
-  stride agrees to 4+ decimals. <=2-block and <=4-block hit rates are equal to
-  two decimals.
+- Height: opt-mast mean-MAE delta 0.0006 blocks at stride 1 and 0.0004 at
+  stride 2; strides 4/8/16 agree to four decimals. At stride 1, <=4-block hit
+  rates are 48.84% (opt) and 48.85% (mast); <=2-block rates both round to 32.30%.
 - Biome: 100.0000% block-level agreement with vanilla's single-query semantics
   at stride 1-2 across all 1.05 billion scale-1 comparisons - no boundary
   corruption from the memo or banded generation. At stride >= 4 the biome grid
@@ -52,8 +60,8 @@ production output measured separately below lands at MAE 1.14 blocks).
   opt-vs-mast (pinned by `test_legacy_matrix.c`).
 - The large absolute MAE/water-flip numbers are the raw overview's intrinsic
   approximation gap - the closed-form height carries no exact-anchor
-  correction. master shows the same numbers to 4+ decimals; this is not
-  something the acceleration changed, and it is what the LOD0-1 residual
+  correction. The master-equivalent comparator shows similar numbers;
+  this is what the LOD0-1 residual
   expansion and the fluid-confidence pass exist to fix.
 
 ## Production output (post-residual, post-fluid) vs vanilla
@@ -89,24 +97,27 @@ all four neighbours within 3):
 | isolated spike (0.00048%) | 4,004 | 4,015 | **-11** |
 | \|gradC-gradE\| hist 0/1/2/3-4/5-6/7-10/>10 | 490.4M/253.3M/37.4M/14.8M/5.8M/9.2M/14.9M | 489.5M/254.3M/37.3M/14.7M/5.8M/9.2M/14.9M | ~noise |
 
-The absolute false-cliff/missed-cliff counts are the master overview formula's
-own - biome-depth steps enter the closed form unblended while vanilla blends
-them over a 5x5 kernel. They exist identically on master, sit exactly where
-the residual anchors correct, and are not artifacts of the lattice.
+Both comparators have substantial raw-overview false-cliff/missed-cliff
+counts. Biome-depth steps enter the closed form unblended while vanilla
+blends them over a 5x5 kernel. The measured differences above are small,
+but these counters alone do not establish the cause of each artifact.
 
-Why no new artifacts structurally: the quart lattice samples every 4x4-cell
+The lattice samples every 4x4-cell
 corner (no 5-point subsampling of cells), the kept depth-noise octaves have
 wavelengths >= 5.12 blocks (one octave beyond the 4-block cell Nyquist), and
 1.17's sharp terrain features - riverbanks, beach drops, biome cliffs - are
 carried by the per-biome depth term which is applied per pixel and never
 interpolated. Empirically the interpolated field produces 11 fewer isolated
-spikes and 2 fewer missed cliffs than master's per-pixel formula, and the
-gradient-difference histogram is indistinguishable.
+spikes and 2 fewer missed cliffs than master's per-pixel formula, along with
+21,884 more false-cliff detections. The gradient-difference histograms are
+similar at the reported scale; this is sampled evidence, not a guarantee
+that no new local artifacts can occur.
 
 ## Notes
 
-- Max height deviation vs exact peaks at ~5.2k blocks in isolated columns for
-  BOTH comparators - an exact-oracle edge (failed bisection columns in the
-  legacy density solver at pathological inputs), identical on master.
+- Maximum absolute height deviation vs exact is 169/169/188/197/196 blocks
+  at strides 1/2/4/8/16, respectively, for both comparators. The previous
+  ~5.2k claim incorrectly summed unit maxima and does not establish an
+  exact-oracle failure.
 - Region-wise MAE spread at stride 1: 7.51 (R4 = -30M) to 8.16 (R0 = spawn) -
   no degradation toward the coordinate extremes.
