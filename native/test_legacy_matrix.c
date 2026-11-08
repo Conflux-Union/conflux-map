@@ -267,6 +267,58 @@ int main(void)
                 free(anchorOpt); free(anchorRef); free(anchorB);
             }
 
+            /* Exact-column strategy gate: the dense strided call and the
+             * per-anchor 1x1 loop must produce identical solid/fluid/surface
+             * flag quadruples (the dispatch picks between them on a cost
+             * model, never on semantics). */
+            {
+                const int g = 34, gs = 8;
+                const int gn = g * g;
+                int *dense[4], *sparse[4];
+                int k;
+                for (k = 0; k < 4; k++)
+                {
+                    dense[k] = malloc(sizeof(int) * (size_t) gn);
+                    sparse[k] = malloc(sizeof(int) * (size_t) gn);
+                }
+                const int ed = mapOverworldSurfaceColumns(
+                    dense[0], dense[1], dense[2], dense[3],
+                    &ctx.g, &ctx.sn, blockX, blockZ, g, g, gs);
+                int es = 0;
+                int j, i;
+                for (j = 0; j < g && es == 0; j++)
+                    for (i = 0; i < g && es == 0; i++)
+                        es = mapOverworldSurfaceColumns(
+                            sparse[0] + j*g+i, sparse[1] + j*g+i,
+                            sparse[2] + j*g+i, sparse[3] + j*g+i,
+                            &ctx.g, &ctx.sn, blockX + i*gs, blockZ + j*gs,
+                            1, 1, 1);
+                if (ed != 0 || es != 0)
+                {
+                    printf("COLSTRAT o=(%d,%d): ERROR dense=%d sparse=%d\n",
+                        blockX, blockZ, ed, es);
+                    hardFailures++;
+                }
+                else
+                {
+                    for (k = 0; k < 4; k++)
+                    {
+                        const int at = cmp_ints(dense[k], sparse[k], gn);
+                        if (at >= 0)
+                        {
+                            printf("COLSTRAT o=(%d,%d): plane %d mismatch at %d (%d vs %d)\n",
+                                blockX, blockZ, k, at, dense[k][at], sparse[k][at]);
+                            hardFailures++;
+                        }
+                    }
+                }
+                for (k = 0; k < 4; k++)
+                {
+                    free(dense[k]);
+                    free(sparse[k]);
+                }
+            }
+
             /* Position purity: two overlapping stride-1/2 windows must agree
              * on the shared cells (world-aligned macro lattice). */
             if (oi == 0)
