@@ -5,6 +5,7 @@
 #include <math.h>
 #include <string.h>
 #include <assert.h>
+#include <time.h>
 #include <jni.h>
 
 #include "shim/confluxnative.c"
@@ -33,7 +34,15 @@ typedef struct {
     int coast_count;
     double coast_y_mae;
     double coast_biome_flip;
+    double time_opt_ms;
+    double time_master_ms;
 } CaseResult;
+
+static double get_time_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+}
 
 static void run_case(
     JNIEnv *env, CfxContext *ctx, uint64_t seed,
@@ -49,11 +58,15 @@ static void run_case(
 
     // 1. Optimized implementation solve
     CfxNoiseDetail detail_opt = cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
-    cfxOverviewHeightsImpl(env, ctx, ox, oz, w, h, stride, (jintArray)pred_opt, &detail_opt);
+    double t0_opt = get_time_ms();
+    assert(cfxOverviewHeightsImpl(env, ctx, ox, oz, w, h, stride, (jintArray)pred_opt, &detail_opt) == CFX_OK);
+    res->time_opt_ms = get_time_ms() - t0_opt;
 
     // 2. Authentic master baseline solve (zero file IO)
     MasterCfxNoiseDetail detail_master = master_cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
-    master_cfxOverviewHeightsImpl(env, (MasterCfxContext *)ctx, ox, oz, w, h, stride, (jintArray)pred_master, &detail_master);
+    double t0_mst = get_time_ms();
+    assert(master_cfxOverviewHeightsImpl(env, (MasterCfxContext *)ctx, ox, oz, w, h, stride, (jintArray)pred_master, &detail_master) == 0);
+    res->time_master_ms = get_time_ms() - t0_mst;
 
     // 3. Ground truth evaluation with error checks
     mapOverworldSurfaceHeightBlocks(truth_solid, truth_fluid, &ctx->g.bn, (int)ox, (int)oz, w, h, stride);
@@ -72,7 +85,8 @@ static void run_case(
     double coast_diff_y = 0;
     int coast_biome_mismatch = 0;
 
-    const int step = (w >= 256 && h >= 256) ? 2 : 1;
+    // 100% exhaustive pixel-by-pixel inspection (zero subsampling)
+    const int step = 1;
     int sampled_count = 0;
 
     for (int j = 0; j < h; j += step) {
@@ -177,8 +191,8 @@ int main(void) {
     printf("========================================================================================================================================\n");
     printf("   AUTHENTIC MASTER GROUND TRUTH MATRIX AUDIT (5 SEEDS x 5 LOCS x STRIDES x 4 SHAPES)\n");
     printf("========================================================================================================================================\n");
-    printf("%-10s | %-16s | %-6s | %-22s | %-7s | %-7s | %-6s | %-11s | %-12s | %-12s | %-12s\n",
-           "Seed", "Location", "Stride", "Shape", "Y_MAE", "Y<=2", "Y_Max", "vsMst<=2", "BiomeFlip(O/M)", "WaterFlip(O/M)", "CoastBiomeFlip");
+    printf("%-10s | %-16s | %-6s | %-22s | %-7s | %-7s | %-6s | %-11s | %-12s | %-12s | %-12s | %-14s\n",
+           "Seed", "Location", "Stride", "Shape", "Y_MAE", "Y<=2", "Y_Max", "vsMst<=2", "BiomeFlip(O/M)", "WaterFlip(O/M)", "CoastBiomeFlip", "Time(Opt/Mst)");
     printf("----------------------------------------------------------------------------------------------------------------------------------------\n");
     fflush(stdout);
 
@@ -201,14 +215,15 @@ int main(void) {
                     CaseResult res;
                     run_case(p_env, &ctx, seeds[s], locs[l].x + sh.ox, locs[l].z + sh.oz, sh.w, sh.h, stride, &res);
 
-                    char bFlip[32], wFlip[32];
+                    char bFlip[32], wFlip[32], tStr[32];
                     snprintf(bFlip, sizeof(bFlip), "%4.1f%%/%4.1f%%", res.biome_flip_opt, res.biome_flip_master);
                     snprintf(wFlip, sizeof(wFlip), "%4.1f%%/%4.1f%%", res.water_flip_opt, res.water_flip_master);
+                    snprintf(tStr, sizeof(tStr), "%4.1fms/%4.1fms", res.time_opt_ms, res.time_master_ms);
 
-                    printf("%-10llu | %-16s | Stride%-1d | %-22s | %7.3f | %6.2f%% | %6d | %10.2f%% | %-14s | %-14s | %6.2f%%\n",
+                    printf("%-10llu | %-16s | Stride%-1d | %-22s | %7.3f | %6.2f%% | %6d | %10.2f%% | %-14s | %-14s | %6.2f%% | %-14s\n",
                            (unsigned long long)seeds[s], locs[l].name, stride, sh.name,
                            res.y_mae, res.le2_rate, res.max_err, res.vs_master_le2,
-                           bFlip, wFlip, res.coast_biome_flip);
+                           bFlip, wFlip, res.coast_biome_flip, tStr);
                     fflush(stdout);
                 }
             }

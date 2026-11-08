@@ -53,7 +53,8 @@ Frozen-ocean surface ice uses Vanilla's fixed temperature-noise mask; deep froze
 ordinary water surface because its visible ice comes from placed iceberg features.
 Every supported Overworld version uses the same overview pipeline. In 1.18+ modern density terrain,
 the native overview height solver employs a globally aligned two-tier spatial-adaptive macro grid
-(16-block macro cells with 8-block sub-quadrants) to accelerate CPU solve throughput by ~4.8x.
+(16-block macro cells with 8-block sub-quadrants) to accelerate CPU solve throughput by ~4.4x (reducing
+256x256 tile solve time from ~101.7ms down to ~23.4ms).
 To prevent isolated relief features from escaping coarse macro corners, the primary tier uses a 5-point
 cross detection scheme (four corners plus the cell center `cMid`) coupled with discrete Laplacian curvature
 and saddle-energy evaluation. Cells with curvature or height drop exceeding 4 blocks, as well as cells
