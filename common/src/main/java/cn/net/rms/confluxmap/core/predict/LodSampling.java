@@ -766,7 +766,7 @@ public final class LodSampling {
                 grid.terrainY, 0, 0, BaselineGrid.SIZE,
                 biomeAnchors, LATTICE_CELL_COUNT + 1, 0, 0
             )
-            : sampleSubBiomeRaw(sampler, lod, tileOriginX, tileOriginZ, grid);
+            : sampleSubBiomeRaw(sampler, lod, tileOriginX, tileOriginZ, grid, false);
         if (subRaw != null) {
             if (grid.supersampled()) {
                 scatterSubBiomes(grid, subRaw);
@@ -778,7 +778,7 @@ public final class LodSampling {
                 && !sampleBiomes(sampler, lod, tileOriginX, tileOriginZ, grid)) {
                 return false;
             }
-            sampleSubBiomes(sampler, lod, tileOriginX, tileOriginZ, grid);
+            sampleSubBiomes(sampler, lod, tileOriginX, tileOriginZ, grid, false);
         }
         resolveOverviewFluids(grid, lod, fluidConfidence);
         return true;
@@ -1030,9 +1030,10 @@ public final class LodSampling {
         final int lod,
         final int tileOriginX,
         final int tileOriginZ,
-        final BaselineGrid grid
+        final BaselineGrid grid,
+        final boolean allowLatticeRetry
     ) {
-        if (sampler.interpolatableOverviewHeights() && lod >= OVERVIEW_ANCHOR_MIN_LOD) {
+        if (allowLatticeRetry && sampler.interpolatableOverviewHeights() && lod >= OVERVIEW_ANCHOR_MIN_LOD) {
             final int[] fromLattice = sampleSubBiomeLatticeRange(
                 sampler, lod, tileOriginX, tileOriginZ, grid.subPerAxis,
                 0, 0, LATTICE_CELL_COUNT, LATTICE_CELL_COUNT,
@@ -1360,9 +1361,10 @@ public final class LodSampling {
         final int lod,
         final int tileOriginX,
         final int tileOriginZ,
-        final BaselineGrid grid
+        final BaselineGrid grid,
+        final boolean allowLatticeRetry
     ) {
-        final int[] raw = sampleSubBiomeRaw(sampler, lod, tileOriginX, tileOriginZ, grid);
+        final int[] raw = sampleSubBiomeRaw(sampler, lod, tileOriginX, tileOriginZ, grid, allowLatticeRetry);
         if (raw != null) {
             scatterSubBiomes(grid, raw);
             return;

@@ -18,4 +18,4 @@
 
 | Target | Binary Asset | SHA-256 Checksum | Size |
 |---|---|---|---|
-| Web (Browser) | `common/src/main/resources/webmap/predictor.wasm` | `ceea4fe0ae029ad5e44f299a60d384346ec65b52ae40e3005b3a919d6a0d0ca7` | 1,400,005 bytes |
+| Web (Browser) | `common/src/main/resources/webmap/predictor.wasm` | `29b88c3b52b5edcc3355a584fe705c4fdbdc25b8cbb4badf966b3e24f942ee08` | 1,400,018 bytes |

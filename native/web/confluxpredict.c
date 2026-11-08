@@ -1242,14 +1242,26 @@ static int cfxWebGenerateOverworld(int blockX, int blockZ, int lod, int exact)
     int *biomeAnchors = NULL;
     int err;
     if (mc >= MC_1_18 && lod >= 2)
+    {
         err = cfxWebOverviewHeightsAnchored(
             blockX, blockZ, blockStride, &biomeAnchors
         );
+        if (err != CFX_WEB_OK)
+        {
+            biomeAnchors = NULL;
+            err = cfxWebOverviewHeights(
+                originX, originZ, CFX_WEB_GRID_SIZE, CFX_WEB_GRID_SIZE,
+                blockStride, heightData
+            );
+        }
+    }
     else
+    {
         err = cfxWebOverviewHeights(
             originX, originZ, CFX_WEB_GRID_SIZE, CFX_WEB_GRID_SIZE,
             blockStride, heightData
         );
+    }
     if (err == CFX_WEB_OK && exact && lod <= 1)
         err = cfxWebApplyExactResiduals(
             originX, originZ, lod, blockStride, fluidConfidence
