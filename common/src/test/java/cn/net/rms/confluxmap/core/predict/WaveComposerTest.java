@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -174,6 +175,69 @@ class WaveComposerTest {
             assertArrayEquals(reference.baseSurfaceY, wave.grid(i).baseSurfaceY, "member " + i + " surface diverged");
             assertArrayEquals(reference.surfaceFlags, wave.grid(i).surfaceFlags, "member " + i + " flags diverged");
         }
+    }
+
+    /**
+     * Per-member six-stage wall accounting: batched stages credit every member an even share of
+     * the batch wall, per-tile stages land in their own buckets, timing-off waves expose null,
+     * and a degenerate timing wave fills the buckets through the retained legacy path.
+     */
+    @Test
+    void overworldStageNanosFillPerMemberBuckets() throws InterruptedException {
+        final RecordingWaveSampler sampler = new RecordingWaveSampler();
+        final int[] originX = {4096, 8192, 12288, 16384};
+        final int[] originZ = {-8192, 4096, 0, 12288};
+        final WaveComposer wave = new WaveComposer(
+            4, () -> false, sampler, sampler.seed, MC_VERSION, true, LOD, originX, originZ,
+            sampler
+        );
+        final List<Thread> members = new ArrayList<>();
+        final boolean[] completed = runAllMembers(wave, 4, members);
+        joinAllMembers(members);
+
+        for (int i = 0; i < 4; i++) {
+            assertTrue(completed[i], "member " + i + " must complete");
+            final long[] stages = wave.overworldStageNanos(i);
+            assertNotNull(stages, "a timing wave must expose member stage walls");
+            assertEquals(LodSampling.OVERWORLD_STAGE_COUNT, stages.length);
+            assertTrue(stages[LodSampling.OverworldStage.H_LATTICE.ordinal()] > 0L,
+                "the batched lattice stage must credit member " + i);
+            assertTrue(stages[LodSampling.OverworldStage.ANCHOR_BIOMES.ordinal()] > 0L,
+                "the batched anchor stage must credit member " + i);
+            assertTrue(stages[LodSampling.OverworldStage.BAND.ordinal()] > 0L,
+                "the per-tile band stage must credit member " + i);
+            assertTrue(stages[LodSampling.OverworldStage.CELLS.ordinal()] > 0L,
+                "the per-tile cells stage must credit member " + i);
+            assertTrue(stages[LodSampling.OverworldStage.COMPOSE.ordinal()] > 0L,
+                "the compose stage must credit member " + i);
+        }
+    }
+
+    @Test
+    void timingOffExposesNullAndSingleMemberWaveFillsLegacyBuckets()
+        throws InterruptedException {
+        final RecordingWaveSampler sampler = new RecordingWaveSampler();
+        final WaveComposer untimed = new WaveComposer(
+            2, () -> false, sampler, sampler.seed, MC_VERSION, false, LOD,
+            new int[] {4096, 8192}, new int[] {-8192, 4096}, sampler
+        );
+        final List<Thread> members = new ArrayList<>();
+        runAllMembers(untimed, 2, members);
+        joinAllMembers(members);
+        assertNull(untimed.overworldStageNanos(0), "timing off must leave the stage vector null");
+
+        final WaveComposer single = new WaveComposer(
+            1, () -> false, sampler, sampler.seed, MC_VERSION, true, LOD,
+            new int[] {4096}, new int[] {-8192}, sampler
+        );
+        assertTrue(single.runMember(0), "the timing single wave must succeed");
+        final long[] stages = single.overworldStageNanos(0);
+        assertNotNull(stages, "a timing single wave must fill the legacy stage vector");
+        assertEquals(LodSampling.OVERWORLD_STAGE_COUNT, stages.length);
+        assertTrue(stages[LodSampling.OverworldStage.H_LATTICE.ordinal()] > 0L);
+        assertTrue(stages[LodSampling.OverworldStage.BAND.ordinal()] > 0L);
+        assertTrue(stages[LodSampling.OverworldStage.CELLS.ordinal()] > 0L);
+        assertTrue(stages[LodSampling.OverworldStage.COMPOSE.ordinal()] > 0L);
     }
 
     /**

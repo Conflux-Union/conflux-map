@@ -34,6 +34,12 @@ final class ViewportLoadTiming {
         long points,
         /** Wall nanos per {@link SampleStage} bucket, indexed by ordinal; never null. */
         long[] stageNanos,
+        /**
+         * Wall nanos per {@link LodSampling.OverworldStage}, indexed by ordinal; never null.
+         * Stage wall includes the Java work a stage does around its sampler calls; batched
+         * stages distribute the batch's wall evenly across their members.
+         */
+        long[] overworldStageNanos,
         long composeNanos,
         long schedNanos,
         long uploadWaitNanos,
@@ -76,6 +82,7 @@ final class ViewportLoadTiming {
     private long firstUploadWallNanos = -1L;
     private TileKey firstUploadedTile;
     private final long[] stageNanos = new long[SampleStage.COUNT];
+    private final long[] overworldStageNanos = new long[LodSampling.OVERWORLD_STAGE_COUNT];
     /** Uploads queued but not yet reported complete, each with its queue-entry nanos. */
     private final Map<TileKey, Long> pendingUploads = new HashMap<>();
 
@@ -131,6 +138,7 @@ final class ViewportLoadTiming {
         final TileKey key,
         final long tileComposeNanos,
         final long[] tileStageNanos,
+        final long[] tileOverworldStageNanos,
         final long tilePoints,
         final boolean submittedUpload,
         final boolean idleWithin,
@@ -139,7 +147,7 @@ final class ViewportLoadTiming {
         if (window != null && window.contains(key)) {
             attempts++;
             if (submittedUpload) {
-                tilesAccumulate(tileComposeNanos, tileStageNanos, tilePoints);
+                tilesAccumulate(tileComposeNanos, tileStageNanos, tileOverworldStageNanos, tilePoints);
                 pendingUploads.put(key, nowNanos);
             }
         }
@@ -198,7 +206,8 @@ final class ViewportLoadTiming {
         final Summary summary = new Summary(
             rect.dimension(), rect.lod(),
             rect.minTileX(), rect.maxTileX(), rect.minTileZ(), rect.maxTileZ(),
-            complete, tiles, attempts, points, stageNanos.clone(), composeNanos, schedNanos,
+            complete, tiles, attempts, points, stageNanos.clone(), overworldStageNanos.clone(),
+            composeNanos, schedNanos,
             uploadWaitNanos, uploadNanos, firstUploadWallNanos, wallNanos
         );
         resetAccumulators();
@@ -217,17 +226,28 @@ final class ViewportLoadTiming {
         firstUploadWallNanos = -1L;
         firstUploadedTile = null;
         Arrays.fill(stageNanos, 0L);
+        Arrays.fill(overworldStageNanos, 0L);
         pendingUploads.clear();
     }
 
     private void tilesAccumulate(
-        final long tileComposeNanos, final long[] tileStageNanos, final long tilePoints
+        final long tileComposeNanos,
+        final long[] tileStageNanos,
+        final long[] tileOverworldStageNanos,
+        final long tilePoints
     ) {
         points += tilePoints;
         composeNanos += tileComposeNanos;
         if (tileStageNanos != null) {
             for (int stage = 0; stage < SampleStage.COUNT && stage < tileStageNanos.length; stage++) {
                 this.stageNanos[stage] += tileStageNanos[stage];
+            }
+        }
+        if (tileOverworldStageNanos != null) {
+            for (int stage = 0;
+                stage < overworldStageNanos.length && stage < tileOverworldStageNanos.length;
+                stage++) {
+                this.overworldStageNanos[stage] += tileOverworldStageNanos[stage];
             }
         }
     }

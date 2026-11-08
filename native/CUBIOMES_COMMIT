@@ -1,13 +1,13 @@
 upstream: https://github.com/Cubitect/cubiomes (active line: xpple/cubiomes master)
 fork:     https://github.com/Conflux-Union/cubiomes (this project's fork)
-commit:   1a3386c8295ca06247ef5aa5dc8f4362a5db2ace
-commit date: 2026-11-07T16:17:38+08:00
+commit:   2ec8385ce981711374c9308470b570b254cef04d
+commit date: 2026-11-09T00:55:21+08:00
 pinned via: native/cubiomes git submodule (converted from a vendored copy on 2026-07-17)
 license: MIT (see native/cubiomes/LICENSE)
 
 Merge state: fork master = upstream xpple/master (5815e4f "Add 26.3 support
 (#29)") merged on top of our feature line; the pin sits on the pushed
-feat/gpu-opencl branch (same feature line, ten GPU commits on top of
+feat/gpu-opencl branch (same feature line, fifteen GPU commits on top of
 07f8282). Upstream changes folded in:
 the renderpearl-independent C-side terrain refactor (terrainnoise/carver
 split, uint8_t block columns), loot salt configs, the ctest suite, and
@@ -28,7 +28,7 @@ Fork contents kept on top of upstream master:
     density cells on demand from the top and start the surface search a
     fixed band below the noise-free density-zero crossing; pre-1.18
     generators keep their original path.
-  - feat/gpu-opencl (02b70a1..1a3386c, ten commits) "OpenCL GPU executor
+  - feat/gpu-opencl (02b70a1..2ec8385, fifteen commits) "OpenCL GPU executor
     for 1.18+ Overworld surface biomes and terrain overview heights":
     gpu.c/gpu.h/gpu_cl_kernels.h + opencl_host.c/h behind the compile-time
     gate CUBIOMES_ENABLE_GPU, which turns mapOverworldSurfaceBiome /
@@ -38,8 +38,15 @@ Fork contents kept on top of upstream master:
     approximation of the double CPU reference, gated by the drift-budget
     harness (make gpu-test in the submodule: per-distance-bucket biome-flip
     and height/climate budgets plus exact query-shape-invariance and
-    mode-handling checks). Batched z-stride entries
-    (gpuMapOverworldSurfaceBiomeRows / gpuMapOverworldTerrainHeightRows)
+    mode-handling checks). Later line commits add the bit-exact fp64 cfx
+    kernels for the mod's product hot path (3e8bdb2), double-buffered
+    output slabs (89121c4), readback draining on partial batch failure
+    (e59baef), and the two bit-exact cfx batch entries with per-block
+    failure masks (bb463bf heights / 024c124 biomes); 2ec8385 adds the
+    process-global batch metrics (counters, histograms, host walls) with
+    the CUBIOMES_GPU_PROFILING=1 event-timer opt-in and its marker-canary
+    capability probe. Batched z-stride
+    entries (gpuMapOverworldSurfaceBiomeRows / gpuMapOverworldTerrainHeightRows)
     fold streamed overview-row sets into one dispatch. Default mode is
     env-driven (CUBIOMES_GPU, auto); gpuSetMode() overrides.
   - Nether fossils: upstream 32f6624 now ships its own terrain-validated
@@ -60,13 +67,28 @@ Verification for this pin:
     feat/gpu-opencl touches only the gated GPU module and the
     #ifdef-guarded hook call sites in biomenoise.c, and the GPU drift
     harness (`make gpu-test`, default parity matrix) is green against the
-    CPU reference under the per-bucket budgets.
-  - conflux-map integration (2026-11-07): buildNativesHost and
-    buildNativesAll (all 5 zig targets) rebuild with
-    -DCUBIOMES_ENABLE_GPU and the two GPU sources; engine/JNI symbols
-    verified present in every rebuilt artifact (nm -D Linux .so / .dll
-    export table / Mach-O symtab); :common:test and :1.17.1:test pass
-    against the rebuilt linux-x86_64 library.
+    CPU reference under the per-bucket budgets. Re-run green 2026-11-09 in
+    both engine modes (plain and CUBIOMES_GPU_PROFILING=1), covering the
+    batch parity cases and the engine-metrics case from the 2026-11-09
+    metrics instrumentation (clean rebuild, no new compiler warnings).
+  - conflux-map integration (2026-11-09): buildNativesHost rebuilds the
+    committed linux-x86_64 library with -DCUBIOMES_ENABLE_GPU and the two
+    GPU sources, and the cfxGetGpuMetrics export is verified present with
+    nm -D (buildNativesAll was not re-run this round: zig is not installed
+    on this machine); the :common:test parity/native suites
+    (BatchDispatchParityTest, PredictionNativeBatchEdgeParityTest,
+    PredictionNativeIntegrationTest, WaveComposerTest, CountingSamplerTest)
+    pass against the rebuilt library.
+  - Machine note (2026-11-09): CUBIOMES_GPU_PROFILING=1 degrades to
+    unprofiled on this workstation. Deepin's nvidia-libopencl1
+    580.119.02 loader accepts CL_QUEUE_PROFILING_ENABLE (it even reads
+    back set through clCreateCommandQueue) yet answers every
+    clGetEventProfilingInfo with CL_PROFILING_INFO_NOT_AVAILABLE (-7) for
+    completed commands, so gpuClInit probes the queue with a marker
+    command and clears the flag; the engine counters and host walls are
+    unaffected, only the four event timers stay zero. Installing
+    ocl-icd-libopencl1 (available in the repos, untested here) is the
+    likely way to restore the event timers.
 
 Files compiled from this commit by buildNativesHost/buildNativesAll
 (selected subset):

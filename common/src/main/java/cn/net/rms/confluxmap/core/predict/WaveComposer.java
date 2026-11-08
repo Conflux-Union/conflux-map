@@ -74,6 +74,8 @@ final class WaveComposer {
      * leader applying batch credits or per-tile repairs for it.
      */
     private final CountingSampler[] accounting;
+    /** Per-member wall nanos per {@link LodSampling.OverworldStage} (debug timing only). */
+    private final long[][] overworldStages;
     private final LodSampling.OverworldStageState[] members;
     private final Phaser barriers;
     /** Members whose tile is already decided (stage failure or precheck bypass); they still attend barriers. */
@@ -105,6 +107,7 @@ final class WaveComposer {
                 accounting[index] = new CountingSampler(sampler);
             }
         }
+        this.overworldStages = timing ? new long[waveSize][LodSampling.OVERWORLD_STAGE_COUNT] : null;
         this.barriers = new Phaser(waveSize);
         this.dropped = new boolean[waveSize];
         this.members = new LodSampling.OverworldStageState[waveSize];
@@ -138,8 +141,7 @@ final class WaveComposer {
                     if (index == LEADER) {
                         dispatchBatchStage(stage);
                     }
-                } else if (!dropped[index]
-                    && !LodSampling.runOverworldStage(stage, members[index], samplerFor(index))) {
+                } else if (!dropped[index] && !runTimedStage(index, stage)) {
                     dropped[index] = true;
                 }
             }
@@ -170,6 +172,25 @@ final class WaveComposer {
      */
     long[] stageNanos(final int index) {
         return accounting != null ? accounting[index].stageNanos() : null;
+    }
+
+    /**
+     * The member's wall nanos per {@link LodSampling.OverworldStage} when the wave was built
+     * with timing on; null otherwise. Same quiescence contract as {@link #stageNanos(int)}.
+     * Batched stages carry an even share of the batch's wall per member; a member whose stage
+     * was repaired per tile carries its own repair wall instead.
+     */
+    long[] overworldStageNanos(final int index) {
+        return overworldStages != null ? overworldStages[index] : null;
+    }
+
+    private boolean runTimedStage(final int index, final LodSampling.OverworldStage stage) {
+        final long start = overworldStages != null ? System.nanoTime() : 0L;
+        final boolean ok = LodSampling.runOverworldStage(stage, members[index], samplerFor(index));
+        if (overworldStages != null) {
+            overworldStages[index][stage.ordinal()] += System.nanoTime() - start;
+        }
+        return ok;
     }
 
     /** The member's accounting wrapper when timing is on; the shared sampler otherwise. */
@@ -216,7 +237,8 @@ final class WaveComposer {
         final LodSampling.OverworldStageState member = members[LEADER];
         try {
             legacyGrid = LodSampling.sample(
-                samplerFor(LEADER), false, member.lod, member.tileOriginX, member.tileOriginZ
+                samplerFor(LEADER), false, member.lod, member.tileOriginX, member.tileOriginZ,
+                overworldStages != null ? overworldStages[LEADER] : null
             );
         } catch (final Throwable fault) {
             LOGGER.warn(
@@ -321,6 +343,9 @@ final class WaveComposer {
                         members[member].lattice != null ? SampleStage.ANCH : SampleStage.H
                     );
                 }
+                if (overworldStages != null) {
+                    overworldStages[member][stage.ordinal()] += batchNanos / count;
+                }
             } else {
                 LodSampling.applyAnchorBiomeQuery(
                     members[member], Arrays.copyOfRange(out, offset, offset + cells)
@@ -328,13 +353,16 @@ final class WaveComposer {
                 if (accounting != null) {
                     accounting[member].credit(cells, batchNanos / count, SampleStage.B);
                 }
+                if (overworldStages != null) {
+                    overworldStages[member][stage.ordinal()] += batchNanos / count;
+                }
             }
             offset += cells;
         }
     }
 
     private void runPerTileStage(final LodSampling.OverworldStage stage, final int member) {
-        if (!LodSampling.runOverworldStage(stage, members[member], samplerFor(member))) {
+        if (!runTimedStage(member, stage)) {
             dropped[member] = true;
         }
     }

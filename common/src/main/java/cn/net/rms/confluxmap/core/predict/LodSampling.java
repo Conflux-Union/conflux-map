@@ -129,11 +129,26 @@ public final class LodSampling {
         final int tileOriginX,
         final int tileOriginZ
     ) {
+        return sample(sampler, end, lod, tileOriginX, tileOriginZ, null);
+    }
+
+    /**
+     * Optional per-{@link OverworldStage} wall sink ({@link #OVERWORLD_STAGE_COUNT} longs, or
+     * null to sample unmeasured); non-Overworld paths leave it untouched.
+     */
+    public static BaselineGrid sample(
+        final BaselineSampler sampler,
+        final boolean end,
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final long[] overworldStageWallNanos
+    ) {
         final BaselineGrid grid = new BaselineGrid(
             lod, tileOriginX, tileOriginZ, end ? BaselineGrid.NO_SUPERSAMPLING : BIOME_SUB_PER_AXIS[lod]
         );
         if (!end) {
-            return sampleOverworld(sampler, lod, tileOriginX, tileOriginZ, grid)
+            return sampleOverworld(sampler, lod, tileOriginX, tileOriginZ, grid, overworldStageWallNanos)
                 ? grid
                 : null;
         }
@@ -724,6 +739,8 @@ public final class LodSampling {
         COMPOSE
     }
 
+    static final int OVERWORLD_STAGE_COUNT = OverworldStage.values().length;
+
     /**
      * Per-tile mutable state carried across the overworld stages; one instance per sampling
      * run, or one per wave member when stages are driven tile by tile. Fields are populated and
@@ -899,15 +916,30 @@ public final class LodSampling {
         final int lod,
         final int tileOriginX,
         final int tileOriginZ,
-        final BaselineGrid grid
+        final BaselineGrid grid,
+        final long[] stageWallNanos
     ) {
         final OverworldStageState state = new OverworldStageState(lod, tileOriginX, tileOriginZ, grid);
-        return runOverworldStage(OverworldStage.H_LATTICE, state, sampler)
-            && runOverworldStage(OverworldStage.ANCHOR_BIOMES, state, sampler)
-            && runOverworldStage(OverworldStage.BAND, state, sampler)
-            && runOverworldStage(OverworldStage.EXACT_COLUMNS, state, sampler)
-            && runOverworldStage(OverworldStage.CELLS, state, sampler)
-            && runOverworldStage(OverworldStage.COMPOSE, state, sampler);
+        return runTimedStage(OverworldStage.H_LATTICE, state, sampler, stageWallNanos)
+            && runTimedStage(OverworldStage.ANCHOR_BIOMES, state, sampler, stageWallNanos)
+            && runTimedStage(OverworldStage.BAND, state, sampler, stageWallNanos)
+            && runTimedStage(OverworldStage.EXACT_COLUMNS, state, sampler, stageWallNanos)
+            && runTimedStage(OverworldStage.CELLS, state, sampler, stageWallNanos)
+            && runTimedStage(OverworldStage.COMPOSE, state, sampler, stageWallNanos);
+    }
+
+    private static boolean runTimedStage(
+        final OverworldStage stage,
+        final OverworldStageState state,
+        final BaselineSampler sampler,
+        final long[] stageWallNanos
+    ) {
+        final long start = stageWallNanos != null ? System.nanoTime() : 0L;
+        final boolean ok = runOverworldStage(stage, state, sampler);
+        if (stageWallNanos != null) {
+            stageWallNanos[stage.ordinal()] += System.nanoTime() - start;
+        }
+        return ok;
     }
 
     /** Overview anchor lattice over even tile-local pixels for one LOD2-4 window. */

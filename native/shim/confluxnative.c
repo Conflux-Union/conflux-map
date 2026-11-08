@@ -38,6 +38,7 @@
 #include <limits.h>
 #include <math.h>
 #include <string.h>
+#include <time.h>
 
 #include "finders.h"
 #include "features/end_city.h"
@@ -45,7 +46,69 @@
 
 #ifdef CUBIOMES_ENABLE_GPU
 #include "gpu.h"
+
+/* Metrics slot 13 (GPU_METRICS_ARRAY_COPY_NANOS, see gpu.h) is shim-owned:
+ * the two batch entries below time their JNI array-marshal phase (argument
+ * copy-out plus critical-region pinning) and accumulate the wall here, a
+ * host-side cost the engine snapshot alone never sees. The lock guards only
+ * the accumulate - never a dispatch. */
+#if defined(_WIN32)
+#include <windows.h>
+static SRWLOCK cfxBatchMarshalLock = SRWLOCK_INIT;
+#else
+#include <pthread.h>
+static pthread_mutex_t cfxBatchMarshalLock = PTHREAD_MUTEX_INITIALIZER;
 #endif
+static uint64_t cfxBatchMarshalNanos;
+
+/* Monotonic host clock for the marshal span; failure leaves zero (metrics
+ * only, never a dispatch error). */
+static uint64_t cfxNanos(void)
+{
+#if defined(_WIN32)
+    LARGE_INTEGER freq, ctr;
+    if (!QueryPerformanceFrequency(&freq) || freq.QuadPart <= 0
+        || !QueryPerformanceCounter(&ctr))
+        return 0;
+    const uint64_t secs = (uint64_t) ctr.QuadPart / (uint64_t) freq.QuadPart;
+    const uint64_t rem = (uint64_t) ctr.QuadPart % (uint64_t) freq.QuadPart;
+    return secs * 1000000000ULL
+        + rem * 1000000000ULL / (uint64_t) freq.QuadPart;
+#else
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return 0;
+    return (uint64_t) ts.tv_sec * 1000000000ULL + (uint64_t) ts.tv_nsec;
+#endif
+}
+
+static void cfxAddBatchMarshalNanos(uint64_t span)
+{
+#if defined(_WIN32)
+    AcquireSRWLockExclusive(&cfxBatchMarshalLock);
+    cfxBatchMarshalNanos += span;
+    ReleaseSRWLockExclusive(&cfxBatchMarshalLock);
+#else
+    pthread_mutex_lock(&cfxBatchMarshalLock);
+    cfxBatchMarshalNanos += span;
+    pthread_mutex_unlock(&cfxBatchMarshalLock);
+#endif
+}
+
+static uint64_t cfxGetBatchMarshalNanos(void)
+{
+#if defined(_WIN32)
+    AcquireSRWLockExclusive(&cfxBatchMarshalLock);
+    const uint64_t total = cfxBatchMarshalNanos;
+    ReleaseSRWLockExclusive(&cfxBatchMarshalLock);
+#else
+    pthread_mutex_lock(&cfxBatchMarshalLock);
+    const uint64_t total = cfxBatchMarshalNanos;
+    pthread_mutex_unlock(&cfxBatchMarshalLock);
+#endif
+    return total;
+}
+#endif /* CUBIOMES_ENABLE_GPU */
 
 #define CFX_ABI 16
 #define CFX_NETHER_ROOF_Y 127
@@ -61,6 +124,12 @@
 
 /* Largest w*h (or region count) accepted by any batch query. */
 #define CFX_MAX_CELLS (1 << 20)
+
+#ifndef CUBIOMES_ENABLE_GPU
+/* Snapshot shape of the no-engine cfxGetGpuMetrics below; keep in sync with
+ * gpu.h, whose slot constants the GPU builds use instead. */
+#define GPU_METRICS_SLOTS 68
+#endif
 
 typedef struct {
     Generator g;
@@ -274,6 +343,32 @@ JNIEXPORT jstring JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNativ
         ""
 #endif
     );
+}
+
+JNIEXPORT void JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxGetGpuMetrics(
+    JNIEnv *env, jclass clazz, jlongArray out
+) {
+    (void) clazz;
+#ifdef CUBIOMES_ENABLE_GPU
+    if (out == NULL || (*env)->GetArrayLength(env, out) < GPU_METRICS_SLOTS)
+        return; /* shorter caller array: silently produce nothing */
+    uint64_t snap[GPU_METRICS_SLOTS];
+    gpuQueryMetrics(snap);
+    /* Slot 13 is shim-owned (see gpu.h): the engine cannot measure the JNI
+     * array marshal of the batch entries, this module does. */
+    snap[GPU_METRICS_ARRAY_COPY_NANOS] = cfxGetBatchMarshalNanos();
+    jlong metrics[GPU_METRICS_SLOTS];
+    for (int i = 0; i < GPU_METRICS_SLOTS; i++)
+        metrics[i] = (jlong) snap[i];
+    (*env)->SetLongArrayRegion(env, out, 0, GPU_METRICS_SLOTS, metrics);
+#else
+    /* Engine not compiled in: every slot stays zero (the Java reader treats
+     * the whole snapshot as no data through its availability latch). */
+    if (out == NULL || (*env)->GetArrayLength(env, out) < GPU_METRICS_SLOTS)
+        return;
+    jlong metrics[GPU_METRICS_SLOTS] = {0};
+    (*env)->SetLongArrayRegion(env, out, 0, GPU_METRICS_SLOTS, metrics);
+#endif
 }
 
 JNIEXPORT jlong JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxStageStats(
@@ -1560,6 +1655,11 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     jintArray outTerrainYArray, jintArray failMaskArray
 ) {
     (void) clazz;
+#ifdef CUBIOMES_ENABLE_GPU
+    /* Metrics slot 13 opens here: everything up to the critical regions
+     * below is the JNI marshal wall the engine never sees. */
+    const uint64_t marshalT0 = cfxNanos();
+#endif
     CfxContext *ctx = cfxHandle(handle);
     if (ctx == NULL)
         return CFX_ERR_BAD_HANDLE;
@@ -1668,6 +1768,9 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     if (eligibleCount > 0)
         outTerrainY = (*env)->GetPrimitiveArrayCritical(env, outTerrainYArray, NULL);
     failMaskOut = (*env)->GetPrimitiveArrayCritical(env, failMaskArray, NULL);
+#ifdef CUBIOMES_ENABLE_GPU
+    cfxAddBatchMarshalNanos(cfxNanos() - marshalT0);
+#endif
     if ((eligibleCount > 0 && outTerrainY == NULL) || failMaskOut == NULL)
     {
         status = CFX_ERR_ALLOC;
@@ -1805,6 +1908,10 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     jintArray outBiomeIdsArray, jintArray failMaskArray
 ) {
     (void) clazz;
+#ifdef CUBIOMES_ENABLE_GPU
+    /* Metrics slot 13 opens here, same phase as the heights batch. */
+    const uint64_t marshalT0 = cfxNanos();
+#endif
     CfxContext *ctx = cfxHandle(handle);
     if (ctx == NULL)
         return CFX_ERR_BAD_HANDLE;
@@ -1881,6 +1988,9 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         outBiomeIds = (*env)->GetPrimitiveArrayCritical(env, outBiomeIdsArray, NULL);
     }
     failMaskOut = (*env)->GetPrimitiveArrayCritical(env, failMaskArray, NULL);
+#ifdef CUBIOMES_ENABLE_GPU
+    cfxAddBatchMarshalNanos(cfxNanos() - marshalT0);
+#endif
     if ((eligibleCount > 0 && (terrainY == NULL || outBiomeIds == NULL))
         || failMaskOut == NULL)
     {

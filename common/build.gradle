@@ -45,6 +45,9 @@ tasks.register('benchmark', Test) {
     dependsOn testClasses
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath
+    // Harness knobs (confluxmap.bench.*) are read via System.getProperty in the
+    // forked test JVM, which does not inherit Gradle -D properties otherwise.
+    systemProperties System.getProperties().findAll { it.key.toString().startsWith('confluxmap.') }
     useJUnitPlatform {
         includeTags 'benchmark'
     }

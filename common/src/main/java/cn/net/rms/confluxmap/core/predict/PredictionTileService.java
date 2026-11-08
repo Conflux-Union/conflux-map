@@ -96,6 +96,8 @@ public final class PredictionTileService {
     private boolean firstVisibleLogged;
     /** Debug-gated outcome of the last closed viewport load; the e2e gametest asserts on it. */
     private volatile ViewportLoadResult lastViewportLoadForTest;
+    /** Finished tiles' six-stage wall vectors (debug timing only); benchmark harness seam. */
+    private final Map<TileKey, long[]> tileOverworldStageNanosForTest = new HashMap<>();
 
     /** Wave members' sampler factory signature, mirroring {@link NativeBaselineSampler}'s constructor. */
     interface WaveSamplerFactory {
@@ -1514,11 +1516,15 @@ public final class PredictionTileService {
                 closedViewportLoad = viewportTiming.finished(
                     key, composeNanos,
                     composition == null ? null : composition.stageNanos(),
+                    composition == null ? null : composition.overworldStageNanos(),
                     composition == null ? 0L : composition.sampledPoints(),
                     submittedUpload,
                     viewportTimingIdle(viewportTiming.windowRect()),
                     System.nanoTime()
                 );
+                if (composition != null && composition.overworldStageNanos() != null) {
+                    tileOverworldStageNanosForTest.put(key, composition.overworldStageNanos());
+                }
             }
         }
         pump();
@@ -1644,7 +1650,7 @@ public final class PredictionTileService {
         final long[] stageNanos = summary.stageNanos();
         LOGGER.info(String.format(Locale.ROOT,
             "[predict-e2e] %s dim=%s lod=%d rect=[%d..%d,%d..%d] tiles=%d%s pts=%d"
-                + " gen=%.1fms%s compose=%.1fms sched=%.1fms uploadWait=%.1fms upload=%.1fms"
+                + " gen=%.1fms%s stages6=%s compose=%.1fms sched=%.1fms uploadWait=%.1fms upload=%.1fms"
                 + " first=%.1fms wall=%.1fms",
             summary.complete() ? "done" : "abandoned",
             summary.dimension().path(), summary.lod(),
@@ -1655,6 +1661,7 @@ public final class PredictionTileService {
             summary.points(),
             SampleStage.total(stageNanos) / 1.0e6,
             formatStageBreakdown(stageNanos),
+            formatOverworldStageBreakdown(summary.overworldStageNanos()),
             summary.composeNanos() / 1.0e6,
             summary.schedNanos() / 1.0e6,
             summary.uploadWaitNanos() / 1.0e6,
@@ -1674,6 +1681,34 @@ public final class PredictionTileService {
         }
         final StringBuilder stages = new StringBuilder("(");
         for (final SampleStage stage : SampleStage.values()) {
+            final long nanos = stageNanos[stage.ordinal()];
+            if (nanos > 0L) {
+                if (stages.length() > 1) {
+                    stages.append(' ');
+                }
+                stages.append(stage.name().toLowerCase(Locale.ROOT))
+                    .append('=')
+                    .append(String.format(Locale.ROOT, "%.1f", nanos / 1.0e6));
+            }
+        }
+        return stages.append(')').toString();
+    }
+
+    /**
+     * Nonzero {@link LodSampling.OverworldStage} stages of a six-slot wall array as
+     * {@code (h_lattice=1.2 cells=3.4)}, fixed enum order; empty when the tile never ran the
+     * staged skeleton (cache hits, superflat, non-Overworld).
+     */
+    static String formatOverworldStageBreakdown(final long[] stageNanos) {
+        long total = 0L;
+        for (final long nanos : stageNanos) {
+            total += nanos;
+        }
+        if (total <= 0L) {
+            return "";
+        }
+        final StringBuilder stages = new StringBuilder("(");
+        for (final LodSampling.OverworldStage stage : LodSampling.OverworldStage.values()) {
             final long nanos = stageNanos[stage.ordinal()];
             if (nanos > 0L) {
                 if (stages.length() > 1) {
@@ -1771,6 +1806,7 @@ public final class PredictionTileService {
         final QuadrantLayout.Mask quadrantMask;
         final boolean timing = debugTimingEnabled();
         CountingSampler counting = null;
+        long[] overworldStageSink = null;
         long stageGpuDelta = 0L;
         if (plan.lowerNetherBiome()) {
             final NativeBaselineSampler nativeSampler = new NativeBaselineSampler(
@@ -1841,10 +1877,15 @@ public final class PredictionTileService {
                     derived = BaselineDeriver.derive(grid);
                     quadrantMask = null;
                 } else {
+                    final long[] overworldStageNanos = timing
+                        ? new long[LodSampling.OVERWORLD_STAGE_COUNT] : null;
                     grid = key.dimension().equals(DimensionId.NETHER)
-                        ? LodSampling.sampleNetherRoof(sampler, plan.lod(), plan.tileOriginX(), plan.tileOriginZ())
+                        ? LodSampling.sampleNetherRoof(
+                            sampler, plan.lod(), plan.tileOriginX(), plan.tileOriginZ()
+                        )
                         : LodSampling.sample(
-                            sampler, plan.end(), plan.lod(), plan.tileOriginX(), plan.tileOriginZ()
+                            sampler, plan.end(), plan.lod(),
+                            plan.tileOriginX(), plan.tileOriginZ(), overworldStageNanos
                         );
                     if (timing) {
                         stageGpuDelta = nativeSampler.gpuStageStats() - stagesBefore;
@@ -1855,13 +1896,14 @@ public final class PredictionTileService {
                     final OverworldSampled sampled = finishOverworldSample(plan, grid);
                     derived = sampled.derived();
                     quadrantMask = sampled.quadrantMask();
+                    overworldStageSink = overworldStageNanos;
                 }
             }
         }
         return composeSampledTile(
             plan, grid, derived, quadrantMask,
             counting == null ? 0L : counting.points(), stageGpuDelta,
-            counting == null ? null : counting.stageNanos()
+            counting == null ? null : counting.stageNanos(), overworldStageSink
         );
     }
 
@@ -1892,7 +1934,8 @@ public final class PredictionTileService {
         // the GPU stage counters are per-context and the batch lands on the leader's context.
         return composeSampledTile(
             plan, wave.grid(index), sampled.derived(), sampled.quadrantMask(),
-            wave.sampledPoints(index), 0L, wave.stageNanos(index)
+            wave.sampledPoints(index), 0L, wave.stageNanos(index),
+            wave.overworldStageNanos(index)
         );
     }
 
@@ -1919,7 +1962,8 @@ public final class PredictionTileService {
         final QuadrantLayout.Mask quadrantMask,
         final long sampledPoints,
         final long stageGpuDelta,
-        final long[] stageNanos
+        final long[] stageNanos,
+        final long[] overworldStageNanos
     ) {
         final TileKey key = plan.key();
         final CorrectionTile directCorrections = plan.directCorrections();
@@ -1960,7 +2004,8 @@ public final class PredictionTileService {
             ),
             sampledPoints,
             stageGpuDelta,
-            stageNanos
+            stageNanos,
+            overworldStageNanos
         );
     }
 
@@ -2081,6 +2126,7 @@ public final class PredictionTileService {
                     reusable,
                     0L,
                     0L,
+                    null,
                     null
                 )
             );
@@ -2725,6 +2771,18 @@ public final class PredictionTileService {
     }
 
     /**
+     * Every finished composition's six-stage wall vector, keyed by tile. Package-private
+     * benchmark seam: the load window only tracks tiles inside the viewport rect, while the
+     * ring-only staging topology composes tiles outside it - the harness aggregates this map
+     * itself. A missing entry means the tile did not run the staged sampler.
+     */
+    Map<TileKey, long[]> tileOverworldStageNanosForTest() {
+        synchronized (this) {
+            return new HashMap<>(tileOverworldStageNanosForTest);
+        }
+    }
+
+    /**
      * Test-support only: the fullscreen viewport's predicted tile keys - the set the map screen
      * binds every frame - empty when no viewport is set or the dimension has no predicted layer.
      */
@@ -2841,7 +2899,8 @@ public final class PredictionTileService {
         PredictionMipCache.Tile tile,
         long sampledPoints,
         long stageGpuDelta,
-        long[] stageNanos
+        long[] stageNanos,
+        long[] overworldStageNanos
     ) {
     }
 

@@ -15,9 +15,18 @@ import java.util.Objects;
 public final class GpuBackend {
     private static final Object LOCK = new Object();
 
+    /** Slot count of the metrics snapshot; mirror of {@code GPU_METRICS_SLOTS} in {@code native/cubiomes/gpu.h}. */
+    private static final int GPU_METRICS_SLOTS = 68;
+
     private static volatile PredictionBackend configured = PredictionBackend.GPU;
     private static volatile boolean libraryReady;
     private static volatile boolean batchRefused;
+    /**
+     * Latches whether this library has the {@code cfxGetGpuMetrics} export:
+     * {@code null} before the first probe, {@code FALSE} once an older library
+     * proved to lack it, {@code TRUE} after a successful read.
+     */
+    private static volatile Boolean metricsAvailable;
 
     private GpuBackend() {
     }
@@ -42,6 +51,35 @@ public final class GpuBackend {
         } catch (final UnsatisfiedLinkError staleLibrary) {
             return null;
         }
+    }
+
+    /**
+     * One read of the engine's batch metrics (layout: the {@code GPU_METRICS_*}
+     * constants in {@code native/cubiomes/gpu.h}), or {@code null} when there
+     * is no data - the library is not loaded, or it predates the export (only
+     * this capability latches off; never an error thrown). Read-only and
+     * cheap; safe from any thread.
+     */
+    public static long[] metrics() {
+        try {
+            final long[] out = new long[GPU_METRICS_SLOTS];
+            CubiomesNative.cfxGetGpuMetrics(out);
+            metricsAvailable = Boolean.TRUE;
+            return out;
+        } catch (final UnsatisfiedLinkError staleLibrary) {
+            metricsAvailable = Boolean.FALSE;
+            return null;
+        }
+    }
+
+    /**
+     * Whether {@link #metrics()} can return data on this library: {@code
+     * false} until one successful read proves the export exists (an older
+     * library latches {@code false} on its first failed probe, without ever
+     * throwing).
+     */
+    public static boolean metricsAvailable() {
+        return metricsAvailable == Boolean.TRUE;
     }
 
     /** Debug label for an engine mode value; see {@code GPU_MODE_*} in {@code native/cubiomes/gpu.h}. */

@@ -60,6 +60,17 @@ final class CubiomesNative {
     static native String cfxGetGpuStats(long[] out);
 
     /**
+     * Snapshot of the GPU engine's batch metrics into {@code metrics}, a fixed
+     * 68-slot array whose layout mirrors the {@code GPU_METRICS_*} constants in
+     * {@code native/cubiomes/gpu.h} (profiling flag, batch counters, host
+     * walls, event timers, member/point histograms). Silently produces nothing
+     * when the array is shorter. With the GPU engine not compiled into the
+     * library, every slot reads zero. A library predating this export throws
+     * {@link UnsatisfiedLinkError}; callers must treat that as "no data".
+     */
+    static native void cfxGetGpuMetrics(long[] metrics);
+
+    /**
      * Packed per-context stage accounting for the debug backend annotation:
      * {@code (gpuServedStages << 32) | trackedStageCalls}. A tracked stage is one
      * {@code cfxOverviewHeights(/Coarse)} or {@code cfxSurfaceBiomes} call whose shape the GPU

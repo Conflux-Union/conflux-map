@@ -36,6 +36,37 @@ class ViewportLoadTimingTest {
         return stageNanos;
     }
 
+    private static long[] overworldStages(final long... perStage) {
+        final long[] stageNanos = new long[LodSampling.OverworldStage.values().length];
+        System.arraycopy(perStage, 0, stageNanos, 0, perStage.length);
+        return stageNanos;
+    }
+
+    @Test
+    void overworldStageNanosAccumulateAcrossSubmittedTilesOnly() {
+        final ViewportLoadTiming timing = new ViewportLoadTiming();
+        timing.dispatched(rect(0, 1, 0, 1), tile(0, 0), 100L, 1_000L);
+
+        final long[] first = overworldStages(30L, 40L, 300L, 0L, 500L, 10L);
+        assertNull(timing.finished(tile(0, 0), 200L, stages(150L), first, 66_000L, true, false, 1_200L));
+        final long[] second = overworldStages(0L, 0L, 100L, 0L, 0L, 40L);
+        assertNull(timing.finished(tile(1, 1), 300L, null, second, 66_564L, true, true, 1_900L));
+        // A stale (upload-less) composition must not leak its stage walls into the breakdown.
+        assertNull(timing.finished(tile(5, 5), 400L, null, overworldStages(9_999L), 1_000L, false, false, 1_950L));
+
+        assertNull(timing.uploaded(tile(0, 0), 10L, false, 2_000L));
+        final ViewportLoadTiming.Summary done = timing.uploaded(tile(1, 1), 20L, true, 2_500L);
+
+        final long[] stages = done.overworldStageNanos();
+        assertEquals(LodSampling.OverworldStage.values().length, stages.length);
+        assertEquals(30L, stages[LodSampling.OverworldStage.H_LATTICE.ordinal()]);
+        assertEquals(40L, stages[LodSampling.OverworldStage.ANCHOR_BIOMES.ordinal()]);
+        assertEquals(300L + 100L, stages[LodSampling.OverworldStage.BAND.ordinal()]);
+        assertEquals(0L, stages[LodSampling.OverworldStage.EXACT_COLUMNS.ordinal()]);
+        assertEquals(500L, stages[LodSampling.OverworldStage.CELLS.ordinal()]);
+        assertEquals(10L + 40L, stages[LodSampling.OverworldStage.COMPOSE.ordinal()]);
+    }
+
     @Test
     void windowOpensOnDispatchAndCompletesOnlyAfterEveryUploadDrains() {
         final ViewportLoadTiming timing = new ViewportLoadTiming();
@@ -47,9 +78,9 @@ class ViewportLoadTimingTest {
         assertEquals(rect(0, 1, 0, 1), timing.windowRect());
 
         // Not idle yet: the second tile is still pending, so the first finish keeps it open.
-        assertNull(timing.finished(tile(0, 0), 200L, stages(150L, 0L, 50L), 66_000L, true, false, 1_200L));
+        assertNull(timing.finished(tile(0, 0), 200L, stages(150L, 0L, 50L), null, 66_000L, true, false, 1_200L));
         // Generation drained, but the two uploads are still outstanding.
-        assertNull(timing.finished(tile(1, 1), 300L, stages(200L, 0L, 100L), 66_564L, true, true, 1_900L));
+        assertNull(timing.finished(tile(1, 1), 300L, stages(200L, 0L, 100L), null, 66_564L, true, true, 1_900L));
 
         // The first completion stamps the first-visible marker; the window stays open.
         assertNull(timing.uploaded(tile(0, 0), 10L, false, 2_000L));
@@ -88,9 +119,9 @@ class ViewportLoadTimingTest {
         timing.dispatched(rect(0, 1, 0, 1), tile(0, 0), 0L, 1_000L);
 
         // Ring/background finish after the visible tile: no accumulation...
-        assertNull(timing.finished(tile(5, 5), 400L, null, 1_000L, true, false, 1_100L));
+        assertNull(timing.finished(tile(5, 5), 400L, null, null, 1_000L, true, false, 1_100L));
         // ...and only the finish-plus-upload of its own last tile closes the window.
-        assertNull(timing.finished(tile(0, 0), 100L, null, 10L, true, true, 1_500L));
+        assertNull(timing.finished(tile(0, 0), 100L, null, null, 10L, true, true, 1_500L));
         final ViewportLoadTiming.Summary done =
             timing.uploaded(tile(0, 0), 5L, true, 1_600L);
         assertEquals(1, done.tiles());
@@ -103,10 +134,10 @@ class ViewportLoadTimingTest {
         final ViewportLoadTiming timing = new ViewportLoadTiming();
         timing.dispatched(rect(0, 1, 0, 1), tile(0, 0), 0L, 1_000L);
 
-        assertNull(timing.finished(tile(NETHER, 0, 0), 500L, null, 70_000L, true, false, 1_050L));
-        assertNull(timing.finished(new TileKey(WORLD, DIM, LAYER, 3, 0, 0), 500L, null, 70_000L, true, false, 1_060L));
+        assertNull(timing.finished(tile(NETHER, 0, 0), 500L, null, null, 70_000L, true, false, 1_050L));
+        assertNull(timing.finished(new TileKey(WORLD, DIM, LAYER, 3, 0, 0), 500L, null, null, 70_000L, true, false, 1_060L));
 
-        assertNull(timing.finished(tile(0, 0), 100L, null, 10L, true, true, 1_500L));
+        assertNull(timing.finished(tile(0, 0), 100L, null, null, 10L, true, true, 1_500L));
         final ViewportLoadTiming.Summary done =
             timing.uploaded(tile(0, 0), 5L, true, 1_600L);
         assertEquals(1, done.tiles());
@@ -117,10 +148,10 @@ class ViewportLoadTimingTest {
     void repeatedDispatchOnTheSameViewportKeepsTheWindowAndItsStats() {
         final ViewportLoadTiming timing = new ViewportLoadTiming();
         timing.dispatched(rect(0, 1, 0, 1), tile(0, 0), 40L, 1_000L);
-        assertNull(timing.finished(tile(0, 0), 100L, null, 10L, true, false, 1_100L));
+        assertNull(timing.finished(tile(0, 0), 100L, null, null, 10L, true, false, 1_100L));
 
         assertNull(timing.dispatched(rect(0, 1, 0, 1), tile(1, 1), 60L, 1_200L));
-        assertNull(timing.finished(tile(1, 1), 50L, null, 5L, true, true, 1_400L));
+        assertNull(timing.finished(tile(1, 1), 50L, null, null, 5L, true, true, 1_400L));
         assertNull(timing.uploaded(tile(0, 0), 5L, true, 1_450L));
         final ViewportLoadTiming.Summary done =
             timing.uploaded(tile(1, 1), 5L, true, 1_600L);
@@ -133,7 +164,7 @@ class ViewportLoadTimingTest {
     void viewportMoveSupersedesTheOpenWindowAsIncomplete() {
         final ViewportLoadTiming timing = new ViewportLoadTiming();
         timing.dispatched(rect(0, 1, 0, 1), tile(0, 0), 0L, 1_000L);
-        assertNull(timing.finished(tile(0, 0), 100L, null, 10L, true, false, 1_100L));
+        assertNull(timing.finished(tile(0, 0), 100L, null, null, 10L, true, false, 1_100L));
 
         final ViewportLoadTiming.Summary superseded =
             timing.dispatched(rect(4, 5, 4, 5), tile(4, 4), 0L, 3_000L);
@@ -144,7 +175,7 @@ class ViewportLoadTimingTest {
         assertEquals(3_000L - 1_000L, superseded.wallNanos());
 
         // The replacement window starts from zero and completes normally.
-        assertNull(timing.finished(tile(4, 4), 30L, null, 3L, true, true, 3_500L));
+        assertNull(timing.finished(tile(4, 4), 30L, null, null, 3L, true, true, 3_500L));
         final ViewportLoadTiming.Summary done = timing.uploaded(tile(4, 4), 5L, true, 3_600L);
         assertTrue(done.complete());
         assertEquals(1, done.tiles());
@@ -172,8 +203,8 @@ class ViewportLoadTimingTest {
         timing.dispatched(rect(0, 1, 0, 1), tile(0, 0), 0L, 1_000L);
         // A superseded composition (session reload mid-compose): it finishes inside the rect
         // but queued no upload, so it only counts as an attempt.
-        assertNull(timing.finished(tile(0, 0), 700L, stages(600L), 90_000L, false, false, 1_700L));
-        assertNull(timing.finished(tile(1, 1), 100L, null, 10L, true, true, 1_900L));
+        assertNull(timing.finished(tile(0, 0), 700L, stages(600L), null, 90_000L, false, false, 1_700L));
+        assertNull(timing.finished(tile(1, 1), 100L, null, null, 10L, true, true, 1_900L));
         final ViewportLoadTiming.Summary done =
             timing.uploaded(tile(1, 1), 5L, true, 2_000L);
         assertEquals(1, done.tiles());
@@ -189,8 +220,8 @@ class ViewportLoadTimingTest {
     void uploadsForUnknownKeysAreIgnored() {
         final ViewportLoadTiming timing = new ViewportLoadTiming();
         timing.dispatched(rect(0, 1, 0, 1), tile(0, 0), 0L, 1_000L);
-        assertNull(timing.finished(tile(0, 0), 100L, null, 10L, true, false, 1_500L));
-        assertNull(timing.finished(tile(1, 1), 100L, null, 10L, true, true, 1_550L));
+        assertNull(timing.finished(tile(0, 0), 100L, null, null, 10L, true, false, 1_500L));
+        assertNull(timing.finished(tile(1, 1), 100L, null, null, 10L, true, true, 1_550L));
         // A foreign key changes nothing and closes nothing...
         assertNull(timing.uploaded(tile(5, 5), 5L, true, 1_600L));
         // ...a completion while ring work is still pending keeps the window open...
