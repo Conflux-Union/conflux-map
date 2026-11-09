@@ -120,7 +120,7 @@ public final class PredictionTileService {
     private final Set<TileKey> missingLowerCoverage = new HashSet<>();
     private long lowerCoverageGeneration;
     /** Guarded by {@code this}: invalidates compositions started before a manual/session reload. */
-    private long reloadGeneration;
+    private volatile long reloadGeneration;
 
     /** Latest fullscreen viewport; visible predictions are scheduled outward from its center. */
     private ViewportRect viewport;
@@ -273,6 +273,14 @@ public final class PredictionTileService {
 
     int cacheLimitForTest() {
         return mipCache.limit();
+    }
+
+    int baselineCacheLimitForTest() {
+        return baselineCache.limit();
+    }
+
+    int baselineCacheConfiguredLimitForTest() {
+        return baselineCache.configuredLimit();
     }
 
     public PredictionViewMode viewMode() {
@@ -790,6 +798,10 @@ public final class PredictionTileService {
         final ViewportRect rect = new ViewportRect(dimension, lod, minTileX, maxTileX, minTileZ, maxTileZ);
         final SessionGuard.Session session = sessionGuard.current();
         synchronized (this) {
+            final int spanX = Math.max(0, maxTileX - minTileX + 1);
+            final int spanZ = Math.max(0, maxTileZ - minTileZ + 1);
+            baselineCache.adaptToViewport(spanX * spanZ);
+
             final boolean changed = !rect.equals(viewport);
             viewport = rect;
             dirty.keySet().removeIf(key -> {
