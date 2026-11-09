@@ -7,7 +7,7 @@
 // 2. Strict half-open world coordinate partitioning: each world macro point (x4, z4)
 //    uniquely belongs to its enclosing cell, guaranteeing identical decisions
 //    regardless of tile slicing origins or boundary padding (0 mismatch);
-// 3. 5-point cross detection + two-tier quadtree refinement: 16x16 -> 8x8 -> 4x4;
+// 3. 5-point cross detection + 8x8 sub-quadrant fallback refinement;
 // 4. Memory safety: strict bounds-clamped indices with zero row overflow (ASan clean).
 // ==============================================================================
 

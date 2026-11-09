@@ -225,9 +225,21 @@ int main(void) {
                            res.y_mae, res.le2_rate, res.max_err, res.vs_master_le2,
                            bFlip, wFlip, res.coast_biome_flip, tStr);
                     fflush(stdout);
+
+                    if (res.le2_rate < 80.0) {
+                        fprintf(stderr, "FATAL: ground truth le2_rate fell below 80.0%% threshold (actual: %.2f%%) for seed %llu %s stride %d\n",
+                                res.le2_rate, (unsigned long long)seeds[s], locs[l].name, stride);
+                        return 1;
+                    }
+                    if (stride <= 2 && res.vs_master_le2 < 85.0) {
+                        fprintf(stderr, "FATAL: vs_master_le2 agreement fell below 85.0%% threshold (actual: %.2f%%) for seed %llu %s stride %d\n",
+                                res.vs_master_le2, (unsigned long long)seeds[s], locs[l].name, stride);
+                        return 1;
+                    }
                 }
             }
         }
     }
+    printf("\nAll test matrix cases passed verification thresholds.\n");
     return 0;
 }
