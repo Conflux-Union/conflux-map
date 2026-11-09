@@ -9,6 +9,13 @@
 
 #include "shim/confluxnative.c"
 
+#define CFX_CHECK(expr) do { \
+    if (!(expr)) { \
+        fprintf(stderr, "FATAL CHECK FAILED: %s at %s:%d\n", #expr, __FILE__, __LINE__); \
+        exit(1); \
+    } \
+} while (0)
+
 static jsize JNICALL dummy_GetArrayLength(JNIEnv *env, jarray array) { return 10000000; }
 static void JNICALL dummy_SetIntArrayRegion(JNIEnv *env, jintArray array, jsize start, jsize len, const jint *buf) {
     (void)env; memcpy((int*)array + start, buf, len * sizeof(jint));
@@ -21,19 +28,19 @@ void test_position_purity(JNIEnv *env, CfxContext *ctx) {
     const int wA = 512, hA = 512;
     int *bufA = malloc(wA * hA * sizeof(int));
     CfxNoiseDetail detailA = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 1);
-    assert(cfxOverviewHeightsImpl(env, ctx, 0, 0, wA, hA, 1, (jintArray)bufA, &detailA) == CFX_OK);
+    CFX_CHECK(cfxOverviewHeightsImpl(env, ctx, 0, 0, wA, hA, 1, (jintArray)bufA, &detailA) == CFX_OK);
 
     // Shape B: standard production tile (-1, -1, 258, 258, stride 1)
     const int oxB = -1, ozB = -1, wB = 258, hB = 258;
     int *bufB = malloc(wB * hB * sizeof(int));
     CfxNoiseDetail detailB = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 1);
-    assert(cfxOverviewHeightsImpl(env, ctx, oxB, ozB, wB, hB, 1, (jintArray)bufB, &detailB) == CFX_OK);
+    CFX_CHECK(cfxOverviewHeightsImpl(env, ctx, oxB, ozB, wB, hB, 1, (jintArray)bufB, &detailB) == CFX_OK);
 
     // Shape C: off-phase tile (+2, +3, 258, 258, stride 1)
     const int oxC = 2, ozC = 3, wC = 258, hC = 258;
     int *bufC = malloc(wC * hC * sizeof(int));
     CfxNoiseDetail detailC = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 1);
-    assert(cfxOverviewHeightsImpl(env, ctx, oxC, ozC, wC, hC, 1, (jintArray)bufC, &detailC) == CFX_OK);
+    CFX_CHECK(cfxOverviewHeightsImpl(env, ctx, oxC, ozC, wC, hC, 1, (jintArray)bufC, &detailC) == CFX_OK);
 
     int mismatch_BA = 0;
     for (int z = 0; z < 256; z++) {
@@ -43,7 +50,7 @@ void test_position_purity(JNIEnv *env, CfxContext *ctx) {
         }
     }
     printf("  Assert Standard Tile vs Clean Grid: Mismatches = %d / 65536\n", mismatch_BA);
-    assert(mismatch_BA == 0 && "FATAL: Position purity violated on standard tile geometry!");
+    CFX_CHECK(mismatch_BA == 0 && "FATAL: Position purity violated on standard tile geometry!");
 
     int mismatch_CA = 0;
     for (int z = ozC; z < ozC + wC && z < 256; z++) {
@@ -53,7 +60,7 @@ void test_position_purity(JNIEnv *env, CfxContext *ctx) {
         }
     }
     printf("  Assert Off-phase Tile vs Clean Grid: Mismatches = %d / 64262\n", mismatch_CA);
-    assert(mismatch_CA == 0 && "FATAL: Position purity violated on off-phase geometry!");
+    CFX_CHECK(mismatch_CA == 0 && "FATAL: Position purity violated on off-phase geometry!");
 
     printf("  ===> All Position Purity Assertions PASSED (100%% Bit-Identical Across Shapes)\n\n");
 

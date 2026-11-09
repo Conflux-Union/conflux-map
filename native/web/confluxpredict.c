@@ -890,7 +890,10 @@ static int cfxWebOverviewHeights(
     int blockX, int blockZ, int w, int h, int stride, int *out
 )
 {
-    CfxWebNoiseDetail detail = cfxWebNoiseDetailForStride(&generator.bn.terrain, stride);
+    /* 1x1 micro-queries are strictly reserved for waterline / coastline point precision */
+    CfxWebNoiseDetail detail = (w == 1 && h == 1)
+        ? CFX_WEB_DETAIL_FULL
+        : cfxWebNoiseDetailForStride(&generator.bn.terrain, stride);
     return cfxWebOverviewHeightsImpl(
         blockX, blockZ, w, h, stride, out, &detail
     );

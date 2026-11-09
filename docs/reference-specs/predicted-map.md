@@ -55,9 +55,10 @@ Every supported Overworld version uses the same overview pipeline. In 1.18+ mode
 the native overview height solver employs a globally aligned two-tier spatial-adaptive macro grid
 (16-block macro cells with 8-block sub-quadrants). The speedup is strongly terrain-dependent, because
 flat ocean basins need almost no refinement while rugged inland relief refines most cells, so it is
-reported per region rather than as one figure (258x258 tile, stride 1, single core, gcc 14.2 `-O3`,
-seed 146008555, Master snapshot `a966dcf1` vs this branch, `./gradlew benchNative` reproduces the
-shape on the host):
+reported per region rather than as one figure (historical benchmark matrix data across three regions:
+258x258 tile, stride 1, single core, gcc 14.2 `-O3`, seed 146008555, Master snapshot `a966dcf1` vs
+adaptive solver; `./gradlew benchNative` runs a local single-origin throughput benchmark for the current
+solver rather than this differential comparison matrix):
 
 | Region | Master | Adaptive grid | Speedup |
 |---|---|---|---|
