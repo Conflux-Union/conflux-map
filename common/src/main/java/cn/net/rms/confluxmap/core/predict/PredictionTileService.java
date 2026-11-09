@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -111,6 +112,22 @@ public final class PredictionTileService {
      */
     volatile WaveSamplerFactory waveSamplerFactoryForTest;
 
+    /**
+     * Test-only observation of staged wave admission shape: the member count of every staged wave
+     * admitted this session, in admission order, CPU waves included. A lone staged candidate keeps
+     * the retained single-shot path and records {@code 1}. Recorded only while a wave sampler
+     * factory is installed (tests do; production never does, so the list stays empty there).
+     * Cleared on session change.
+     */
+    final List<Integer> admittedWaveSizesForTest = new ArrayList<>();
+
+    /** Appends to {@link #admittedWaveSizesForTest} only when the test wave sampler is installed. */
+    private void noteWaveAdmissionForTest(final int size) {
+        if (waveSamplerFactoryForTest != null) {
+            admittedWaveSizesForTest.add(size);
+        }
+    }
+
     /** Dispatch tiers, lowest first: user-waited, visible viewport, padded ring, background. */
     private static final int TIER_URGENT = 0;
     private static final int TIER_VISIBLE = 1;
@@ -128,6 +145,14 @@ public final class PredictionTileService {
     private final Map<TileKey, Long> dirty = new HashMap<>();
     /** Guarded by {@code this}: tiles currently being composed on a worker. */
     private final Set<TileKey> inFlight = new HashSet<>();
+    /**
+     * Guarded by {@code this}: per-wave capacity reservations, keyed by wave identity. A GPU wave
+     * holds its whole slot group until its LAST member finishes, so staggered completions cannot
+     * trickle singleton admissions into the wave's capacity. The array is {remaining, held}:
+     * members still expected to reach {@code finishAndReport}, and members already finished whose
+     * slot stays reserved until the record releases.
+     */
+    private final Map<WaveComposer, int[]> waveReservations = new IdentityHashMap<>();
     /**
      * Guarded by {@code this}: queued tiles a map action is actively waiting on (a right-click
      * menu target). Dispatched before the viewport center-out order; the flag is consumed by
@@ -734,6 +759,10 @@ public final class PredictionTileService {
             mipCache.clear();
             lowerCoverageQueue.clear();
             missingLowerCoverage.clear();
+            // A stale record would pin capacity for waves whose members may never matter again;
+            // their in-flight members still release their own slots on the way out.
+            waveReservations.clear();
+            admittedWaveSizesForTest.clear();
         }
         CubiomesContexts.bumpEpoch();
     }
@@ -758,6 +787,10 @@ public final class PredictionTileService {
             mipCache.clear();
             lowerCoverageQueue.clear();
             missingLowerCoverage.clear();
+            // Same ledger reset as onSessionChanged: reloadAll purges the queue, so held wave
+            // reservations must not outlive the work they were reserved for.
+            waveReservations.clear();
+            admittedWaveSizesForTest.clear();
             if (session.active()) {
                 for (final TileKey key : inFlight) {
                     if (key.world().equals(session.world()) && key.dimension().equals(session.dimension())) {
@@ -1141,7 +1174,10 @@ public final class PredictionTileService {
         while (true) {
             final Runnable dispatch;
             synchronized (this) {
-                final int capacity = maxConcurrentCompositions - inFlight.size();
+                // The ledger holds back only slots whose member already finished; the wave's
+                // unfinished members still count through inFlight. Summing the whole reservation
+                // here would double-count them and pin slots no wave owns.
+                final int capacity = maxConcurrentCompositions - inFlight.size() - reservedWaveSlots();
                 if (capacity <= 0 || dirty.isEmpty()) {
                     return;
                 }
@@ -1188,6 +1224,7 @@ public final class PredictionTileService {
                 return admitWave(group, timing);
             }
             // A lone staged candidate is a degenerate wave: keep the retained single-shot path.
+            noteWaveAdmissionForTest(1);
         }
         return admitSingle(best, timing);
     }
@@ -1259,6 +1296,12 @@ public final class PredictionTileService {
             batch
         );
         final List<TileKey> keys = List.copyOf(group);
+        noteWaveAdmissionForTest(size);
+        if (batch != null) {
+            // GPU wave: hold the whole group's slots against mid-wave singleton admissions until
+            // the last member finishes. CPU waves keep today's per-member release behavior.
+            waveReservations.put(wave, new int[] {size, 0});
+        }
         return () -> submitWave(wave, keys, memberTokens, generation, netherGeneration, netherY);
     }
 
@@ -1305,7 +1348,37 @@ public final class PredictionTileService {
                 for (int i = submitted; i < keys.size(); i++) {
                     inFlight.remove(keys.get(i));
                 }
+                final int[] reservation = waveReservations.get(wave);
+                if (reservation != null) {
+                    // The never-submitted members held their slots through inFlight, freed by the
+                    // removals above; the record now owes exactly the submissions the pool
+                    // accepted, which is none on a shut-down pool - drop the record outright.
+                    if (submitted == 0) {
+                        waveReservations.remove(wave);
+                    } else {
+                        reservation[0] = submitted;
+                    }
+                }
             }
+        }
+    }
+
+    /**
+     * Caller must hold the monitor: one wave member finished, so its composition slot moves from
+     * {@code inFlight} into the wave's reservation. The slot only returns to the free pool when
+     * the LAST member finishes - a staggered finish must not admit a singleton into the wave's
+     * capacity. A missing record (CPU wave, or a session change already dropped the ledger) has
+     * nothing to hold.
+     */
+    private void releaseWaveMemberSlot(final WaveComposer wave) {
+        final int[] reservation = waveReservations.get(wave);
+        if (reservation == null) {
+            return;
+        }
+        reservation[0]--;
+        reservation[1]++;
+        if (reservation[0] == 0) {
+            waveReservations.remove(wave);
         }
     }
 
@@ -1441,7 +1514,7 @@ public final class PredictionTileService {
         try {
             composition = composeTile(key, token, requestedMode, netherY);
         } finally {
-            finishAndReport(key, composition, token, generation, netherGeneration, requestedMode,
+            finishAndReport(key, null, composition, token, generation, netherGeneration, requestedMode,
                 composeStartNanos, timing);
         }
     }
@@ -1468,7 +1541,7 @@ public final class PredictionTileService {
                 wave.dissolve();
             }
         } finally {
-            finishAndReport(key, composition, token, generation, netherGeneration, requestedMode,
+            finishAndReport(key, wave, composition, token, generation, netherGeneration, requestedMode,
                 composeStartNanos, timing);
         }
     }
@@ -1476,6 +1549,7 @@ public final class PredictionTileService {
     /** Shared completion path of both admission shapes: commit-or-drop, release the slot, pump, log. */
     private void finishAndReport(
         final TileKey key,
+        final WaveComposer wave,
         final Composition composition,
         final long token,
         final long generation,
@@ -1510,6 +1584,9 @@ public final class PredictionTileService {
             }
             inFlight.remove(key);
             urgent.remove(key);
+            if (wave != null) {
+                releaseWaveMemberSlot(wave);
+            }
             if (timing) {
                 // Arguments evaluate before the call: the idle check reads the window the
                 // finish is about to accumulate into (and possibly close).
@@ -2753,6 +2830,32 @@ public final class PredictionTileService {
     /** Test-support only: a snapshot of currently-queued (not yet in-flight) predicted tile keys. */
     public synchronized Set<TileKey> pendingKeysForTest() {
         return new HashSet<>(dirty.keySet());
+    }
+
+    /** Caller must hold the monitor: slots pinned by members that finished but whose wave has not. */
+    private int reservedWaveSlots() {
+        int held = 0;
+        for (final int[] reservation : waveReservations.values()) {
+            held += reservation[1];
+        }
+        return held;
+    }
+
+    /**
+     * Test seam for the wave reservation ledger: composition slots currently pinned by waves that
+     * have not fully finished. Every live wave pins its whole size - its unfinished members count
+     * through {@code inFlight}, its finished members through the ledger - so an eight-member wave
+     * reads 8 from admission until its last member releases all of them; 0 when quiescent. Same
+     * debug-seam category as {@link #tileOverworldStageNanosForTest()}.
+     */
+    int reservedWaveSlotsForTest() {
+        synchronized (this) {
+            int reserved = 0;
+            for (final int[] reservation : waveReservations.values()) {
+                reserved += reservation[0] + reservation[1];
+            }
+            return reserved;
+        }
     }
 
     /** Test-support only: whether every queued/in-flight tile has drained. */

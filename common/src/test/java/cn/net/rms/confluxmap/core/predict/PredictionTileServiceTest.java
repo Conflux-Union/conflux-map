@@ -45,6 +45,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -223,6 +224,504 @@ class PredictionTileServiceTest {
             missing.removeAll(uploaded);
             assertTrue(missing.isEmpty(), "every wave member must compose and upload; missing: " + missing);
         } finally {
+            executors.shutdown(2000L);
+        }
+    }
+
+    /** Seeded-Overworld wave harness: the service plus the recording sampler its waves run through. */
+    private record WaveHarness(PredictionTileService service, RecordingWaveSampler sampler) {
+    }
+
+    private static WaveHarness newWaveHarness(
+        final SessionGuard sessionGuard, final MapExecutors executors, final TileService uploads
+    ) {
+        // Same recipe as stagedTilesFormOneWaveThroughTheBatchSeam: staged eligibility requires the
+        // native predictor, while the waves themselves run on the injected recording fake.
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.DEFAULT, WorldPreset.DEFAULT);
+        state.setSeed(146008555L, McVersions.toCubiomes("1.17").orElseThrow());
+        final PredictionTileService service = newService(sessionGuard, state, executors, uploads);
+        final RecordingWaveSampler sampler = new RecordingWaveSampler();
+        service.waveSamplerFactoryForTest = (mcVersion, seed, nativeDim, flags) -> sampler;
+        return new WaveHarness(service, sampler);
+    }
+
+    private static TileKey surfaceTile(final int tileX, final int tileZ) {
+        return new TileKey(WORLD, DIM, "surface!pred", 2, tileX, tileZ);
+    }
+
+    /** Stages every padded-ring tile of the square viewport {@code [-half, half]} in one pump. */
+    private static void stageRing(final PredictionTileService service, final int half) {
+        service.setViewport(DIM, 2, -half, half, -half, half);
+        service.preloadViewportPaddedRing();
+    }
+
+    /** Same as {@link #stageRing} around a single viewport tile. */
+    private static void stageRingAround(
+        final PredictionTileService service, final int tileX, final int tileZ
+    ) {
+        service.setViewport(DIM, 2, tileX, tileX, tileZ, tileZ);
+        service.preloadViewportPaddedRing();
+    }
+
+    private static Set<TileKey> paddedRingKeys(final int half) {
+        return ringKeys(-half - 1, half + 1, -half - 1, half + 1, -half, half, -half, half);
+    }
+
+    private static Set<TileKey> ringKeysAround(final int tileX, final int tileZ) {
+        return ringKeys(tileX - 1, tileX + 1, tileZ - 1, tileZ + 1, tileX, tileX, tileZ, tileZ);
+    }
+
+    /** The tiles a padded ring stages: inside the padded bounds but outside the rect itself. */
+    private static Set<TileKey> ringKeys(
+        final int padMinX, final int padMaxX, final int padMinZ, final int padMaxZ,
+        final int minX, final int maxX, final int minZ, final int maxZ
+    ) {
+        final Set<TileKey> keys = new HashSet<>();
+        for (int tileX = padMinX; tileX <= padMaxX; tileX++) {
+            for (int tileZ = padMinZ; tileZ <= padMaxZ; tileZ++) {
+                if (tileX < minX || tileX > maxX || tileZ < minZ || tileZ > maxZ) {
+                    keys.add(surfaceTile(tileX, tileZ));
+                }
+            }
+        }
+        return keys;
+    }
+
+    /** Composes tiles through the degenerate single path so the next ring staging skips them. */
+    private static void warmTiles(final PredictionTileService service, final int[]... tiles)
+        throws InterruptedException {
+        for (final int[] tile : tiles) {
+            service.requestTile(surfaceTile(tile[0], tile[1]));
+        }
+        awaitIdle(service, 10_000L);
+    }
+
+    private static void assertAllUploaded(
+        final TileService uploads, final Set<TileKey> keys, final String message
+    ) {
+        final Set<TileKey> uploaded = uploads.drainUploads(64).stream()
+            .map(TileUpdate::key)
+            .collect(Collectors.toSet());
+        final Set<TileKey> missing = new HashSet<>(keys);
+        missing.removeAll(uploaded);
+        assertTrue(missing.isEmpty(), message + "; missing: " + missing);
+    }
+
+    /** Arms the heights-batch hook so the first wave's leader blocks mid-batch until released. */
+    private static void blockFirstWaveLeader(
+        final RecordingWaveSampler sampler,
+        final CountDownLatch leaderInBatch,
+        final CountDownLatch releaseLeader
+    ) {
+        final AtomicBoolean blockedOnce = new AtomicBoolean();
+        sampler.insideHeightsBatch = () -> {
+            if (blockedOnce.compareAndSet(false, true)) {
+                leaderInBatch.countDown();
+                try {
+                    releaseLeader.await(10, TimeUnit.SECONDS);
+                } catch (final InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        };
+    }
+
+    @Test
+    void eightStagedTilesAdmitAsOneWave() throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        sessionGuard.begin(WORLD, DIM);
+        final MapExecutors executors = new MapExecutors(8);
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final WaveHarness harness = newWaveHarness(sessionGuard, executors, uploads);
+
+        try {
+            stageRing(harness.service(), 0);
+            awaitIdle(harness.service(), 10_000L);
+
+            assertEquals(
+                List.of(8),
+                harness.service().admittedWaveSizesForTest,
+                "eight staged tiles must form exactly one whole wave"
+            );
+            assertEquals(
+                0,
+                harness.service().reservedWaveSlotsForTest(),
+                "a finished wave must release its whole reservation"
+            );
+            assertAllUploaded(uploads, paddedRingKeys(0), "every wave member must compose and upload");
+        } finally {
+            executors.shutdown(2000L);
+        }
+    }
+
+    @Test
+    void sixteenStagedTilesAdmitAsTwoWholeWaves() throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        sessionGuard.begin(WORLD, DIM);
+        final MapExecutors executors = new MapExecutors(8);
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final WaveHarness harness = newWaveHarness(sessionGuard, executors, uploads);
+
+        try {
+            stageRing(harness.service(), 1);
+            awaitIdle(harness.service(), 10_000L);
+
+            assertEquals(
+                List.of(8, 8),
+                harness.service().admittedWaveSizesForTest,
+                "sixteen staged tiles must form two whole waves, not a wave plus a single-tile trickle"
+            );
+            assertEquals(
+                0,
+                harness.service().reservedWaveSlotsForTest(),
+                "finished waves must release their whole reservations"
+            );
+            assertAllUploaded(uploads, paddedRingKeys(1), "every staged tile must compose and upload");
+        } finally {
+            executors.shutdown(2000L);
+        }
+    }
+
+    @Test
+    void twentyFourStagedTilesAdmitAsThreeWholeWaves() throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        sessionGuard.begin(WORLD, DIM);
+        final MapExecutors executors = new MapExecutors(8);
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final WaveHarness harness = newWaveHarness(sessionGuard, executors, uploads);
+
+        try {
+            stageRing(harness.service(), 2);
+            awaitIdle(harness.service(), 10_000L);
+
+            assertEquals(
+                List.of(8, 8, 8),
+                harness.service().admittedWaveSizesForTest,
+                "twenty-four staged tiles must form three whole waves"
+            );
+            assertEquals(
+                0,
+                harness.service().reservedWaveSlotsForTest(),
+                "finished waves must release their whole reservations"
+            );
+            assertAllUploaded(uploads, paddedRingKeys(2), "every staged tile must compose and upload");
+        } finally {
+            executors.shutdown(2000L);
+        }
+    }
+
+    @Test
+    void earlyFinisherDoesNotAdmitIntoActiveWave() throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        sessionGuard.begin(WORLD, DIM);
+        final MapExecutors executors = new MapExecutors(8);
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final WaveHarness harness = newWaveHarness(sessionGuard, executors, uploads);
+        final CountDownLatch leaderInBatch = new CountDownLatch(1);
+        final CountDownLatch releaseLeader = new CountDownLatch(1);
+        blockFirstWaveLeader(harness.sampler(), leaderInBatch, releaseLeader);
+
+        try {
+            stageRing(harness.service(), 1);
+            assertTrue(
+                leaderInBatch.await(10, TimeUnit.SECONDS),
+                "the first wave's leader never entered its heights batch"
+            );
+            assertEquals(
+                List.of(8),
+                harness.service().admittedWaveSizesForTest,
+                "the second wave must not be admitted while the first wave is still running"
+            );
+            assertEquals(
+                8,
+                harness.service().reservedWaveSlotsForTest(),
+                "the running wave must pin its whole reservation while blocked"
+            );
+            releaseLeader.countDown();
+            awaitIdle(harness.service(), 10_000L);
+
+            assertEquals(
+                List.of(8, 8),
+                harness.service().admittedWaveSizesForTest,
+                "the second wave must be admitted whole once the first wave releases"
+            );
+            assertEquals(
+                0,
+                harness.service().reservedWaveSlotsForTest(),
+                "the released waves must leave no reservation behind"
+            );
+            assertAllUploaded(uploads, paddedRingKeys(1), "every staged tile must compose and upload");
+        } finally {
+            releaseLeader.countDown();
+            executors.shutdown(2000L);
+        }
+    }
+
+    @Test
+    void partialTailFormsLegalSmallerWave() throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        sessionGuard.begin(WORLD, DIM);
+        final MapExecutors executors = new MapExecutors(8);
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final WaveHarness harness = newWaveHarness(sessionGuard, executors, uploads);
+        final PredictionTileService service = harness.service();
+
+        try {
+            service.setViewport(DIM, 2, -1, 1, -1, 1);
+            // Warm three ring tiles so the ring preload stages exactly the other thirteen.
+            warmTiles(service, new int[] {2, 0}, new int[] {0, 2}, new int[] {2, 1});
+            service.admittedWaveSizesForTest.clear();
+            service.preloadViewportPaddedRing();
+            awaitIdle(service, 10_000L);
+
+            assertEquals(
+                List.of(8, 5),
+                service.admittedWaveSizesForTest,
+                "thirteen staged tiles must form one capped wave plus one legal partial wave"
+            );
+            assertEquals(
+                0,
+                service.reservedWaveSlotsForTest(),
+                "the partial wave must release its whole reservation"
+            );
+
+            // Ring of the (3,1) viewport: three cached tiles skipped, exactly five new staged.
+            service.admittedWaveSizesForTest.clear();
+            stageRingAround(service, 3, 1);
+            awaitIdle(service, 10_000L);
+
+            assertEquals(
+                List.of(5),
+                service.admittedWaveSizesForTest,
+                "five staged tiles must form one legal partial wave"
+            );
+            assertEquals(
+                0,
+                service.reservedWaveSlotsForTest(),
+                "the partial wave must release its whole reservation"
+            );
+            final Set<TileKey> expected = paddedRingKeys(1);
+            expected.addAll(ringKeysAround(3, 1));
+            assertAllUploaded(uploads, expected, "every staged tile must compose and upload");
+        } finally {
+            executors.shutdown(2000L);
+        }
+    }
+
+    @Test
+    void executorShutdownReleasesWaveReservation() throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        sessionGuard.begin(WORLD, DIM);
+        final MapExecutors executors = new MapExecutors(8);
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final WaveHarness harness = newWaveHarness(sessionGuard, executors, uploads);
+        final PredictionTileService service = harness.service();
+
+        try {
+            stageRing(service, 0);
+            awaitIdle(service, 10_000L);
+            assertAllUploaded(uploads, paddedRingKeys(0), "every wave member must compose and upload");
+
+            executors.shutdown(2000L);
+            // One atomic staging: admission forms a wave whose submission the dead pool rejects.
+            stageRingAround(service, 4, 0);
+
+            assertTrue(
+                service.isIdleForTest(),
+                "a fully rejected wave must leave nothing queued or in flight"
+            );
+            assertEquals(
+                0,
+                service.reservedWaveSlotsForTest(),
+                "the rejected wave's reservation must be released by the rejection handler"
+            );
+            assertEquals(
+                List.of(8, 8),
+                service.admittedWaveSizesForTest,
+                "the second admission must record the wave whose submission was then rejected"
+            );
+        } finally {
+            executors.shutdown(2000L);
+        }
+    }
+
+    @Test
+    void cancelledWaveReleasesReservation() throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        sessionGuard.begin(WORLD, DIM);
+        final MapExecutors executors = new MapExecutors(8);
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final WaveHarness harness = newWaveHarness(sessionGuard, executors, uploads);
+        final PredictionTileService service = harness.service();
+        final CountDownLatch leaderInBatch = new CountDownLatch(1);
+        final CountDownLatch releaseLeader = new CountDownLatch(1);
+        blockFirstWaveLeader(harness.sampler(), leaderInBatch, releaseLeader);
+
+        try {
+            stageRing(service, 0);
+            assertTrue(
+                leaderInBatch.await(10, TimeUnit.SECONDS),
+                "the wave leader never entered its heights batch"
+            );
+            final SessionGuard.Session next = sessionGuard.begin(WORLD, DIM);
+            service.onSessionChanged(next);
+
+            assertEquals(
+                0,
+                service.reservedWaveSlotsForTest(),
+                "a session change must drop every wave reservation immediately"
+            );
+            releaseLeader.countDown();
+            awaitIdle(service, 10_000L);
+
+            assertEquals(
+                0,
+                service.reservedWaveSlotsForTest(),
+                "cancelled members must not leave reservations behind"
+            );
+            final TileKey fresh = surfaceTile(4, 4);
+            service.requestTile(fresh);
+            awaitIdle(service, 10_000L);
+            assertAllUploaded(
+                uploads, Set.of(fresh),
+                "a fresh request must still compose and upload after the cancelled wave"
+            );
+            assertEquals(
+                0,
+                service.reservedWaveSlotsForTest(),
+                "the fresh composition must leave no reservation behind"
+            );
+        } finally {
+            releaseLeader.countDown();
+            executors.shutdown(2000L);
+        }
+    }
+
+    @Test
+    void memberFaultDissolvesWaveAndReleasesReservation() throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        sessionGuard.begin(WORLD, DIM);
+        final MapExecutors executors = new MapExecutors(8);
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final WaveHarness harness = newWaveHarness(sessionGuard, executors, uploads);
+        final PredictionTileService service = harness.service();
+        final RecordingWaveSampler sampler = harness.sampler();
+
+        try {
+            sampler.throwOnPerTileHeights = true;
+            sampler.refuseBatches = true;
+            stageRing(service, 0);
+            awaitIdle(service, 10_000L);
+
+            assertEquals(
+                List.of(8),
+                service.admittedWaveSizesForTest,
+                "the faulting members still formed their wave"
+            );
+            assertEquals(
+                0,
+                service.reservedWaveSlotsForTest(),
+                "the dissolved wave must release its whole reservation"
+            );
+            assertTrue(
+                uploads.drainUploads(64).isEmpty(),
+                "a dissolved wave drops every member's composition, so nothing uploads"
+            );
+
+            sampler.throwOnPerTileHeights = false;
+            sampler.refuseBatches = false;
+            final TileKey fresh = surfaceTile(4, 4);
+            service.requestTile(fresh);
+            awaitIdle(service, 10_000L);
+            assertAllUploaded(
+                uploads, Set.of(fresh),
+                "the service must admit new work after a member fault dissolved its wave"
+            );
+        } finally {
+            executors.shutdown(2000L);
+        }
+    }
+
+    @Test
+    void cacheServedMembersStillHoldTheirWaveReservation() throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        sessionGuard.begin(WORLD, DIM);
+        final MapExecutors executors = new MapExecutors(8);
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final WaveHarness harness = newWaveHarness(sessionGuard, executors, uploads);
+        final PredictionTileService service = harness.service();
+        final CountDownLatch leaderInBatch = new CountDownLatch(1);
+        final CountDownLatch releaseLeader = new CountDownLatch(1);
+
+        try {
+            stageRing(service, 0);
+            awaitIdle(service, 10_000L);
+            uploads.drainUploads(64);
+            service.admittedWaveSizesForTest.clear();
+
+            // Stage eight fresh tiles, block that wave mid-batch, and re-request the eight warm
+            // tiles while every slot is taken: their requests pile up in the queue and then
+            // compose as one wave of cache-served members. Cache-fast finishes must not free
+            // slots mid-wave, so that wave must be admitted whole, not as singletons.
+            blockFirstWaveLeader(harness.sampler(), leaderInBatch, releaseLeader);
+            stageRingAround(service, 3, 0);
+            for (int tileX = -1; tileX <= 1; tileX++) {
+                for (int tileZ = -1; tileZ <= 1; tileZ++) {
+                    if (tileX != 0 || tileZ != 0) {
+                        service.requestTile(surfaceTile(tileX, tileZ));
+                    }
+                }
+            }
+            assertTrue(
+                leaderInBatch.await(10, TimeUnit.SECONDS),
+                "the fresh wave's leader never entered its heights batch"
+            );
+            releaseLeader.countDown();
+            awaitIdle(service, 10_000L);
+
+            assertEquals(
+                List.of(8, 8),
+                service.admittedWaveSizesForTest,
+                "cache-served members must not free their slots mid-wave; both waves stay whole"
+            );
+            assertEquals(
+                0,
+                service.reservedWaveSlotsForTest(),
+                "the cache-served wave must release its whole reservation"
+            );
+            final Set<TileKey> expected = paddedRingKeys(0);
+            expected.addAll(ringKeysAround(3, 0));
+            assertAllUploaded(uploads, expected, "every re-requested and fresh tile must upload");
+        } finally {
+            releaseLeader.countDown();
             executors.shutdown(2000L);
         }
     }
