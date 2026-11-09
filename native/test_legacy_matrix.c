@@ -107,6 +107,9 @@ static int icmp(const void *a, const void *b)
 typedef struct {
     long long cases;
     long long sumDiff;
+    long long sumSignedDiff;
+    long long posDiffs;
+    long long negDiffs;
     long long maxDiff;
     long long over2;
     long long waterFlips;
@@ -119,8 +122,12 @@ static void accumulateDrift(
     int i;
     for (i = 0; i < n; i++)
     {
-        const int d = abs(opt[i] - ref[i]);
+        const int diff = opt[i] - ref[i];
+        const int d = abs(diff);
         st->sumDiff += d;
+        st->sumSignedDiff += diff;
+        if (diff > 0) st->posDiffs++;
+        else if (diff < 0) st->negDiffs++;
         if (d > st->maxDiff)
             st->maxDiff = d;
         if (d > 2)
@@ -134,9 +141,10 @@ static void accumulateDrift(
 
 static void printDrift(const char *label, const DriftStats *st)
 {
-    printf("%s: cases %lld | meanDiff %.4f p95 n/a max %lld over2 %.4f%% waterFlips %.4f%%\n",
+    printf("%s: cases %lld | meanDiff %.4f (signed %+.4f) max %lld over2 %.4f%% waterFlips %.4f%%\n",
         label, st->cases,
         st->cells ? (double) st->sumDiff / st->cells : 0.0,
+        st->cells ? (double) st->sumSignedDiff / st->cells : 0.0,
         st->maxDiff,
         st->cells ? 100.0 * st->over2 / st->cells : 0.0,
         st->cells ? 100.0 * st->waterFlips / st->cells : 0.0);
@@ -622,6 +630,26 @@ int main(int argc, char **argv)
     printf("\n=== legacy overview drift vs master reference ===\n");
     printDrift("macro windows (stride<4) ", &macroStats);
     printDrift("trunc windows (stride>=4)", &truncStats);
+
+    /* Enforce rigid drift thresholds: macro & trunc must never exceed maxDiff=1,
+     * over2 must be strictly 0, and meanDiff must not regress beyond 0.05.
+     * Any synthetic or real +2 error mutation will trip this and fail hard. */
+    if (macroStats.maxDiff > 1 || macroStats.over2 > 0 ||
+        (macroStats.cells && (double) macroStats.sumDiff / macroStats.cells > 0.05))
+    {
+        printf("FAIL: macroStats drift threshold breached! maxDiff=%lld over2=%lld meanDiff=%.4f\n",
+            macroStats.maxDiff, macroStats.over2,
+            macroStats.cells ? (double) macroStats.sumDiff / macroStats.cells : 0.0);
+        hardFailures++;
+    }
+    if (truncStats.maxDiff > 1 || truncStats.over2 > 0 ||
+        (truncStats.cells && (double) truncStats.sumDiff / truncStats.cells > 0.05))
+    {
+        printf("FAIL: truncStats drift threshold breached! maxDiff=%lld over2=%lld meanDiff=%.4f\n",
+            truncStats.maxDiff, truncStats.over2,
+            truncStats.cells ? (double) truncStats.sumDiff / truncStats.cells : 0.0);
+        hardFailures++;
+    }
 
     printf("\ngates: COLSTRAT2 %d cases, TRUNCENTRY %d cases\n",
         colstrat2Cases, truncentryCases);

@@ -120,19 +120,25 @@ static int fluidBucket(int height)
 }
 
 static void accumulateHeights(
-    Metrics *m, const int *h, const int *exactSolid, int n)
+    Metrics *m, const int *windowH, int windowW,
+    const int *interiorSolid, int interiorW, int interiorH)
 {
-    int i;
-    for (i = 0; i < n; i++)
+    int j, i;
+    for (j = 0; j < interiorH; j++)
     {
-        const int d = abs(h[i] - exactSolid[i]);
-        m->sumAbsDiff += d;
-        if (d <= 2) m->hit2++;
-        if (d <= 4) m->hit4++;
-        if (d > m->maxDiff) m->maxDiff = d;
-        if (((h[i] < 62) != (exactSolid[i] < 62))) m->waterFlips++;
-        if (fluidBucket(h[i]) != fluidBucket(exactSolid[i])) m->bucketMismatch++;
-        m->cells++;
+        for (i = 0; i < interiorW; i++)
+        {
+            const int hVal = windowH[(j + 1) * windowW + (i + 1)];
+            const int exVal = interiorSolid[j * interiorW + i];
+            const int d = abs(hVal - exVal);
+            m->sumAbsDiff += d;
+            if (d <= 2) m->hit2++;
+            if (d <= 4) m->hit4++;
+            if (d > m->maxDiff) m->maxDiff = d;
+            if (((hVal < 62) != (exVal < 62))) m->waterFlips++;
+            if (fluidBucket(hVal) != fluidBucket(exVal)) m->bucketMismatch++;
+            m->cells++;
+        }
     }
 }
 
@@ -222,7 +228,7 @@ int main(int argc, char **argv)
                  * surface-biome pass that hits the memo). */
                 if (cfxOverviewHeightsImpl(p_env, &ctx, winX, winZ, WINDOW,
                         WINDOW, stride, (jintArray) optH,
-                        &CFX_DETAIL_FULL) != CFX_OK)
+                        &CFX_DETAIL_FULL, 0) != CFX_OK)
                     return 4;
                 if (cfxGenerateOverviewBiomes(&ctx, winX, winZ, WINDOW,
                         WINDOW, stride, optB) != CFX_OK)
@@ -265,8 +271,8 @@ int main(int argc, char **argv)
                 }
 
                 /* Interior height/kind/depth metrics. */
-                accumulateHeights(&opt, optH, exSolid, INTERIOR * INTERIOR);
-                accumulateHeights(&mast, mastH, exSolid, INTERIOR * INTERIOR);
+                accumulateHeights(&opt, optH, WINDOW, exSolid, INTERIOR, INTERIOR);
+                accumulateHeights(&mast, mastH, WINDOW, exSolid, INTERIOR, INTERIOR);
 
                 /* Biome agreement on the interior. */
                 for (j = 0; j < INTERIOR; j++)

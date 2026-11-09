@@ -169,6 +169,7 @@ tasks.register('testNativeLegacy') {
     ]
     final File matrixBin = rootProject.file('build/bin/test_legacy_matrix')
     final File webBin = rootProject.file('build/bin/test_web_legacy')
+    final File fullscaleBin = rootProject.file('build/bin/test_legacy_fullscale')
     final boolean fullMatrix = project.hasProperty('fullLegacyMatrix')
     doLast {
         if (['which', 'cc'].execute().waitFor() != 0) {
@@ -178,6 +179,7 @@ tasks.register('testNativeLegacy') {
         final List<List<String>> builds = [
             ['cc'] + harnessCflags + ['-o', matrixBin.absolutePath, 'native/test_legacy_matrix.c'] + cubiomesSources + ['-lm'],
             ['cc'] + harnessCflags + ['-o', webBin.absolutePath, 'native/test_web_legacy.c'] + cubiomesSources + ['-lm'],
+            ['cc'] + harnessCflags + ['-o', fullscaleBin.absolutePath, 'native/test_legacy_fullscale.c'] + cubiomesSources + ['-lm'],
         ]
         builds.each { final List<String> command ->
             final Process process = command.execute(null, rootProject.projectDir)
@@ -197,6 +199,7 @@ tasks.register('testNativeLegacy') {
             process.waitForProcessOutput(output, output)
             logger.lifecycle(output.toString().readLines().findAll {
                 it.contains('mismatch') || it.contains('failures') || it.contains('drift') ||
+                    it.contains('gates:') || it.contains('FAIL:') ||
                     it.startsWith('macro ') || it.startsWith('trunc ')
             }.join('\n'))
             if (process.exitValue() != 0) {
