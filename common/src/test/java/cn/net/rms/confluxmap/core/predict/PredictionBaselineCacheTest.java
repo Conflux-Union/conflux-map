@@ -72,8 +72,18 @@ class PredictionBaselineCacheTest {
         cache.put(key(1, 1, 0, WorldPreset.DEFAULT, 127), tile());
         final PredictionBaselineCache.Planes planes = cache.get(key(0, 1, 0, WorldPreset.DEFAULT, 127));
         assertSame(first.packedSurfaceKind(), planes.surfaceKind());
-        assertSame(first.fluidDepth(), planes.fluidDepth());
-        assertSame(first.biomes(), planes.biomes());
+        final BaselineGrid reconstructedGrid = new BaselineGrid(0, 0, 0);
+        final DerivedGrid reconstructedDerived = new DerivedGrid();
+        planes.reconstruct(reconstructedGrid, reconstructedDerived);
+        for (int i = 0; i < PackedSurfacePlane.CELLS; i++) {
+            assertEquals(first.fluidDepth()[i] & 0xFF, reconstructedDerived.fluidDepth[i]);
+        }
+        for (int z = 0; z < BaselineGrid.PIXELS; z++) {
+            for (int x = 0; x < BaselineGrid.PIXELS; x++) {
+                assertEquals(first.biomes()[z * BaselineGrid.PIXELS + x] & 0xFF,
+                    reconstructedGrid.biomeId[BaselineGrid.index(x, z)]);
+            }
+        }
         cache.put(key(2, 1, 0, WorldPreset.DEFAULT, 127), tile());
         assertNull(cache.get(key(1, 1, 0, WorldPreset.DEFAULT, 127)));
         assertNotNull(cache.get(key(0, 1, 0, WorldPreset.DEFAULT, 127)));

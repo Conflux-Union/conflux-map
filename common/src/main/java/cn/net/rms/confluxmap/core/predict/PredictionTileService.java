@@ -1358,7 +1358,7 @@ public final class PredictionTileService {
         if (baseline != null) {
             grid = new BaselineGrid(lod, tileOriginX, tileOriginZ);
             derived = new DerivedGrid();
-            reconstructGrids(baseline.surfaceKind(), baseline.fluidDepth(), baseline.biomes(), grid, derived);
+            baseline.reconstruct(grid, derived);
             quadrantMask = reapplyCachedLayering(key, grid, derived);
         } else if (lowerNetherBiome) {
             final BaselineSampler sampler = new NativeBaselineSampler(
