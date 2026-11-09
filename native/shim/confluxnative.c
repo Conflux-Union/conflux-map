@@ -1105,8 +1105,23 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     CfxContext *ctx = cfxHandle(handle);
     if (ctx == NULL)
         return CFX_ERR_BAD_HANDLE;
+    const CfxNoiseDetail detail = cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
     return cfxOverviewHeightsImpl(
-        env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &CFX_DETAIL_FULL
+        env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &detail
+    );
+}
+
+/*
+ * Backward compatibility alias for earlier Java bindings looking for the coarse entry.
+ * Now unified into the adaptive implementation above.
+ */
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxOverviewHeightsCoarse(
+    JNIEnv *env, jclass clazz, jlong handle,
+    jint blockX, jint blockZ, jint w, jint h, jint stride,
+    jintArray outTerrainY
+) {
+    return Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxOverviewHeights(
+        env, clazz, handle, blockX, blockZ, w, h, stride, outTerrainY
     );
 }
 
