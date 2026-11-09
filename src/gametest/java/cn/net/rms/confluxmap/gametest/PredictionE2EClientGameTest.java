@@ -57,10 +57,15 @@ package cn.net.rms.confluxmap.gametest;
 //$$                 // A throwaway save so the NORMAL world type set here never leaks into
 //$$                 // the consistent-settings world the other gametests share.
 //$$                 .setUseConsistentSettings(false)
-//$$                 .adjustSettings(creator -> creator.setWorldType(
-//$$                     // The normal tag's first entry is vanilla "normal" (then flat, ...);
-//$$                     // WorldType carries no public constant for it on these versions.
-//$$                     creator.getNormalWorldTypes().get(0)))
+//$$                 .adjustSettings(creator -> {
+//$$                     // The throwaway save's seed is random per run; pin it so two
+//$$                     // measurement rounds' tile counts and walls stay comparable.
+//$$                     creator.setSeed("146008555");
+//$$                     creator.setWorldType(
+//$$                         // The normal tag's first entry is vanilla "normal" (then flat, ...);
+//$$                         // WorldType carries no public constant for it on these versions.
+//$$                         creator.getNormalWorldTypes().get(0));
+//$$                 })
 //$$                 .create()
 //$$         ) {
 //$$             final boolean timingWasOn = Boolean.getBoolean(TIMING_FLAG);
