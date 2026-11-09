@@ -9,6 +9,13 @@
 //    regardless of tile slicing origins or boundary padding (0 mismatch);
 // 3. 5-point cross detection + 8x8 sub-quadrant fallback refinement;
 // 4. Memory safety: strict bounds-clamped indices with zero row overflow (ASan clean).
+//
+// MIRROR: the browser predictor re-implements this exact algorithm in
+// native/web/confluxpredict.c (cfxWebEvaluateAdaptiveMacroGrid + friends) because the two
+// translation units have different contexts, prefixes and error codes. Any change to the
+// subdivision gate, the 5-point topology, the waterline band or the interpolation rounding
+// MUST be applied to both copies in the same commit, or the in-game map and the web preview
+// silently diverge.
 // ==============================================================================
 
 // Strictly symmetric linear interpolation with unbiased rounding.
@@ -55,7 +62,9 @@ static inline int cfxEvaluateAdaptiveMacroGrid(
 {
     const int W = gridW;
     const int H = gridH;
-    if (W <= 0 || H <= 0) return CFX_OK;
+    // Empty queries are a caller bug, not a success: returning CFX_OK here would let the caller
+    // interpolate an uninitialised lattice.
+    if (W <= 0 || H <= 0) return CFX_ERR_BAD_SIZE;
 
     // 1. Align world coordinates to 4-block macro cell bounds
     const int startCellX = floordiv(minX4, 4);
@@ -117,7 +126,7 @@ static inline int cfxEvaluateAdaptiveMacroGrid(
             if (cMid < min_h) min_h = cMid;
             if (cMid > max_h) max_h = cMid;
 
-            const int is_waterline = (min_h <= 65 && max_h >= 61);
+            const int is_waterline = (min_h <= CFX_WATERLINE_CELL_HI && max_h >= CFX_WATERLINE_CELL_LO);
             const int energy = cfxEvaluateCurvatureEnergy(c00, c10, c01, c11, cMid);
 
             if (energy > 4 || is_waterline) {
@@ -150,7 +159,7 @@ static inline int cfxEvaluateAdaptiveMacroGrid(
                         if (qc11 < qmin) qmin = qc11;
                         if (qc11 > qmax) qmax = qc11;
 
-                        const int q_is_waterline = (qmin <= 65 && qmax >= 61);
+                        const int q_is_waterline = (qmin <= CFX_WATERLINE_CELL_HI && qmax >= CFX_WATERLINE_CELL_LO);
                         if (qmax - qmin > 4 || q_is_waterline) {
                             for (int lz = subZ0; lz < subZ1; lz++) {
                                 int worldZ4 = minZ4 + lz;

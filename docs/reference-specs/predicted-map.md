@@ -53,8 +53,22 @@ Frozen-ocean surface ice uses Vanilla's fixed temperature-noise mask; deep froze
 ordinary water surface because its visible ice comes from placed iceberg features.
 Every supported Overworld version uses the same overview pipeline. In 1.18+ modern density terrain,
 the native overview height solver employs a globally aligned two-tier spatial-adaptive macro grid
-(16-block macro cells with 8-block sub-quadrants) to accelerate CPU solve throughput by ~4.4x (reducing
-256x256 tile solve time from ~101.7ms down to ~23.4ms).
+(16-block macro cells with 8-block sub-quadrants). The speedup is strongly terrain-dependent, because
+flat ocean basins need almost no refinement while rugged inland relief refines most cells, so it is
+reported per region rather than as one figure (258x258 tile, stride 1, single core, gcc 14.2 `-O3`,
+seed 146008555, Master snapshot `a966dcf1` vs this branch, `./gradlew benchNative` reproduces the
+shape on the host):
+
+| Region | Master | Adaptive grid | Speedup |
+|---|---|---|---|
+| Spawn (0, 0) | 109.4 ms | 61.9 ms | 1.8x |
+| Mid-far (5,000,000, 5,000,000) | 101.2 ms | 48.9 ms | 2.1x |
+| World border (30,000,000, 30,000,000) | 97.9 ms | 23.2 ms | 4.2x |
+
+The world-border figure is an open-ocean best case (nearly every macro cell passes the flatness
+gate) and must not be quoted as an average: inland spawn terrain lands near 1.8x, and end-to-end tile
+rendering is bounded further by the stages Amdahl's law leaves untouched (exact residual anchors,
+surface biome sampling, canopy, hillshading).
 To prevent isolated relief features from escaping coarse macro corners, the primary tier uses a 5-point
 cross detection scheme (four corners plus the cell center `cMid`) coupled with discrete Laplacian curvature
 and saddle-energy evaluation. Cells with curvature or height drop exceeding 4 blocks, as well as cells
