@@ -125,7 +125,7 @@ int main(void)
             const double t0 = get_time_sec();
             const jint err = cfxOverviewHeightsImpl(
                 p_env, &ctx, originX, 0, count_1d, count_1d, stride,
-                (jintArray) buf, &CFX_DETAIL_FULL);
+                (jintArray) buf, &CFX_DETAIL_FULL, 0);
             const double t1 = get_time_sec();
             if (err != CFX_OK)
             {
