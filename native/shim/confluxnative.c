@@ -1105,7 +1105,11 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     CfxContext *ctx = cfxHandle(handle);
     if (ctx == NULL)
         return CFX_ERR_BAD_HANDLE;
-    const CfxNoiseDetail detail = cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
+    /* 1x1 micro-queries are strictly reserved for waterline / coastline point precision
+     * and must always preserve the unapproximated, full-detail point solve contract. */
+    const CfxNoiseDetail detail = (w == 1 && h == 1)
+        ? CFX_DETAIL_FULL
+        : cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
     return cfxOverviewHeightsImpl(
         env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &detail
     );
