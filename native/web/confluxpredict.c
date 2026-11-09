@@ -890,8 +890,9 @@ static int cfxWebOverviewHeights(
     int blockX, int blockZ, int w, int h, int stride, int *out
 )
 {
+    CfxWebNoiseDetail detail = cfxWebNoiseDetailForStride(&generator.bn.terrain, stride);
     return cfxWebOverviewHeightsImpl(
-        blockX, blockZ, w, h, stride, out, &CFX_WEB_DETAIL_FULL
+        blockX, blockZ, w, h, stride, out, &detail
     );
 }
 

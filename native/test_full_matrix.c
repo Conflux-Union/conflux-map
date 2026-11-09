@@ -14,6 +14,13 @@
 #include "shim/confluxnative.c"
 #include "shim/master_clean_impl.h"
 
+#define CFX_CHECK(expr) do { \
+    if (!(expr)) { \
+        fprintf(stderr, "FATAL CHECK FAILED: %s at %s:%d\n", #expr, __FILE__, __LINE__); \
+        exit(1); \
+    } \
+} while (0)
+
 // Static assertion ensuring generator snapshot structs remain binary isomorphic
 _Static_assert(sizeof(CfxContext) == sizeof(MasterCfxContext), "Context size mismatch between opt and master");
 _Static_assert(sizeof(CfxNoiseDetail) == sizeof(MasterCfxNoiseDetail), "NoiseDetail size mismatch");
@@ -73,10 +80,10 @@ static void test_surface_biome_sampling(JNIEnv *env, CfxContext *ctx) {
         for (size_t y = 0; y < sizeof(heights) / sizeof(heights[0]); y++) {
             int terrainY = heights[y];
             int expected = -1;
-            assert(Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxSurfaceBiomes(
+            CFX_CHECK(Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxSurfaceBiomes(
                 env, NULL, (jlong)(intptr_t)ctx, origins[p][0], origins[p][1], 1, 1, 1,
                 (jintArray)&terrainY, (jintArray)&expected) == CFX_OK);
-            assert(surface_biome_at_height(ctx, origins[p][0], origins[p][1], terrainY) == expected);
+            CFX_CHECK(surface_biome_at_height(ctx, origins[p][0], origins[p][1], terrainY) == expected);
         }
     }
     puts("Surface-biome audit sampling matches the production JNI entry at 20 columns.");
@@ -97,13 +104,13 @@ static void run_case(
     // 1. Optimized implementation solve
     CfxNoiseDetail detail_opt = cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
     double t0_opt = get_time_ms();
-    assert(cfxOverviewHeightsImpl(env, ctx, ox, oz, w, h, stride, (jintArray)pred_opt, &detail_opt) == CFX_OK);
+    CFX_CHECK(cfxOverviewHeightsImpl(env, ctx, ox, oz, w, h, stride, (jintArray)pred_opt, &detail_opt) == CFX_OK);
     res->time_opt_ms = get_time_ms() - t0_opt;
 
     // 2. Authentic master baseline solve (zero file IO)
     MasterCfxNoiseDetail detail_master = master_cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
     double t0_mst = get_time_ms();
-    assert(master_cfxOverviewHeightsImpl(env, (MasterCfxContext *)ctx, ox, oz, w, h, stride, (jintArray)pred_master, &detail_master) == 0);
+    CFX_CHECK(master_cfxOverviewHeightsImpl(env, (MasterCfxContext *)ctx, ox, oz, w, h, stride, (jintArray)pred_master, &detail_master) == 0);
     res->time_master_ms = get_time_ms() - t0_mst;
 
     // 3. Ground truth evaluation with error checks

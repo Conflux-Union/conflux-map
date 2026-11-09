@@ -128,6 +128,13 @@ class PredictionBaselineCacheTest {
         // Now with configuredLimit = 64, even a huge viewport cannot exceed 64
         cache.adaptToViewport(200);
         assertEquals(64, cache.limit(), "Adaptive expansion must respect configured tier ceiling");
+
+        // Configured ceiling lower than DEFAULT_MIN_TILES (e.g. 1 in testing) is strictly respected
+        cache.setLimit(1);
+        assertEquals(1, cache.configuredLimit());
+        assertEquals(1, cache.limit());
+        cache.adaptToViewport(100);
+        assertEquals(1, cache.limit(), "Viewport adaptation must never breach configured ceiling even below minimum");
     }
 
     @Test

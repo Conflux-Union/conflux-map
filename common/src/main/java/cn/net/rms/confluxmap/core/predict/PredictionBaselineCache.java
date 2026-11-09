@@ -81,7 +81,7 @@ final class PredictionBaselineCache {
             return;
         }
         final int needed = (int) Math.ceil(activeViewportTiles * 1.5);
-        final int target = Math.max(DEFAULT_MIN_TILES, Math.min(configuredLimit, needed));
+        final int target = Math.min(configuredLimit, Math.max(DEFAULT_MIN_TILES, needed));
         if (target > limit) {
             limit = target;
         }
