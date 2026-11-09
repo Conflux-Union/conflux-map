@@ -15,15 +15,53 @@ import org.junit.jupiter.api.Test;
 class PredictionBaselineCacheTest {
     @Test
     void baselineIdentityIncludesSeedPresetReloadAndNetherHeight() {
-        final PredictionBaselineCache cache = new PredictionBaselineCache(8);
-        cache.put(key(0, 1, 0, WorldPreset.DEFAULT, 127), tile());
-        assertNotNull(cache.get(key(0, 1, 0, WorldPreset.DEFAULT, 127)));
-        assertNull(cache.get(key(0, 2, 0, WorldPreset.DEFAULT, 127)));
-        assertNull(cache.get(key(0, 1, 1, WorldPreset.DEFAULT, 127)));
-        assertNull(cache.get(key(0, 1, 0, WorldPreset.FLAT, 127)));
-        assertNull(cache.get(key(0, 1, 0, WorldPreset.DEFAULT, 63)));
+        final PredictionBaselineCache cache = new PredictionBaselineCache(16);
+        final FlatBaseline flat1 = new FlatBaseline(1, 64, 0, 0, 0, "minecraft:stone");
+        final FlatBaseline flat2 = new FlatBaseline(1, 64, 0, 0, 0, "minecraft:dirt");
+        final QuadrantLayout q1 = new QuadrantLayout(
+            QuadrantLayout.Style.NOISE, null, QuadrantLayout.Style.NOISE, null,
+            QuadrantLayout.Style.NOISE, null, QuadrantLayout.Style.NOISE, null
+        );
+        final QuadrantLayout q1Clone = new QuadrantLayout(
+            QuadrantLayout.Style.NOISE, null, QuadrantLayout.Style.NOISE, null,
+            QuadrantLayout.Style.NOISE, null, QuadrantLayout.Style.NOISE, null
+        );
+        final QuadrantLayout q2 = new QuadrantLayout(
+            QuadrantLayout.Style.FLAT, flat1, QuadrantLayout.Style.NOISE, null,
+            QuadrantLayout.Style.NOISE, null, QuadrantLayout.Style.NOISE, null
+        );
+
+        final PredictionBaselineCache.Key baseKey = fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat1, q1, 127);
+        cache.put(baseKey, tile());
+
+        assertNotNull(cache.get(baseKey));
+        // QuadrantLayout value equality: equal new instance must hit
+        assertNotNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat1, q1Clone, 127)));
+
+        // Distinct dimension checks
+        assertNull(cache.get(fullKey(0, 2, 0, 28, WorldPreset.DEFAULT, flat1, q1, 127)), "seed mismatch");
+        assertNull(cache.get(fullKey(0, 1, 1, 28, WorldPreset.DEFAULT, flat1, q1, 127)), "generation mismatch");
+        assertNull(cache.get(fullKey(0, 1, 0, 29, WorldPreset.DEFAULT, flat1, q1, 127)), "version mismatch");
+        assertNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.FLAT, flat1, q1, 127)), "preset mismatch");
+        assertNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat2, q1, 127)), "flat mismatch");
+        assertNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat1, q2, 127)), "quadrant mismatch");
+        assertNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat1, q1, 63)), "netherY mismatch");
+        assertNull(cache.get(fullKey(1, 1, 0, 28, WorldPreset.DEFAULT, flat1, q1, 127)), "tile coord mismatch");
+
         cache.clear();
         assertEquals(0, cache.size());
+    }
+
+    private static PredictionBaselineCache.Key fullKey(
+        final int x, final long seed, final long generation, final int version,
+        final WorldPreset preset, final FlatBaseline flat, final QuadrantLayout quadrants,
+        final int netherY
+    ) {
+        return new PredictionBaselineCache.Key(
+            new TileKey(WorldIdentity.singleplayer("baseline-cache"), DimensionId.OVERWORLD,
+                "surface!pred", 0, x, 0),
+            1L, generation, seed, version, preset, flat, quadrants, netherY
+        );
     }
 
     @Test

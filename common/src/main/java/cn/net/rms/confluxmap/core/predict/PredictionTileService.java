@@ -1262,6 +1262,9 @@ public final class PredictionTileService {
         final int netherY = requestedLayer.type() == MapLayer.Type.NETHER_SLICE
             ? requestedLayer.param()
             : currentNetherY;
+        final int baselineNetherY = isLowerNetherLayer(key.dimension(), requestedLayer)
+            ? netherY
+            : 0;
 
         final boolean end = PredictionDimensions.isEnd(key.dimension());
         final int lod = key.lod();
@@ -1344,10 +1347,14 @@ public final class PredictionTileService {
         final DerivedGrid derived;
         final QuadrantLayout quadrants = state.quadrantLayout(key.dimension());
         final QuadrantLayout.Mask quadrantMask;
-        final PredictionBaselineCache.Key baselineKey = baselineCacheKey(key, token, netherY);
         // Flat grids carry their own fixed texture origin and do not need expensive sampling.
         final boolean cacheBaseline = !isSuperflat(key.dimension());
-        final PredictionBaselineCache.Planes baseline = cacheBaseline ? baselineCache.get(baselineKey) : null;
+        final PredictionBaselineCache.Key baselineKey = cacheBaseline
+            ? baselineCacheKey(key, token, baselineNetherY)
+            : null;
+        final PredictionBaselineCache.Planes baseline = baselineKey != null
+            ? baselineCache.get(baselineKey)
+            : null;
         if (baseline != null) {
             grid = new BaselineGrid(lod, tileOriginX, tileOriginZ);
             derived = new DerivedGrid();
@@ -1447,9 +1454,9 @@ public final class PredictionTileService {
         );
         // A late composition cannot repopulate a reloaded session's baseline cache. Keep only
         // directly sampled, non-supersampled planes: packing sub-samples would lose information.
-        if (cacheBaseline && baseline == null && !grid.supersampled()) {
+        if (baselineKey != null && baseline == null && !grid.supersampled()) {
             synchronized (this) {
-                if (baselineKey.equals(baselineCacheKey(key, token, netherY))) {
+                if (baselineKey.equals(baselineCacheKey(key, token, baselineNetherY))) {
                     baselineCache.put(baselineKey, planar);
                 }
             }
@@ -1466,9 +1473,10 @@ public final class PredictionTileService {
         );
     }
 
-    private synchronized PredictionBaselineCache.Key baselineCacheKey(
+    private PredictionBaselineCache.Key baselineCacheKey(
         final TileKey key, final long token, final int netherY
     ) {
+        final PredictionState state = this.state;
         return new PredictionBaselineCache.Key(
             key, token, reloadGeneration, state.seed(), state.mcVersion(),
             state.preset(key.dimension()), state.flatBaseline(key.dimension()),
