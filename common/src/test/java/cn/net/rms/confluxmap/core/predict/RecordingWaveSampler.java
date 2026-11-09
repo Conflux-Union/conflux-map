@@ -30,8 +30,40 @@ final class RecordingWaveSampler implements BaselineSampler, WaveComposer.BatchD
     volatile boolean refuseBatches;
     /** When set, the first context-identity probe (the leader's batch planning) mutates the seed. */
     volatile boolean mutateSeedOnContextProbe;
+    /** When set, the sparse band/cells entries refuse after recording their requests; callers repair per point. */
+    volatile boolean refuseSparse;
+    /** Per-point band entry (1x1 overviewHeights) fails at this packed coordinate; sentinel = never fails. */
+    volatile long failOverviewHeightsAt = NO_FAILURE;
+    /** Band sparse entry fails once its requests include this packed coordinate; sentinel = never fails. */
+    volatile long failSparseBandAt = NO_FAILURE;
     /** The identity the wave was admitted with; the probe compares it against the live seed. */
     volatile long seed = SEED;
+
+    final List<String> sparseCalls = Collections.synchronizedList(new ArrayList<>());
+    /** {blockX, blockZ, w, h, stride} per per-point overviewHeights call, in call order. */
+    final List<int[]> overviewHeightCalls = Collections.synchronizedList(new ArrayList<>());
+    /** {blockX, blockZ, w, h, stride} per per-point surfaceBiomes call, in call order. */
+    final List<int[]> surfaceBiomeCalls = Collections.synchronizedList(new ArrayList<>());
+    /** Packed block coordinates requested point-by-point through the band sparse entry. */
+    final List<Long> sparseBandRequests = Collections.synchronizedList(new ArrayList<>());
+    /** Packed block coordinates requested cell-by-cell through the cells sparse entry. */
+    final List<Long> sparseCellRequests = Collections.synchronizedList(new ArrayList<>());
+    private long sparsePoints;
+
+    /**
+     * Packed coordinate sentinel that can never match: the low half is an unsigned blockZ, so
+     * this pattern needs an out-of-range blockX to occur.
+     */
+    private static final long NO_FAILURE = 0x8000000000000000L;
+
+    /** Total output points carried by accepted sparse calls. */
+    long sparsePoints() {
+        return sparsePoints;
+    }
+
+    private static long pack(final int blockX, final int blockZ) {
+        return ((long) blockX << 32) | (blockZ & 0xFFFFFFFFL);
+    }
 
     /**
      * Only the seed can drift in this fake (the mc version is an opaque constant every caller
@@ -62,7 +94,11 @@ final class RecordingWaveSampler implements BaselineSampler, WaveComposer.BatchD
         final int blockX, final int blockZ, final int w, final int h, final int stride, final int[] outTerrainY
     ) {
         perTileCalls.add("overviewHeights");
+        overviewHeightCalls.add(new int[] {blockX, blockZ, w, h, stride});
         throwIfArmed();
+        if (w == 1 && h == 1 && pack(blockX, blockZ) == failOverviewHeightsAt) {
+            return false;
+        }
         fillHeights(blockX, blockZ, w, h, stride, outTerrainY, 0);
         return true;
     }
@@ -84,7 +120,54 @@ final class RecordingWaveSampler implements BaselineSampler, WaveComposer.BatchD
         final int[] terrainY, final int[] outBiomeIds
     ) {
         perTileCalls.add("surfaceBiomes");
+        surfaceBiomeCalls.add(new int[] {blockX, blockZ, w, h, stride});
         fillBiomes(blockX, blockZ, w, h, stride, outBiomeIds, 0);
+        return true;
+    }
+
+    @Override
+    public boolean overviewHeightsSparse(final int[] blockX, final int[] blockZ, final int n, final int[] outTerrainY) {
+        // Band heights are per-tile height queries wherever they are dispatched from.
+        throwIfArmed();
+        sparseCalls.add("bandSparse:" + n);
+        boolean fail = refuseSparse;
+        for (int i = 0; i < n; i++) {
+            final long packed = pack(blockX[i], blockZ[i]);
+            sparseBandRequests.add(packed);
+            fail |= packed == failSparseBandAt;
+        }
+        if (fail) {
+            return false;
+        }
+        for (int i = 0; i < n; i++) {
+            outTerrainY[i] = heightAt(blockX[i], blockZ[i]);
+        }
+        sparsePoints += n;
+        return true;
+    }
+
+    @Override
+    public boolean surfaceBiomesSparse(
+        final int[] cellX, final int[] cellZ, final int edge, final int stride,
+        final int[] terrainYPacked, final int n, final int[] outBiomeIdsPacked
+    ) {
+        sparseCalls.add("cellsSparse:" + n);
+        for (int i = 0; i < n; i++) {
+            sparseCellRequests.add(pack(cellX[i], cellZ[i]));
+        }
+        if (refuseSparse) {
+            return false;
+        }
+        final int points = edge * edge;
+        for (int i = 0; i < n; i++) {
+            for (int row = 0; row < edge; row++) {
+                for (int col = 0; col < edge; col++) {
+                    outBiomeIdsPacked[i * points + row * edge + col]
+                        = biomeAt(cellX[i] + col * stride, cellZ[i] + row * stride);
+                }
+            }
+        }
+        sparsePoints += (long) n * points;
         return true;
     }
 

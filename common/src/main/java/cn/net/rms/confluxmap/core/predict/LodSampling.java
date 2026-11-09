@@ -1212,7 +1212,7 @@ public final class LodSampling {
         final int biomeAnchorCellsZ0
     ) {
         final int blocksPerPixel = 1 << lod;
-        final int[] exact = new int[1];
+        final SparseRequests requests = new SparseRequests();
         for (int j = 0; j < height; j++) {
             final int pixelZ = minPixelZ + j;
             final int anchorZ = Math.floorDiv(pixelZ, 2) - lattice.minKz;
@@ -1249,17 +1249,111 @@ public final class LodSampling {
                         anchorX + lattice.minKx, anchorZ + lattice.minKz)) {
                     continue;
                 }
-                if (!sampler.overviewHeights(
+                requests.add(j * width + i,
                     tileOriginX + pixelX * blocksPerPixel,
-                    tileOriginZ + pixelZ * blocksPerPixel,
-                    1, 1, 4, exact
-                )) {
+                    tileOriginZ + pixelZ * blocksPerPixel);
+            }
+        }
+        return resolveBandRequests(sampler, requests, out);
+    }
+
+    /**
+     * Sparse-transport thresholds for the collected band/cells requests: below {@code
+     * SPARSE_MIN_POINTS} the per-point entries stay cheaper than packing one sparse call, and
+     * larger collections dispatch in bounded chunks so a coastline tile's measured 0..~2000
+     * waterline points never grow an unbounded native batch.
+     */
+    private static final int SPARSE_MIN_POINTS = 16;
+    /**
+     * Sparse chunk caps. The per-dispatch fixed cost (~0.6ms) amortizes over the chunk, so
+     * larger chunks cut the serialized queue length until per-point compute dominates; 32K
+     * points / 8K cells is the measured sweet spot on the RTX 4060 (wall still falls from
+     * 4096 to 16K chunks but is flat past 32K).
+     */
+    private static final int SPARSE_CHUNK_POINTS = 32768;
+    /** Cells per packed sparse call; each cell carries {@code edge*edge} points. */
+    private static final int SPARSE_CHUNK_CELLS = 8192;
+
+    /**
+     * Executes a collected band: an empty collection resolves without touching the sampler, a
+     * sub-threshold one stays on the per-point entries, and larger ones dispatch bounded sparse
+     * chunks whose failure repairs through the per-point entry in collection order - so the
+     * first failing request aborts exactly where the per-point loop would have.
+     */
+    private static boolean resolveBandRequests(
+        final BaselineSampler sampler,
+        final SparseRequests requests,
+        final int[] out
+    ) {
+        if (requests.count == 0) {
+            return true;
+        }
+        final int[] exact = new int[1];
+        if (requests.count < SPARSE_MIN_POINTS) {
+            for (int k = 0; k < requests.count; k++) {
+                if (!sampler.overviewHeights(requests.blockX(k), requests.blockZ(k), 1, 1, 4, exact)) {
                     return false;
                 }
-                out[j * width + i] = exact[0];
+                out[requests.destIndex(k)] = exact[0];
+            }
+            return true;
+        }
+        final int chunkPoints = Math.min(requests.count, SPARSE_CHUNK_POINTS);
+        final int[] chunkX = new int[chunkPoints];
+        final int[] chunkZ = new int[chunkPoints];
+        final int[] chunkY = new int[chunkPoints];
+        for (int start = 0; start < requests.count; start += SPARSE_CHUNK_POINTS) {
+            final int n = Math.min(SPARSE_CHUNK_POINTS, requests.count - start);
+            for (int k = 0; k < n; k++) {
+                chunkX[k] = requests.blockX(start + k);
+                chunkZ[k] = requests.blockZ(start + k);
+            }
+            if (!sampler.overviewHeightsSparse(chunkX, chunkZ, n, chunkY)) {
+                for (int k = 0; k < n; k++) {
+                    if (!sampler.overviewHeights(chunkX[k], chunkZ[k], 1, 1, 4, exact)) {
+                        return false;
+                    }
+                    out[requests.destIndex(start + k)] = exact[0];
+                }
+                continue;
+            }
+            for (int k = 0; k < n; k++) {
+                out[requests.destIndex(start + k)] = chunkY[k];
             }
         }
         return true;
+    }
+
+    /**
+     * Growable (destIndex, blockX, blockZ) request triplets collected for one refinement sweep.
+     * Collection order is execution order, so a chunked dispatch and its repair walk the same
+     * requests the pre-split per-point loop issued.
+     */
+    private static final class SparseRequests {
+        private int[] data = new int[3 * 64];
+        private int count;
+
+        void add(final int destIndex, final int blockX, final int blockZ) {
+            if (data.length < (count + 1) * 3) {
+                data = java.util.Arrays.copyOf(data, data.length * 2);
+            }
+            data[count * 3] = destIndex;
+            data[count * 3 + 1] = blockX;
+            data[count * 3 + 2] = blockZ;
+            count++;
+        }
+
+        int destIndex(final int i) {
+            return data[i * 3];
+        }
+
+        int blockX(final int i) {
+            return data[i * 3 + 1];
+        }
+
+        int blockZ(final int i) {
+            return data[i * 3 + 2];
+        }
     }
 
     /*
@@ -1513,8 +1607,8 @@ public final class LodSampling {
         final int rawW = cellsW * step;
         final int rawH = cellsH * step;
         final int[] raw = new int[rawW * rawH];
+        final SparseCellRequests requests = new SparseCellRequests(step * step);
         final int[] cellHeights = new int[step * step];
-        final int[] refined = new int[step * step];
         for (int cz = cellZ0; cz < cellZ0 + cellsH; cz++) {
             final int z0 = (cz - cellZ0) * step;
             for (int cx = cellX0; cx < cellX0 + cellsW; cx++) {
@@ -1560,19 +1654,138 @@ public final class LodSampling {
                                 + (cx * step + x) / sub - heightBaseCol];
                     }
                 }
-                if (!sampler.surfaceBiomes(
+                requests.add(z0 * rawW + x0,
                     blockX0 + cx * step * subStride,
                     blockZ0 + cz * step * subStride,
-                    step, step, subStride, cellHeights, refined
+                    cellHeights);
+            }
+        }
+        return resolveCellRequests(sampler, requests, step, subStride, raw, rawW);
+    }
+
+    /**
+     * Executes collected cell requests with the same threshold/chunk/repair structure as the
+     * band: sub-threshold collections stay per cell, larger ones dispatch bounded sparse chunks
+     * whose failure repairs cell by cell in collection order, and the first failed repair cell
+     * returns null exactly where the per-cell loop would have.
+     */
+    private static int[] resolveCellRequests(
+        final BaselineSampler sampler,
+        final SparseCellRequests requests,
+        final int edge,
+        final int stride,
+        final int[] raw,
+        final int rawW
+    ) {
+        final int points = edge * edge;
+        if (requests.count == 0) {
+            return raw;
+        }
+        final int[] refined = new int[points];
+        if (requests.count < SPARSE_MIN_POINTS) {
+            final int[] heights = new int[points];
+            for (int k = 0; k < requests.count; k++) {
+                requests.copyHeights(k, heights);
+                if (!sampler.surfaceBiomes(
+                    requests.cellX(k), requests.cellZ(k), edge, edge, stride, heights, refined
                 )) {
                     return null;
                 }
-                for (int z = 0; z < step; z++) {
-                    System.arraycopy(refined, z * step, raw, (z0 + z) * rawW + x0, step);
+                scatterCellRows(raw, rawW, requests.destRawOffset(k), refined, 0, edge);
+            }
+            return raw;
+        }
+        final int chunkCells = Math.min(requests.count, SPARSE_CHUNK_CELLS);
+        final int[] chunkX = new int[chunkCells];
+        final int[] chunkZ = new int[chunkCells];
+        final int[] chunkHeights = new int[chunkCells * points];
+        final int[] chunkBiomes = new int[chunkCells * points];
+        final int[] heights = new int[points];
+        for (int start = 0; start < requests.count; start += SPARSE_CHUNK_CELLS) {
+            final int n = Math.min(SPARSE_CHUNK_CELLS, requests.count - start);
+            for (int k = 0; k < n; k++) {
+                chunkX[k] = requests.cellX(start + k);
+                chunkZ[k] = requests.cellZ(start + k);
+            }
+            requests.copyHeightsRange(start, n, chunkHeights);
+            if (!sampler.surfaceBiomesSparse(chunkX, chunkZ, edge, stride, chunkHeights, n, chunkBiomes)) {
+                for (int k = 0; k < n; k++) {
+                    System.arraycopy(chunkHeights, k * points, heights, 0, points);
+                    if (!sampler.surfaceBiomes(chunkX[k], chunkZ[k], edge, edge, stride, heights, refined)) {
+                        return null;
+                    }
+                    scatterCellRows(raw, rawW, requests.destRawOffset(start + k), refined, 0, edge);
                 }
+                continue;
+            }
+            for (int k = 0; k < n; k++) {
+                scatterCellRows(raw, rawW, requests.destRawOffset(start + k), chunkBiomes, k * points, edge);
             }
         }
         return raw;
+    }
+
+    /** Copies one cell's {@code edge x edge} points into the raw sweep at its collected offset. */
+    private static void scatterCellRows(
+        final int[] raw,
+        final int rawW,
+        final int destRawOffset,
+        final int[] src,
+        final int srcPos,
+        final int edge
+    ) {
+        for (int z = 0; z < edge; z++) {
+            System.arraycopy(src, srcPos + z * edge, raw, destRawOffset + z * rawW, edge);
+        }
+    }
+
+    /**
+     * Growable (destRawOffset, cellX, cellZ) triplets plus each cell's packed {@code edge*edge}
+     * height inputs, collected for one cells sweep. Triplets and heights share one capacity so
+     * both grow in lockstep with the cell count.
+     */
+    private static final class SparseCellRequests {
+        private final int pointsPerCell;
+        private int[] data = new int[3 * 64];
+        private int[] heights;
+        private int count;
+
+        SparseCellRequests(final int pointsPerCell) {
+            this.pointsPerCell = pointsPerCell;
+            this.heights = new int[pointsPerCell * 64];
+        }
+
+        void add(final int destRawOffset, final int cellX, final int cellZ, final int[] cellHeights) {
+            if (data.length < (count + 1) * 3) {
+                data = java.util.Arrays.copyOf(data, data.length * 2);
+                heights = java.util.Arrays.copyOf(heights, heights.length * 2);
+            }
+            data[count * 3] = destRawOffset;
+            data[count * 3 + 1] = cellX;
+            data[count * 3 + 2] = cellZ;
+            System.arraycopy(cellHeights, 0, heights, count * pointsPerCell, pointsPerCell);
+            count++;
+        }
+
+        int destRawOffset(final int i) {
+            return data[i * 3];
+        }
+
+        int cellX(final int i) {
+            return data[i * 3 + 1];
+        }
+
+        int cellZ(final int i) {
+            return data[i * 3 + 2];
+        }
+
+        void copyHeights(final int i, final int[] dst) {
+            System.arraycopy(heights, i * pointsPerCell, dst, 0, pointsPerCell);
+        }
+
+        void copyHeightsRange(final int first, final int n, final int[] dst) {
+            System.arraycopy(heights, first * pointsPerCell, dst, 0, n * pointsPerCell);
+        }
     }
 
     /**

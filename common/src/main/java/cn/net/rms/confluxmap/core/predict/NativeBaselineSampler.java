@@ -24,6 +24,26 @@ public final class NativeBaselineSampler implements BaselineSampler, WaveCompose
     private final int dim;
     private final int flags;
 
+    /**
+     * Latches the sparse refinement entries off for the whole process once the loaded library
+     * proves to predate them ({@link UnsatisfiedLinkError} on the first packed call). These are
+     * optional new symbols on a library whose older exports keep working, so only this
+     * capability drops - never {@link NativeLib#disableForSession}, which would kill the GPU
+     * kernels the same library still serves. Every later call takes the interface's default
+     * per-point loops.
+     */
+    private static volatile boolean sparseNativeAvailable = true;
+
+    /** Whether the sparse native entries are usable on the loaded library; test-visible latch state. */
+    static boolean sparseNativeAvailable() {
+        return sparseNativeAvailable;
+    }
+
+    /** Test seam for the latch: simulate a stale library and restore the default afterwards. */
+    static void setSparseNativeAvailable(final boolean available) {
+        sparseNativeAvailable = available;
+    }
+
     /** {@code flags} are cubiomes {@code setupGenerator} flags - see {@link WorldPreset#cubiomesFlags()}. */
     public NativeBaselineSampler(final int mcVersion, final long seed, final int dim, final int flags) {
         this.mcVersion = mcVersion;
@@ -238,6 +258,38 @@ public final class NativeBaselineSampler implements BaselineSampler, WaveCompose
         }
     }
 
+    /**
+     * One packed JNI call per bounded chunk of the waterline band, resolved on the calling
+     * thread's cached context. A {@code null} context (unsupported identity) and a latched or
+     * newly-missing sparse capability leave the request list to the interface's default
+     * per-point loop; a nonzero status from a working entry returns false so the caller
+     * repairs through {@link #overviewHeights} - all-or-nothing per chunk.
+     */
+    @Override
+    public boolean overviewHeightsSparse(
+        final int[] blockX,
+        final int[] blockZ,
+        final int n,
+        final int[] outTerrainY
+    ) {
+        if (!sparseNativeAvailable) {
+            return BaselineSampler.super.overviewHeightsSparse(blockX, blockZ, n, outTerrainY);
+        }
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);
+            if (ctx == null) {
+                return BaselineSampler.super.overviewHeightsSparse(blockX, blockZ, n, outTerrainY);
+            }
+            return ctx.overviewHeightsSparse(blockX, blockZ, n, outTerrainY) == 0;
+        } catch (final UnsatisfiedLinkError staleLibrary) {
+            sparseNativeAvailable = false;
+            return false;
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return false;
+        }
+    }
+
     @Override
     public boolean surfaceBiomes(
         final int blockX,
@@ -253,6 +305,46 @@ public final class NativeBaselineSampler implements BaselineSampler, WaveCompose
             return ctx != null && ctx.surfaceBiomes(
                 blockX, blockZ, w, h, stride, terrainY, outBiomeIds
             ) == 0;
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return false;
+        }
+    }
+
+    /**
+     * One packed JNI call per bounded chunk of the cell refinement sweep - same capability
+     * split as {@link #overviewHeightsSparse}: unavailable context or missing sparse symbol
+     * takes the interface's default per-cell loop, a working entry's nonzero status returns
+     * false for the caller to repair through {@link #surfaceBiomes}.
+     */
+    @Override
+    public boolean surfaceBiomesSparse(
+        final int[] cellX,
+        final int[] cellZ,
+        final int edge,
+        final int stride,
+        final int[] terrainYPacked,
+        final int n,
+        final int[] outBiomeIdsPacked
+    ) {
+        if (!sparseNativeAvailable) {
+            return BaselineSampler.super.surfaceBiomesSparse(
+                cellX, cellZ, edge, stride, terrainYPacked, n, outBiomeIdsPacked
+            );
+        }
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);
+            if (ctx == null) {
+                return BaselineSampler.super.surfaceBiomesSparse(
+                    cellX, cellZ, edge, stride, terrainYPacked, n, outBiomeIdsPacked
+                );
+            }
+            return ctx.surfaceBiomesSparse(
+                cellX, cellZ, edge, stride, terrainYPacked, n, outBiomeIdsPacked
+            ) == 0;
+        } catch (final UnsatisfiedLinkError staleLibrary) {
+            sparseNativeAvailable = false;
+            return false;
         } catch (final Throwable fault) {
             NativeLib.disableForSession(fault);
             return false;

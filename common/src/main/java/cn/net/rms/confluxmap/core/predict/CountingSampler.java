@@ -18,6 +18,7 @@ final class CountingSampler implements BaselineSampler {
     private final BaselineSampler delegate;
     private long points;
     private final long[] stageNanos = new long[SampleStage.COUNT];
+    private final long[] stageCalls = new long[SampleStage.COUNT];
 
     CountingSampler(final BaselineSampler delegate) {
         this.delegate = delegate;
@@ -35,6 +36,16 @@ final class CountingSampler implements BaselineSampler {
      */
     long[] stageNanos() {
         return stageNanos;
+    }
+
+    /**
+     * Native dispatch count per {@link SampleStage} bucket, indexed by ordinal: per-point entries
+     * count one call each, sparse entries one call per packed invocation rather than per point,
+     * so this is the call-count evidence the batched-refinement work measures against. Same
+     * quiescence contract as {@link #stageNanos()}.
+     */
+    long[] stageCalls() {
+        return stageCalls;
     }
 
     /**
@@ -63,6 +74,7 @@ final class CountingSampler implements BaselineSampler {
         final long start = System.nanoTime();
         final boolean ok = delegate.biomes(scale, x, z, w, h, out);
         stageNanos[SampleStage.SCALE.ordinal()] += System.nanoTime() - start;
+        stageCalls[SampleStage.SCALE.ordinal()]++;
         return ok;
     }
 
@@ -74,6 +86,7 @@ final class CountingSampler implements BaselineSampler {
         final long start = System.nanoTime();
         final boolean ok = delegate.biomesStrided(scale, x, z, w, h, stride, out);
         stageNanos[SampleStage.SCALE.ordinal()] += System.nanoTime() - start;
+        stageCalls[SampleStage.SCALE.ordinal()]++;
         return ok;
     }
 
@@ -85,6 +98,7 @@ final class CountingSampler implements BaselineSampler {
         final long start = System.nanoTime();
         final boolean ok = delegate.biomesSparseStrided(scale, x, z, w, h, stride, out);
         stageNanos[SampleStage.SCALE.ordinal()] += System.nanoTime() - start;
+        stageCalls[SampleStage.SCALE.ordinal()]++;
         return ok;
     }
 
@@ -97,6 +111,7 @@ final class CountingSampler implements BaselineSampler {
         final long start = System.nanoTime();
         final boolean ok = delegate.biomesScanStrided(scale, x, z, w, h, stride, targetBiomeId, out);
         stageNanos[SampleStage.SCALE.ordinal()] += System.nanoTime() - start;
+        stageCalls[SampleStage.SCALE.ordinal()]++;
         return ok;
     }
 
@@ -115,6 +130,7 @@ final class CountingSampler implements BaselineSampler {
         final long start = System.nanoTime();
         final boolean ok = delegate.biomesAtYStrided(blockY, scale, x, z, w, h, stride, out);
         stageNanos[SampleStage.SCALE.ordinal()] += System.nanoTime() - start;
+        stageCalls[SampleStage.SCALE.ordinal()]++;
         return ok;
     }
 
@@ -124,6 +140,7 @@ final class CountingSampler implements BaselineSampler {
         final long start = System.nanoTime();
         final boolean ok = delegate.heights(x4, z4, w, h, outY);
         stageNanos[SampleStage.LEG.ordinal()] += System.nanoTime() - start;
+        stageCalls[SampleStage.LEG.ordinal()]++;
         return ok;
     }
 
@@ -135,6 +152,7 @@ final class CountingSampler implements BaselineSampler {
         final long start = System.nanoTime();
         final boolean ok = delegate.heightsStrided(x4, z4, w, h, stride, outY);
         stageNanos[SampleStage.LEG.ordinal()] += System.nanoTime() - start;
+        stageCalls[SampleStage.LEG.ordinal()]++;
         return ok;
     }
 
@@ -156,6 +174,7 @@ final class CountingSampler implements BaselineSampler {
             blockX, blockZ, w, h, stride, outSolidY, outFluidY, outSurfaceY, outFlags
         );
         stageNanos[SampleStage.COL.ordinal()] += System.nanoTime() - start;
+        stageCalls[SampleStage.COL.ordinal()]++;
         return ok;
     }
 
@@ -172,6 +191,22 @@ final class CountingSampler implements BaselineSampler {
         final long start = System.nanoTime();
         final boolean ok = delegate.overviewHeights(blockX, blockZ, w, h, stride, outTerrainY);
         stageNanos[SampleStage.H.ordinal()] += System.nanoTime() - start;
+        stageCalls[SampleStage.H.ordinal()]++;
+        return ok;
+    }
+
+    @Override
+    public boolean overviewHeightsSparse(
+        final int[] blockX,
+        final int[] blockZ,
+        final int n,
+        final int[] outTerrainY
+    ) {
+        points += n;
+        final long start = System.nanoTime();
+        final boolean ok = delegate.overviewHeightsSparse(blockX, blockZ, n, outTerrainY);
+        stageNanos[SampleStage.H.ordinal()] += System.nanoTime() - start;
+        stageCalls[SampleStage.H.ordinal()]++;
         return ok;
     }
 
@@ -188,6 +223,7 @@ final class CountingSampler implements BaselineSampler {
         final long start = System.nanoTime();
         final boolean ok = delegate.overviewHeightsCoarse(blockX, blockZ, w, h, stride, outTerrainY);
         stageNanos[SampleStage.ANCH.ordinal()] += System.nanoTime() - start;
+        stageCalls[SampleStage.ANCH.ordinal()]++;
         return ok;
     }
 
@@ -205,6 +241,27 @@ final class CountingSampler implements BaselineSampler {
         final long start = System.nanoTime();
         final boolean ok = delegate.surfaceBiomes(blockX, blockZ, w, h, stride, terrainY, outBiomeIds);
         stageNanos[SampleStage.B.ordinal()] += System.nanoTime() - start;
+        stageCalls[SampleStage.B.ordinal()]++;
+        return ok;
+    }
+
+    @Override
+    public boolean surfaceBiomesSparse(
+        final int[] cellX,
+        final int[] cellZ,
+        final int edge,
+        final int stride,
+        final int[] terrainYPacked,
+        final int n,
+        final int[] outBiomeIdsPacked
+    ) {
+        points += (long) n * edge * edge;
+        final long start = System.nanoTime();
+        final boolean ok = delegate.surfaceBiomesSparse(
+            cellX, cellZ, edge, stride, terrainYPacked, n, outBiomeIdsPacked
+        );
+        stageNanos[SampleStage.B.ordinal()] += System.nanoTime() - start;
+        stageCalls[SampleStage.B.ordinal()]++;
         return ok;
     }
 
@@ -214,6 +271,7 @@ final class CountingSampler implements BaselineSampler {
         final long start = System.nanoTime();
         final boolean ok = delegate.endHeights(x4, z4, w, h, outY);
         stageNanos[SampleStage.END.ordinal()] += System.nanoTime() - start;
+        stageCalls[SampleStage.END.ordinal()]++;
         return ok;
     }
 
@@ -225,6 +283,7 @@ final class CountingSampler implements BaselineSampler {
         final long start = System.nanoTime();
         final boolean ok = delegate.endHeightsStrided(x4, z4, w, h, stride, outY);
         stageNanos[SampleStage.END.ordinal()] += System.nanoTime() - start;
+        stageCalls[SampleStage.END.ordinal()]++;
         return ok;
     }
 
@@ -233,6 +292,7 @@ final class CountingSampler implements BaselineSampler {
         final long start = System.nanoTime();
         final int count = delegate.treeCandidates(chunkX, chunkZ, out);
         stageNanos[SampleStage.TREE.ordinal()] += System.nanoTime() - start;
+        stageCalls[SampleStage.TREE.ordinal()]++;
         return count;
     }
 }

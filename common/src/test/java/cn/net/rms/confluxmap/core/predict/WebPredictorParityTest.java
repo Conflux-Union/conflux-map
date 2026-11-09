@@ -3,17 +3,34 @@ package cn.net.rms.confluxmap.core.predict;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
+import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /** Pins the browser WASM baseline to the production Java/JNI predictor. */
 class WebPredictorParityTest {
     private static final long SEED = 123456789L;
+
+    @BeforeEach
+    void pinCpuReference() {
+        // The wasm port is a CPU port; on GPU machines the sparse seam now serves
+        // drift-budgeted fp32, so pin the Java side to the CPU reference to keep
+        // this port-equivalence gate bit-exact.
+        GpuBackend.configure(PredictionBackend.CPU);
+    }
+
+    @AfterEach
+    void restoreGpu() {
+        GpuBackend.configure(PredictionBackend.GPU);
+    }
 
     @Test
     void overworldBaselineMatchesProductionAtEveryExactResidualBoundary() throws Exception {

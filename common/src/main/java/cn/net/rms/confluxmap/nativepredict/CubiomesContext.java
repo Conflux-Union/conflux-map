@@ -187,6 +187,52 @@ public final class CubiomesContext implements AutoCloseable {
     }
 
     /**
+     * Exact overview heights at n independent block positions - see
+     * {@link CubiomesNative#cfxOverviewHeightsSparse} for the flat-array contract and the
+     * all-or-nothing status.
+     */
+    public int overviewHeightsSparse(
+        final int[] blockX,
+        final int[] blockZ,
+        final int n,
+        final int[] outTerrainY
+    ) {
+        requireOpen();
+        requireCapacity(blockX, n);
+        requireCapacity(blockZ, n);
+        requireCapacity(outTerrainY, n);
+        return CubiomesNative.cfxOverviewHeightsSparse(handle, blockX, blockZ, n, outTerrainY);
+    }
+
+    /**
+     * Height-aware surface biomes for n uniformly-shaped cells - see
+     * {@link CubiomesNative#cfxSurfaceBiomesSparse} for the flat-array contract and the
+     * all-or-nothing status.
+     */
+    public int surfaceBiomesSparse(
+        final int[] cellX,
+        final int[] cellZ,
+        final int edge,
+        final int stride,
+        final int[] terrainYPacked,
+        final int n,
+        final int[] outBiomeIdsPacked
+    ) {
+        requireOpen();
+        final long points = (long) n * edge * edge;
+        if (points < 0 || points > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("flat cell storage overflow: " + points);
+        }
+        requireCapacity(cellX, n);
+        requireCapacity(cellZ, n);
+        requireCapacity(terrainYPacked, (int) points);
+        requireCapacity(outBiomeIdsPacked, (int) points);
+        return CubiomesNative.cfxSurfaceBiomesSparse(
+            handle, cellX, cellZ, edge, stride, terrainYPacked, n, outBiomeIdsPacked
+        );
+    }
+
+    /**
      * Native handle for the engine-level batch dispatch entries: a wave leader passes its
      * own context's generator state to the static batch calls (see
      * {@link #overviewHeightsCoarseBatch}). The context stays thread-confined - resolve it

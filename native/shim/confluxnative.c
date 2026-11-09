@@ -1073,10 +1073,11 @@ static double cfxModernTerrainNoise(
 #define CFX_OVERVIEW_ITERATIONS 2
 
 /*
- * GPU dispatch thresholds for the two hot stages (bit-exact double kernels,
- * see gpuCfxOverviewHeights/gpuCfxSurfaceBiomes). Below these the kernel
- * launch overhead outweighs the CPU loops, so the lattice-refine 2x2 cells
- * and other tiny queries stay CPU-resident.
+ * GPU dispatch thresholds for the two hot stages (bit-exact double kernels
+ * for the rect entries, their float sparse twins for the packed sparse seam -
+ * see gpuCfxOverviewHeights/gpuCfxSurfaceBiomes and the SparseFloat entries).
+ * Below these the kernel launch overhead outweighs the CPU loops, so the
+ * lattice-refine 2x2 cells and other tiny queries stay CPU-resident.
  */
 #define CFX_GPU_HEIGHT_MIN_CELLS 256
 #define CFX_GPU_BIOME_MIN_CELLS 1024
@@ -1195,6 +1196,17 @@ static int cfxLegacyOverviewHeight(
     return (int) floor(128.0 * (0.53125 + densityOffset + blendedDepth));
 }
 
+/*
+ * One climate-model overview column: the per-cell computation the stride >= 4
+ * rect loop of cfxOverviewHeightsImpl resolves for (blockX, blockZ), bound in
+ * one place so the rect loop and the sparse refinement entry cannot drift.
+ */
+static int cfxOverviewHeightAt(
+    const CfxContext *ctx, int blockX, int blockZ, const CfxNoiseDetail *detail
+) {
+    return cfxModernOverviewHeight(ctx, floordiv(blockX, 4), floordiv(blockZ, 4), detail);
+}
+
 static jint cfxOverviewHeightsImpl(
     JNIEnv *env, CfxContext *ctx,
     jint blockX, jint blockZ, jint w, jint h, jint stride,
@@ -1299,8 +1311,7 @@ static jint cfxOverviewHeightsImpl(
                 for (i = 0; i < w; i++)
                 {
                     const int sampleX = (int)((int64_t)blockX + (int64_t)i*stride);
-                    heights[j*w+i] = cfxModernOverviewHeight(
-                        ctx, floordiv(sampleX, 4), floordiv(sampleZ, 4), detail);
+                    heights[j*w+i] = cfxOverviewHeightAt(ctx, sampleX, sampleZ, detail);
                 }
             }
         }
@@ -1375,6 +1386,19 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     return cfxOverviewHeightsImpl(
         env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &detail
     );
+}
+
+/*
+ * One surface-biome voronoi sample: the inner-cell computation of
+ * cfxSurfaceBiomes' plain loop, bound in one place so the rect loop and the
+ * sparse refinement entry cannot drift.
+ */
+static int cfxSurfaceBiomeAt(const CfxContext *ctx, int sampleX, int sampleZ, int terrainY)
+{
+    const int surface = terrainY < 62 ? 62 : terrainY;
+    int x4, y4, z4;
+    voronoiAccess3D(ctx->g.sha, sampleX, surface, sampleZ, &x4, &y4, &z4);
+    return sampleBiomeNoise(&ctx->g.bn, NULL, x4, y4, z4, NULL, 0);
 }
 
 /*
@@ -1553,16 +1577,260 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         {
             const int index = j * w + i;
             const int sampleX = (int) ((int64_t) blockX + (int64_t) i * stride);
-            const int surface = terrainY[index] < 62 ? 62 : terrainY[index];
-            int x4, y4, z4;
-            voronoiAccess3D(ctx->g.sha, sampleX, surface, sampleZ, &x4, &y4, &z4);
-            biomes[index] = sampleBiomeNoise(&ctx->g.bn, NULL, x4, y4, z4, NULL, 0);
+            biomes[index] = cfxSurfaceBiomeAt(ctx, sampleX, sampleZ, terrainY[index]);
         }
     }
 
     (*env)->SetIntArrayRegion(env, outBiomeIds, 0, cells, biomes);
     free(terrainY);
     free(biomes);
+    return CFX_OK;
+}
+
+/*
+ * Sparse overview refinement for the collected waterline bands: one call per
+ * bounded chunk of independent columns instead of one JNI entry per column.
+ * Every point resolves the same column a 1x1 full-detail cfxOverviewHeights
+ * call produces - the climate model through the shared cfxOverviewHeightAt,
+ * the pre-1.18 model through the impl's own 1x1 shape (one scale-4 biome
+ * query, then cfxLegacyOverviewHeight). All-or-nothing: any per-point failure
+ * returns its status and leaves the output untouched, so the caller repairs
+ * through the single entry. Plain region copies, no critical sections: on
+ * 1.18+ an above-gate chunk is handed to the float sparse GPU kernel first
+ * (drift-budgeted approximation of the CPU reference, whole-or-nothing
+ * refusal falls back into the same CPU loops); everything else stays pure
+ * CPU.
+ */
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxOverviewHeightsSparse(
+    JNIEnv *env, jclass clazz, jlong handle,
+    jintArray blockXArray, jintArray blockZArray, jint n, jintArray outTerrainYArray
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL)
+        return CFX_ERR_BAD_HANDLE;
+    if (ctx->dim != DIM_OVERWORLD)
+        return CFX_ERR_WRONG_DIM;
+    if (n < 0 || n > CFX_MAX_CELLS
+        || (*env)->GetArrayLength(env, blockXArray) < n
+        || (*env)->GetArrayLength(env, blockZArray) < n
+        || (*env)->GetArrayLength(env, outTerrainYArray) < n)
+        return CFX_ERR_BAD_SIZE;
+    if (n == 0)
+        return CFX_OK;
+
+    int *in = malloc(sizeof(int) * (size_t) n * 2);
+    int *heights = malloc(sizeof(int) * (size_t) n);
+    if (in == NULL || heights == NULL)
+    {
+        free(in);
+        free(heights);
+        return CFX_ERR_ALLOC;
+    }
+    int *blockX = in, *blockZ = in + n;
+    (*env)->GetIntArrayRegion(env, blockXArray, 0, n, blockX);
+    (*env)->GetIntArrayRegion(env, blockZArray, 0, n, blockZ);
+    if ((*env)->ExceptionCheck(env))
+    {
+        free(in);
+        free(heights);
+        return CFX_ERR_BAD_SIZE;
+    }
+
+    int k;
+    if (ctx->mc >= MC_1_18)
+    {
+        /*
+         * The fork's gpuCfxOverviewHeightsSparseFloat resolves the same quart
+         * points cfxOverviewHeightAt does (CFX_DETAIL_FULL on both sides, so
+         * a GPU serve and a CPU repair answer identical queries) in one
+         * kernel launch and one readback per chunk, as the single-precision
+         * execution of the same expression - approximate against the CPU
+         * reference within the Phase 5 drift budget, not bit-exact. A chunk
+         * at or above the rect path's gate counts as a tracked stage; the
+         * sparse entry is whole-or-nothing - refusal fires before any GPU
+         * work or output write and never carries a failMask - so falling
+         * through hands the entire chunk to the identical CPU loop. The
+         * quart coords are staged apart from the marshalled block coords so
+         * the repair keeps its inputs.
+         */
+        const int gpuEligible = n >= CFX_GPU_HEIGHT_MIN_CELLS;
+        ctx->stageCalls += gpuEligible;
+#ifdef CUBIOMES_ENABLE_GPU
+        int gpuServed = 0;
+        if (gpuEligible)
+        {
+            int *quart = malloc(sizeof(int) * (size_t) n * 2);
+            if (quart != NULL)
+            {
+                int *x4 = quart, *z4 = quart + n;
+                for (k = 0; k < n; k++)
+                {
+                    x4[k] = floordiv(blockX[k], 4);
+                    z4[k] = floordiv(blockZ[k], 4);
+                }
+                gpuServed = gpuCfxOverviewHeightsSparseFloat(
+                    heights, &ctx->g.bn, x4, z4, n, 0, 0, 0
+                ) == 0;
+                free(quart);
+            }
+            ctx->stageGpuCalls += gpuServed;
+        }
+        if (gpuServed)
+        {
+            (*env)->SetIntArrayRegion(env, outTerrainYArray, 0, n, heights);
+            free(in);
+            free(heights);
+            return CFX_OK;
+        }
+#endif
+        for (k = 0; k < n; k++)
+            heights[k] = cfxOverviewHeightAt(ctx, blockX[k], blockZ[k], &CFX_DETAIL_FULL);
+    }
+    else
+    {
+        for (k = 0; k < n; k++)
+        {
+            int biome;
+            const int err = cfxGenerateOverviewBiomes(ctx, blockX[k], blockZ[k], 1, 1, 4, &biome);
+            if (err != CFX_OK)
+            {
+                free(in);
+                free(heights);
+                return err;
+            }
+            heights[k] = cfxLegacyOverviewHeight(ctx, biome, blockX[k], blockZ[k]);
+        }
+    }
+
+    (*env)->SetIntArrayRegion(env, outTerrainYArray, 0, n, heights);
+    free(in);
+    free(heights);
+    return CFX_OK;
+}
+
+/*
+ * Sparse surface-biome refinement for the collected lattice-refine cells: one
+ * call per bounded chunk of uniformly-shaped cells. Cell i covers an edge x
+ * edge point grid spaced stride blocks apart with heights terrainYPacked
+ * [i*edge*edge..]; post-1.18 each point is one shared cfxSurfaceBiomeAt
+ * sample, pre-1.18 each cell is the single entry's own dense edge x edge
+ * layer-stack query (the stack is query-shape dependent, so the cell stays a
+ * cell). All-or-nothing and no critical sections, like the heights entry.
+ */
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxSurfaceBiomesSparse(
+    JNIEnv *env, jclass clazz, jlong handle,
+    jintArray cellXArray, jintArray cellZArray, jint edge, jint stride,
+    jintArray terrainYPackedArray, jint n, jintArray outBiomeIdsPackedArray
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL)
+        return CFX_ERR_BAD_HANDLE;
+    if (ctx->dim != DIM_OVERWORLD)
+        return CFX_ERR_WRONG_DIM;
+    const int64_t points = (int64_t) edge * (int64_t) edge;
+    if (edge <= 0 || stride <= 0 || n < 0
+        || points > CFX_MAX_CELLS || n > CFX_MAX_CELLS
+        || points * (int64_t) n > CFX_MAX_CELLS
+        || (*env)->GetArrayLength(env, cellXArray) < n
+        || (*env)->GetArrayLength(env, cellZArray) < n
+        || (*env)->GetArrayLength(env, terrainYPackedArray) < points * (int64_t) n
+        || (*env)->GetArrayLength(env, outBiomeIdsPackedArray) < points * (int64_t) n)
+        return CFX_ERR_BAD_SIZE;
+    if (n == 0)
+        return CFX_OK;
+
+    const int cells = (int) (points * (int64_t) n);
+    int *in = malloc(sizeof(int) * ((size_t) n * 2 + (size_t) cells));
+    int *out = malloc(sizeof(int) * (size_t) cells);
+    if (in == NULL || out == NULL)
+    {
+        free(in);
+        free(out);
+        return CFX_ERR_ALLOC;
+    }
+    int *cellX = in, *cellZ = in + n;
+    int *terrainY = in + n * 2;
+    (*env)->GetIntArrayRegion(env, cellXArray, 0, n, cellX);
+    (*env)->GetIntArrayRegion(env, cellZArray, 0, n, cellZ);
+    (*env)->GetIntArrayRegion(env, terrainYPackedArray, 0, cells, terrainY);
+    if ((*env)->ExceptionCheck(env))
+    {
+        free(in);
+        free(out);
+        return CFX_ERR_BAD_SIZE;
+    }
+
+    int k;
+    if (ctx->mc >= MC_1_18)
+    {
+        /*
+         * Same dispatch as the heights entry, with the biome gate on the cell
+         * count: gpuCfxSurfaceBiomesSparseFloat answers the cell x edge x
+         * edge lattice of cfxSurfaceBiomeAt samples in one launch and one
+         * readback (the entry validation above already bounds the points
+         * total to CFX_MAX_CELLS, inside the kernel's own cap), as the
+         * single-precision execution of the same per-point chain -
+         * approximate against the CPU reference within the Phase 5 drift
+         * budget, clamping the staged terrainY at 62 exactly like the CPU
+         * loop. Whole-or-nothing refusal falls through to that loop
+         * untouched; the voronoi sha comes from the same packed engine
+         * state the rect batch reads.
+         */
+        const int gpuEligible = n >= CFX_GPU_BIOME_MIN_CELLS;
+        ctx->stageCalls += gpuEligible;
+#ifdef CUBIOMES_ENABLE_GPU
+        int gpuServed = 0;
+        if (gpuEligible)
+        {
+            gpuServed = gpuCfxSurfaceBiomesSparseFloat(
+                out, &ctx->g.bn, ctx->g.sha, cellX, cellZ, terrainY, edge, stride, n
+            ) == 0;
+            ctx->stageGpuCalls += gpuServed;
+        }
+        if (gpuServed)
+        {
+            (*env)->SetIntArrayRegion(env, outBiomeIdsPackedArray, 0, cells, out);
+            free(in);
+            free(out);
+            return CFX_OK;
+        }
+#endif
+        for (k = 0; k < n; k++)
+        {
+            const int base = k * (int) points;
+            int p;
+            for (p = 0; p < points; p++)
+            {
+                out[base + p] = cfxSurfaceBiomeAt(
+                    ctx,
+                    cellX[k] + (p % edge) * stride,
+                    cellZ[k] + (p / edge) * stride,
+                    terrainY[base + p]
+                );
+            }
+        }
+    }
+    else
+    {
+        for (k = 0; k < n; k++)
+        {
+            const int err = cfxGenerateOverviewBiomes(
+                ctx, cellX[k], cellZ[k], edge, edge, stride, out + k * (int) points
+            );
+            if (err != CFX_OK)
+            {
+                free(in);
+                free(out);
+                return err;
+            }
+        }
+    }
+
+    (*env)->SetIntArrayRegion(env, outBiomeIdsPackedArray, 0, cells, out);
+    free(in);
+    free(out);
     return CFX_OK;
 }
 

@@ -2,8 +2,10 @@ package cn.net.rms.confluxmap.core.predict;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
+import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
@@ -15,13 +17,28 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Pins the browser's final tile pixels to the production Java composer. */
 final class WebRenderedTileParityTest {
     private static final long SEED = 123456789L;
+
+    @BeforeEach
+    void pinCpuReference() {
+        // The wasm port is a CPU port; on GPU machines the sparse seam now serves
+        // drift-budgeted fp32, so pin the Java side to the CPU reference to keep
+        // this port-equivalence gate bit-exact.
+        GpuBackend.configure(PredictionBackend.CPU);
+    }
+
+    @AfterEach
+    void restoreGpu() {
+        GpuBackend.configure(PredictionBackend.GPU);
+    }
 
     @Test
     void browserWasmMatchesEveryFinalJavaPixelAcrossLods(@TempDir final Path tempDir)

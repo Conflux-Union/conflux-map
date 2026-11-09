@@ -93,6 +93,13 @@ class WaveCompositionBenchmarkTest {
     private static final int SLOT_BATCH_POINTS = 2;
     private static final int SLOT_KERNEL_LAUNCHES = 3;
     private static final int SLOT_D2H_READS = 5;
+    private static final int SLOT_MUTEX_WAIT_NANOS = 6;
+    private static final int SLOT_HOST_SUBMIT_NANOS = 7;
+    private static final int SLOT_HOST_WAIT_NANOS = 8;
+    private static final int SLOT_H2D_NANOS = 9;
+    private static final int SLOT_KERNEL_NANOS = 10;
+    private static final int SLOT_D2H_NANOS = 11;
+    private static final int SLOT_ARRAY_COPY_NANOS = 13;
     private static final int SLOT_MEMBER_HIST = 14;
     private static final int SLOT_POINT_HIST = 47;
     private static final int MEMBER_HIST_SLOTS = 33;
@@ -506,6 +513,35 @@ class WaveCompositionBenchmarkTest {
             metricsPrinted = true;
         }
         if (!metricsPrinted) {
+            System.out.printf(Locale.ROOT, "metrics=unavailable%n");
+        }
+
+        // Host-side wall breakdown of the same deltas. waitMs is the per-worker readback
+        // blocking summed over workers and rounds (slots 9-11 need the event-timer opt-in
+        // and read 0 when the driver cannot profile); perDispatchWaitUs divides the wait
+        // by the readback count. marshalMs is the shim's own array-copy span (slot 13).
+        System.out.printf(Locale.ROOT,
+            "%n[wave-bench] ==== gpu host wait/submit breakdown per cell (summed over %d measured rounds) ====%n",
+            WaveBenchmarkOptions.measuredRounds());
+        boolean waitPrinted = false;
+        for (final CellResult cell : cells) {
+            final long[] metrics = cell.metricsDelta();
+            if (cell.backend() != PredictionBackend.GPU || metrics == null) {
+                continue;
+            }
+            final long reads = metrics[SLOT_D2H_READS];
+            System.out.printf(Locale.ROOT,
+                "lod=%d tiles=%d : waitMs=%.0f submitMs=%.1f mutexMs=%.1f marshalMs=%.1f"
+                    + " perDispatchWaitUs=%.0f eventNanos[h2d=%.0f kern=%.0f d2h=%.0f]%n",
+                cell.lod(), cell.tiles(),
+                metrics[SLOT_HOST_WAIT_NANOS] / 1e6, metrics[SLOT_HOST_SUBMIT_NANOS] / 1e6,
+                metrics[SLOT_MUTEX_WAIT_NANOS] / 1e6, metrics[SLOT_ARRAY_COPY_NANOS] / 1e6,
+                reads > 0 ? metrics[SLOT_HOST_WAIT_NANOS] / 1e3 / reads : 0.0,
+                metrics[SLOT_H2D_NANOS] / 1e6, metrics[SLOT_KERNEL_NANOS] / 1e6,
+                metrics[SLOT_D2H_NANOS] / 1e6);
+            waitPrinted = true;
+        }
+        if (!waitPrinted) {
             System.out.printf(Locale.ROOT, "metrics=unavailable%n");
         }
     }

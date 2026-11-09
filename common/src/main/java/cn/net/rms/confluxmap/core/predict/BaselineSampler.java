@@ -198,6 +198,27 @@ public interface BaselineSampler {
     }
 
     /**
+     * Exact overview heights at n independent block positions, all-or-nothing per call: entry i
+     * resolves the same column {@link #overviewHeights}(blockX[i], blockZ[i], 1, 1, 4, ...) would.
+     * Returns false on any failure; the caller repairs through the per-point entry.
+     */
+    default boolean overviewHeightsSparse(
+        final int[] blockX,
+        final int[] blockZ,
+        final int n,
+        final int[] outTerrainY
+    ) {
+        final int[] exact = new int[1];
+        for (int i = 0; i < n; i++) {
+            if (!overviewHeights(blockX[i], blockZ[i], 1, 1, 4, exact)) {
+                return false;
+            }
+            outTerrainY[i] = exact[0];
+        }
+        return true;
+    }
+
+    /**
      * Resolves final Overworld surface biomes at the supplied terrain heights without generating
      * those heights a second time. Implementations that cannot reuse the height grid return false,
      * and {@link LodSampling} falls back to {@link #biomesStrided}.
@@ -212,6 +233,34 @@ public interface BaselineSampler {
         final int[] outBiomeIds
     ) {
         return false;
+    }
+
+    /**
+     * Height-aware surface biomes for n uniformly-shaped cells: cell i covers an edge x edge point
+     * grid spaced stride blocks apart with heights terrainYPacked[i*edge*edge .. ], resolving the
+     * same values {@link #surfaceBiomes}(cellX[i], cellZ[i], edge, edge, stride, heights_i, out_i)
+     * would. All-or-nothing per call; false means repair per cell.
+     */
+    default boolean surfaceBiomesSparse(
+        final int[] cellX,
+        final int[] cellZ,
+        final int edge,
+        final int stride,
+        final int[] terrainYPacked,
+        final int n,
+        final int[] outBiomeIdsPacked
+    ) {
+        final int points = edge * edge;
+        final int[] heights = new int[points];
+        final int[] out = new int[points];
+        for (int i = 0; i < n; i++) {
+            System.arraycopy(terrainYPacked, i * points, heights, 0, points);
+            if (!surfaceBiomes(cellX[i], cellZ[i], edge, edge, stride, heights, out)) {
+                return false;
+            }
+            System.arraycopy(out, 0, outBiomeIdsPacked, i * points, points);
+        }
+        return true;
     }
 
     /** End: floored End surface heights (0 = void) for a w*h rectangle at 1:4 scale. */

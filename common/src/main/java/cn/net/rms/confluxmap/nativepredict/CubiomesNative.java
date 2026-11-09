@@ -229,6 +229,37 @@ final class CubiomesNative {
     );
 
     /**
+     * Sparse overview refinement: resolves {@code n} independent columns, where point i is the
+     * same column {@link #cfxOverviewHeights}(blockX[i], blockZ[i], 1, 1, 4, ...) produces.
+     * All-or-nothing: any per-point failure returns that status and leaves {@code outTerrainY}
+     * untouched, so the caller repairs through the single entry.
+     */
+    static native int cfxOverviewHeightsSparse(
+        long handle,
+        int[] blockX,
+        int[] blockZ,
+        int n,
+        int[] outTerrainY
+    );
+
+    /**
+     * Sparse surface-biome refinement for uniformly-shaped cells: cell i covers an edge x edge
+     * point grid spaced {@code stride} blocks apart with heights {@code terrainYPacked[i*edge*edge
+     * ..]}, resolving the same values {@link #cfxSurfaceBiomes}(cellX[i], cellZ[i], edge, edge,
+     * stride, heights_i, out_i) produces. All-or-nothing like {@link #cfxOverviewHeightsSparse}.
+     */
+    static native int cfxSurfaceBiomesSparse(
+        long handle,
+        int[] cellX,
+        int[] cellZ,
+        int edge,
+        int stride,
+        int[] terrainYPacked,
+        int n,
+        int[] outBiomeIdsPacked
+    );
+
+    /**
      * Batched coarse-lattice overview heights for a wave of tiles: the parallel
      * {@code blockX}/{@code blockZ}/{@code w}/{@code h}/{@code stride} arrays describe
      * {@code n} tiles, {@code outTerrainY} is caller-sized flat storage holding each tile's
