@@ -26,6 +26,13 @@
 #define CFX_WEB_OVERVIEW_BIOME_GATE (CFX_WEB_WATER_LEVEL + 2)
 #define CFX_WEB_DETAIL_MIN_STRIDE 4
 #define CFX_WEB_JAGGED_KEEP_OCTAVES 4
+/* Waterline protection bands (mirror of CFX_WATERLINE_* in native/shim/confluxnative.c):
+ * CFX_WEB_WATERLINE_ROUND_* guards double->int rounding near sea level, CFX_WEB_WATERLINE_CELL_*
+ * is the integer relief band that forces exact point solves in the adaptive macro grid. */
+#define CFX_WEB_WATERLINE_ROUND_LO 60.5
+#define CFX_WEB_WATERLINE_ROUND_HI 65.5
+#define CFX_WEB_WATERLINE_CELL_LO 61
+#define CFX_WEB_WATERLINE_CELL_HI 65
 #define CFX_WEB_CANOPY_SALT UINT64_C(0x27220A5FA9A9A797)
 #define CFX_WEB_CLEARING_SALT UINT64_C(0x6A09E667F3BCC909)
 #define CFX_WEB_HEIGHT_SALT UINT64_C(0xBB67AE8584CAA73B)
@@ -569,7 +576,10 @@ static int cfxWebModernOverviewHeight(
     const double base = 1.0 + offset + jagged;
     double y = 128.0 * base;
     if (factor <= 1e-9)
-        return (int) floor(y);
+    {
+        if (y >= CFX_WEB_WATERLINE_ROUND_LO && y <= CFX_WEB_WATERLINE_ROUND_HI) return (int) floor(y);
+        return (int) lround(y);
+    }
     int i;
     for (i = 0; i < CFX_WEB_OVERVIEW_ITERATIONS; i++)
     {
@@ -586,7 +596,7 @@ static int cfxWebModernOverviewHeight(
         }
         y = next;
     }
-    if (y >= 60.5 && y <= 65.5)
+    if (y >= CFX_WEB_WATERLINE_ROUND_LO && y <= CFX_WEB_WATERLINE_ROUND_HI)
         return (int) floor(y);
     return (int) lround(y);
 }
@@ -626,6 +636,9 @@ static inline int cfxEvaluateCurvatureEnergy(int c00, int c10, int c01, int c11,
     return energy;
 }
 
+// MIRROR of native/shim/adaptive_macro.h: same subdivision gate, 5-point topology, waterline
+// band and rounding. Any change there MUST land here in the same commit, or the web preview map
+// diverges from the in-game rendering.
 static inline int cfxWebEvaluateAdaptiveMacroGrid(
     int *macro, int gridW, int gridH,
     int minX4, int minZ4, const CfxWebNoiseDetail *detail
@@ -633,7 +646,8 @@ static inline int cfxWebEvaluateAdaptiveMacroGrid(
 {
     const int W = gridW;
     const int H = gridH;
-    if (W <= 0 || H <= 0) return CFX_WEB_OK;
+    /* Empty queries are a caller bug, not a success. */
+    if (W <= 0 || H <= 0) return CFX_WEB_BAD_ARGS;
 
     const int startCellX = floordiv(minX4, 4);
     const int endCellX   = floordiv(minX4 + W - 1, 4);
@@ -692,7 +706,7 @@ static inline int cfxWebEvaluateAdaptiveMacroGrid(
             if (cMid < min_h) min_h = cMid;
             if (cMid > max_h) max_h = cMid;
 
-            const int is_waterline = (min_h <= 65 && max_h >= 61);
+            const int is_waterline = (min_h <= CFX_WEB_WATERLINE_CELL_HI && max_h >= CFX_WEB_WATERLINE_CELL_LO);
             const int energy = cfxEvaluateCurvatureEnergy(c00, c10, c01, c11, cMid);
 
             if (energy > 4 || is_waterline) {
@@ -725,7 +739,7 @@ static inline int cfxWebEvaluateAdaptiveMacroGrid(
                         if (qc11 < qmin) qmin = qc11;
                         if (qc11 > qmax) qmax = qc11;
 
-                        const int q_is_waterline = (qmin <= 64 && qmax >= 62);
+                        const int q_is_waterline = (qmin <= CFX_WEB_WATERLINE_CELL_HI && qmax >= CFX_WEB_WATERLINE_CELL_LO);
                         if (qmax - qmin > 5 || q_is_waterline) {
                             for (int lz = subZ0; lz < subZ1; lz++) {
                                 int worldZ4 = minZ4 + lz;
@@ -811,8 +825,9 @@ static int cfxWebOverviewHeightsImpl(
             int *macro = malloc(sizeof(int) * (size_t) gridW * gridH);
             if (macro == NULL)
                 return CFX_WEB_ALLOC;
-            const CfxWebNoiseDetail macroDetail = cfxWebNoiseDetailForStride(&generator.bn.terrain, 4);
-            const int macroErr = cfxWebEvaluateAdaptiveMacroGrid(macro, gridW, gridH, minX4, minZ4, &macroDetail);
+            CfxWebNoiseDetail macroDetail = cfxWebNoiseDetailForStride(&generator.bn.terrain, 4);
+            const CfxWebNoiseDetail *activeDetail = detail->truncated ? detail : &macroDetail;
+            const int macroErr = cfxWebEvaluateAdaptiveMacroGrid(macro, gridW, gridH, minX4, minZ4, activeDetail);
             if (macroErr != CFX_WEB_OK)
             {
                 free(macro);
@@ -877,24 +892,6 @@ static int cfxWebOverviewHeights(
 {
     return cfxWebOverviewHeightsImpl(
         blockX, blockZ, w, h, stride, out, &CFX_WEB_DETAIL_FULL
-    );
-}
-
-/*
- * Coarse-lattice variant for the LOD2-4 anchor sweeps: same geometry, but
- * terrain-noise octaves shorter than the sampling stride are skipped (see
- * CfxWebNoiseDetail). Waterline-band and exact-residual callers must keep the
- * full-detail entry above.
- */
-static int cfxWebOverviewHeightsCoarse(
-    int blockX, int blockZ, int w, int h, int stride, int *out
-)
-{
-    const CfxWebNoiseDetail detail = cfxWebNoiseDetailForStride(
-        &generator.bn.terrain, stride
-    );
-    return cfxWebOverviewHeightsImpl(
-        blockX, blockZ, w, h, stride, out, &detail
     );
 }
 
@@ -996,9 +993,8 @@ static int cfxWebOverviewHeightsAnchored(
     int *macro = malloc(sizeof(int) * (size_t) count * count);
     if (macro == NULL)
         return CFX_WEB_ALLOC;
-    /* Anchor solves go through the coarse entry: their stride is double the
-     * pixel stride, detail finer than that is dropped. */
-    int err = cfxWebOverviewHeightsCoarse(
+    /* Anchor solves share the overview entry; the adaptive macro grid handles detail. */
+    int err = cfxWebOverviewHeights(
         blockX + 2*minK*blockStride, blockZ + 2*minK*blockStride,
         count, count, 2*blockStride, macro
     );
@@ -1020,12 +1016,14 @@ static int cfxWebOverviewHeightsAnchored(
                 int value = h00;
                 if (oddX || oddZ)
                 {
-                    const int h10 = macro[kz*count+kx+1];
+                    /* Guard the right-hand anchor: at the last lattice column kx+1 would wrap into
+                     * the next row (and read past the buffer on the last row). */
+                    const int h10 = (kx + 1 < count) ? macro[kz*count+kx+1] : h00;
                     const int top = oddX ? cfxWebLerp(h00, h10, 1, 2) : h00;
                     if (oddZ)
                     {
                         const int h01 = macro[(kz+1)*count+kx];
-                        const int bottom = oddX
+                        const int bottom = oddX && (kx + 1 < count)
                             ? cfxWebLerp(h01, macro[(kz+1)*count+kx+1], 1, 2)
                             : h01;
                         value = cfxWebLerp(top, bottom, 1, 2);
@@ -1069,7 +1067,11 @@ static int cfxWebOverviewHeightsAnchored(
                 const int h00 = macro[kz*count+kx];
                 int lowest = h00;
                 int highest = h00;
-                if (oddX)
+                /* Bounds check, not a parity check: the envelope must keep the right-hand anchor
+                 * for every pixel that has one, and only skip it at the last lattice column where
+                 * kx+1 would wrap into the next row. */
+                const int hasRight = (kx + 1 < count);
+                if (hasRight)
                 {
                     const int h10 = macro[kz*count+kx+1];
                     if (h10 < lowest) lowest = h10;
@@ -1080,7 +1082,7 @@ static int cfxWebOverviewHeightsAnchored(
                     const int h01 = macro[(kz+1)*count+kx];
                     if (h01 < lowest) lowest = h01;
                     if (h01 > highest) highest = h01;
-                    if (oddX)
+                    if (hasRight)
                     {
                         const int h11 = macro[(kz+1)*count+kx+1];
                         if (h11 < lowest) lowest = h11;

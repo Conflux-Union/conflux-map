@@ -260,4 +260,21 @@ public final class QuadrantLayout {
             }
         }
     }
+
+    @Override
+    public boolean equals(final Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof final QuadrantLayout other)) {
+            return false;
+        }
+        return Arrays.equals(styles, other.styles)
+            && Arrays.equals(flats, other.flats);
+    }
+
+    @Override
+    public int hashCode() {
+        return 31 * Arrays.hashCode(styles) + Arrays.hashCode(flats);
+    }
 }
