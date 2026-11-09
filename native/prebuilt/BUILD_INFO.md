@@ -8,14 +8,15 @@
 
 | Target Platform | Binary File | Target Triple | SHA-256 Checksum | Size |
 |---|---|---|---|---|
-| Windows x86_64 | `windows-x86_64/confluxnative.dll` | `x86_64-windows-gnu` | `74cbcdfc8108c4d54ece7a3d6b3a44f96fb0349a623c709a016a71ec9b8badf0` | 1,555,968 bytes |
-| Linux x86_64 | `linux-x86_64/libconfluxnative.so` | `x86_64-linux-gnu.2.17` | `f749b685a6af0c858456cf2a6d190d045990757c8a3a45a263dc75049c441f89` | 1,442,360 bytes |
-| Linux aarch64 | `linux-aarch64/libconfluxnative.so` | `aarch64-linux-gnu.2.17` | `b1bd0565d5da56e59fb52e57a17d2cc213ed6ecf08d693dd6472dbc3396803bf` | 1,343,472 bytes |
-| macOS x86_64 | `macos-x86_64/libconfluxnative.dylib` | `x86_64-macos` | `2d62d34f976e06c8006a5f3e51b4652c58cba1f29fffca3fee60dac95825e9a0` | 1,123,196 bytes |
-| macOS aarch64 | `macos-aarch64/libconfluxnative.dylib` | `aarch64-macos` | `cb00a02fc09ca4c78aabf441319e81aa882de8e84c87bb2b59ffa9299d9cc08c` | 1,098,888 bytes |
+| Windows x86_64 | `windows-x86_64/confluxnative.dll` | `x86_64-windows-gnu` | `4963ecb9b584cafaff88d086dff158b02200e82a04d2444315fe4da886de5f16` | 1,555,968 bytes |
+| Linux x86_64 | `linux-x86_64/libconfluxnative.so` | `x86_64-linux-gnu.2.17` | `606032e72d00e5d05d4387d52a5579d600b1fd447429a432a91786191b23b0da` | 1,441,928 bytes |
+| Linux aarch64 | `linux-aarch64/libconfluxnative.so` | `aarch64-linux-gnu.2.17` | `90734c8028c928dffa6999bb753cffe40d0573ec9a89300ebe92c0a4a5ecc545` | 1,343,120 bytes |
+| macOS x86_64 | `macos-x86_64/libconfluxnative.dylib` | `x86_64-macos` | `4364982122b155bd178be72c00fc7ed9d6a09022a8b5791a403fb4d97294370a` | 1,123,155 bytes |
+| macOS aarch64 | `macos-aarch64/libconfluxnative.dylib` | `aarch64-macos` | `f1c6521017402359abbd1c35e1a33039323bf55f2600f8a50a47fe15dc27e78d` | 1,098,856 bytes |
 
-## Web Assembly Asset
+## Web Map WASM Asset Provenance
 
-| Target | Binary Asset | SHA-256 Checksum | Size |
-|---|---|---|---|
-| Web (Browser) | `common/src/main/resources/webmap/predictor.wasm` | `29b88c3b52b5edcc3355a584fe705c4fdbdc25b8cbb4badf966b3e24f942ee08` | 1,400,018 bytes |
+| Asset | Target Triple | Compiler Command | SHA-256 Checksum | Size |
+|---|---|---|---|---|
+| `common/src/main/resources/webmap/predictor.wasm` | `wasm32-wasi` | `zig cc -target wasm32-wasi -mexec-model=reactor -O3 -g0 -msimd128` | `2c26b1148b7ea83de1ed9b0911be7d327ed31ff1309b69a9c33e5e18961e4e83` | 1,399,729 bytes |
+

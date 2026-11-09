@@ -1005,8 +1005,8 @@ static jint cfxOverviewHeightsImpl(
                 free(heights);
                 return CFX_ERR_ALLOC;
             }
-            CfxNoiseDetail macroDetail = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 4);
-            int macroErr = cfxEvaluateAdaptiveMacroGrid(ctx, macro, gridW, gridH, minX4, minZ4, &macroDetail);
+            const CfxNoiseDetail *activeDetail = detail->truncated ? detail : &CFX_DETAIL_FULL;
+            int macroErr = cfxEvaluateAdaptiveMacroGrid(ctx, macro, gridW, gridH, minX4, minZ4, activeDetail);
             if (macroErr != CFX_OK)
             {
                 free(macro);

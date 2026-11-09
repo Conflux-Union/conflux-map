@@ -569,7 +569,10 @@ static int cfxWebModernOverviewHeight(
     const double base = 1.0 + offset + jagged;
     double y = 128.0 * base;
     if (factor <= 1e-9)
-        return (int) floor(y);
+    {
+        if (y >= 60.5 && y <= 65.5) return (int) floor(y);
+        return (int) lround(y);
+    }
     int i;
     for (i = 0; i < CFX_WEB_OVERVIEW_ITERATIONS; i++)
     {
@@ -725,8 +728,8 @@ static inline int cfxWebEvaluateAdaptiveMacroGrid(
                         if (qc11 < qmin) qmin = qc11;
                         if (qc11 > qmax) qmax = qc11;
 
-                        const int q_is_waterline = (qmin <= 64 && qmax >= 62);
-                        if (qmax - qmin > 5 || q_is_waterline) {
+                        const int q_is_waterline = (qmin <= 65 && qmax >= 61);
+                        if (qmax - qmin > 4 || q_is_waterline) {
                             for (int lz = subZ0; lz < subZ1; lz++) {
                                 int worldZ4 = minZ4 + lz;
                                 for (int lx = subX0; lx < subX1; lx++) {
@@ -811,8 +814,8 @@ static int cfxWebOverviewHeightsImpl(
             int *macro = malloc(sizeof(int) * (size_t) gridW * gridH);
             if (macro == NULL)
                 return CFX_WEB_ALLOC;
-            const CfxWebNoiseDetail macroDetail = cfxWebNoiseDetailForStride(&generator.bn.terrain, 4);
-            const int macroErr = cfxWebEvaluateAdaptiveMacroGrid(macro, gridW, gridH, minX4, minZ4, &macroDetail);
+            const CfxWebNoiseDetail *activeDetail = detail->truncated ? detail : &CFX_WEB_DETAIL_FULL;
+            const int macroErr = cfxWebEvaluateAdaptiveMacroGrid(macro, gridW, gridH, minX4, minZ4, activeDetail);
             if (macroErr != CFX_WEB_OK)
             {
                 free(macro);

@@ -113,6 +113,7 @@ tasks.register('buildNativesHost', Exec) {
     inputs.files(nativeSources.collect { final String src -> rootProject.file(src) })
     inputs.dir rootProject.file('native/cubiomes/tables')
     inputs.dir rootProject.file('native/jni')
+    inputs.dir rootProject.file('native/shim')
     outputs.file outFile
     doFirst {
         hostOutDir.mkdirs()

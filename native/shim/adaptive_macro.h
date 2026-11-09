@@ -150,8 +150,8 @@ static inline int cfxEvaluateAdaptiveMacroGrid(
                         if (qc11 < qmin) qmin = qc11;
                         if (qc11 > qmax) qmax = qc11;
 
-                        const int q_is_waterline = (qmin <= 64 && qmax >= 62);
-                        if (qmax - qmin > 5 || q_is_waterline) {
+                        const int q_is_waterline = (qmin <= 65 && qmax >= 61);
+                        if (qmax - qmin > 4 || q_is_waterline) {
                             for (int lz = subZ0; lz < subZ1; lz++) {
                                 int worldZ4 = minZ4 + lz;
                                 for (int lx = subX0; lx < subX1; lx++) {

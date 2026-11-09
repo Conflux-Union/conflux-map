@@ -629,4 +629,24 @@ class CubiomesNativeTest {
         assertTrue(NativeLib.init(freshBaseDir), "init must still succeed after finding a corrupt file on disk");
         assertTrue(Files.size(libFile) > 4, "corrupted file must be re-extracted back to its proper (much larger) content");
     }
+
+    @Test
+    void cfxOverviewHeightsDistinguishesFullAndCoarseAtStride4() {
+        try (CubiomesContext ctx = CubiomesContext.create(mc21(), 146008555L, OVERWORLD, 0)) {
+            assertNotNull(ctx);
+            final int w = 128;
+            final int h = 128;
+            final int stride = 4;
+            final int[] fullHeights = new int[w * h];
+            final int[] coarseHeights = new int[w * h];
+
+            assertEquals(0, ctx.overviewHeights(0, 0, w, h, stride, fullHeights));
+            assertEquals(0, ctx.overviewHeightsCoarse(0, 0, w, h, stride, coarseHeights));
+
+            assertFalse(
+                java.util.Arrays.equals(fullHeights, coarseHeights),
+                "cfxOverviewHeights (full detail) and cfxOverviewHeightsCoarse (truncated detail) must not be bit-identical at stride 4"
+            );
+        }
+    }
 }
