@@ -1015,7 +1015,8 @@ static jint cfxOverviewHeightsImpl(
                 free(heights);
                 return CFX_ERR_ALLOC;
             }
-            const CfxNoiseDetail *activeDetail = detail->truncated ? detail : &CFX_DETAIL_FULL;
+            CfxNoiseDetail macroDetail = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 4);
+            const CfxNoiseDetail *activeDetail = detail->truncated ? detail : &macroDetail;
             int macroErr = cfxEvaluateAdaptiveMacroGrid(ctx, macro, gridW, gridH, minX4, minZ4, activeDetail);
             if (macroErr != CFX_OK)
             {
@@ -1106,29 +1107,6 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         return CFX_ERR_BAD_HANDLE;
     return cfxOverviewHeightsImpl(
         env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &CFX_DETAIL_FULL
-    );
-}
-
-/*
- * Coarse-lattice variant of cfxOverviewHeights:
- * same geometry and validation, sharing noise-detail octave truncation with
- * modern overview passes. Note that in 1.18+, cfxOverviewHeights also employs
- * adaptive macro grid refinement for high-throughput overview prediction.
- * For exact, unapproximated ground-truth column evaluation, call cubiomes's
- * mapOverworldSurfaceHeightBlocks directly.
- */
-JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxOverviewHeightsCoarse(
-    JNIEnv *env, jclass clazz, jlong handle,
-    jint blockX, jint blockZ, jint w, jint h, jint stride,
-    jintArray outTerrainY
-) {
-    (void) clazz;
-    CfxContext *ctx = cfxHandle(handle);
-    if (ctx == NULL)
-        return CFX_ERR_BAD_HANDLE;
-    const CfxNoiseDetail detail = cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
-    return cfxOverviewHeightsImpl(
-        env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &detail
     );
 }
 

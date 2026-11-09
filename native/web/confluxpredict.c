@@ -740,7 +740,7 @@ static inline int cfxWebEvaluateAdaptiveMacroGrid(
                         if (qc11 > qmax) qmax = qc11;
 
                         const int q_is_waterline = (qmin <= CFX_WEB_WATERLINE_CELL_HI && qmax >= CFX_WEB_WATERLINE_CELL_LO);
-                        if (qmax - qmin > 4 || q_is_waterline) {
+                        if (qmax - qmin > 5 || q_is_waterline) {
                             for (int lz = subZ0; lz < subZ1; lz++) {
                                 int worldZ4 = minZ4 + lz;
                                 for (int lx = subX0; lx < subX1; lx++) {
@@ -825,7 +825,8 @@ static int cfxWebOverviewHeightsImpl(
             int *macro = malloc(sizeof(int) * (size_t) gridW * gridH);
             if (macro == NULL)
                 return CFX_WEB_ALLOC;
-            const CfxWebNoiseDetail *activeDetail = detail->truncated ? detail : &CFX_WEB_DETAIL_FULL;
+            CfxWebNoiseDetail macroDetail = cfxWebNoiseDetailForStride(&generator.bn.terrain, 4);
+            const CfxWebNoiseDetail *activeDetail = detail->truncated ? detail : &macroDetail;
             const int macroErr = cfxWebEvaluateAdaptiveMacroGrid(macro, gridW, gridH, minX4, minZ4, activeDetail);
             if (macroErr != CFX_WEB_OK)
             {
@@ -891,24 +892,6 @@ static int cfxWebOverviewHeights(
 {
     return cfxWebOverviewHeightsImpl(
         blockX, blockZ, w, h, stride, out, &CFX_WEB_DETAIL_FULL
-    );
-}
-
-/*
- * Coarse-lattice variant for the LOD2-4 anchor sweeps: same geometry, but
- * terrain-noise octaves shorter than the sampling stride are skipped (see
- * CfxWebNoiseDetail). Waterline-band and exact-residual callers must keep the
- * full-detail entry above.
- */
-static int cfxWebOverviewHeightsCoarse(
-    int blockX, int blockZ, int w, int h, int stride, int *out
-)
-{
-    const CfxWebNoiseDetail detail = cfxWebNoiseDetailForStride(
-        &generator.bn.terrain, stride
-    );
-    return cfxWebOverviewHeightsImpl(
-        blockX, blockZ, w, h, stride, out, &detail
     );
 }
 
@@ -1010,9 +993,8 @@ static int cfxWebOverviewHeightsAnchored(
     int *macro = malloc(sizeof(int) * (size_t) count * count);
     if (macro == NULL)
         return CFX_WEB_ALLOC;
-    /* Anchor solves go through the coarse entry: their stride is double the
-     * pixel stride, detail finer than that is dropped. */
-    int err = cfxWebOverviewHeightsCoarse(
+    /* Anchor solves share the overview entry; the adaptive macro grid handles detail. */
+    int err = cfxWebOverviewHeights(
         blockX + 2*minK*blockStride, blockZ + 2*minK*blockStride,
         count, count, 2*blockStride, macro
     );
