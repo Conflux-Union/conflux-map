@@ -66,6 +66,9 @@
  * between the full-detail entry and the truncated coarse lattices. */
 #define CFX_LEGACY_TRUNCATE_MIN_CELLS 4096
 
+/* Octave count of the legacy depth noise (`octdepth`, omin=-15). */
+#define CFX_LEGACY_DEPTH_OCTAVES 16
+
 typedef struct {
     Generator g;
     SurfaceNoise sn; /* Overworld terrain columns and End surface heights. */
@@ -1312,7 +1315,11 @@ static double cfxSampleOctaveAmpSuffix(const OctaveNoise *noise, double x, doubl
 static int cfxLegacyDepthOctaveFloor(int stride)
 {
     int k = 0;
-    while (k < 16 && (double) (1 << k) < 25.0 * stride)
+    /* Stop one short of the octave count: an empty suffix would make the
+     * depth term identically zero and collapse every height to a constant.
+     * Beyond stride ~1311 the surviving octave is below the Nyquist limit
+     * anyway, so the result is merely coarse, never degenerate. */
+    while (k < CFX_LEGACY_DEPTH_OCTAVES - 1 && (double) (1 << k) < 25.0 * stride)
         k++;
     return k;
 }
@@ -1356,7 +1363,7 @@ static int cfxLegacyOverviewHeight(
 static jint cfxOverviewHeightsImpl(
     JNIEnv *env, CfxContext *ctx,
     jint blockX, jint blockZ, jint w, jint h, jint stride,
-    jintArray outTerrainY, const CfxNoiseDetail *detail
+    jintArray outTerrainY, const CfxNoiseDetail *detail, int truncateLegacy
 ) {
     if (ctx->dim != DIM_OVERWORLD)
         return CFX_ERR_WRONG_DIM;
@@ -1467,10 +1474,14 @@ static jint cfxOverviewHeightsImpl(
          * solve per pixel to one per 4x4 block cell.
          *
          * stride >= 4: pixels already sit on distinct quart corners, so the
-         * macro grid cannot share work; the coarse windows instead skip the
+         * macro grid cannot share work; the coarse entry instead skips the
          * depth-noise octaves that are shorter than half the sampling stride
-         * (cfxLegacyDepthOctaveFloor). Waterline micro queries and small
-         * exact-anchor grids stay on the full-detail per-pixel entry.
+         * (cfxLegacyDepthOctaveFloor). Truncation is bound to the entry, not
+         * to the window geometry: cfxOverviewHeights always returns the exact
+         * per-position heights, and only cfxOverviewHeightsCoarse (which sets
+         * truncateLegacy) truncates.
+         * Waterline micro queries and small exact-anchor grids therefore stay
+         * on the full-detail per-pixel entry whatever their cell count.
          */
         if (stride < 4 && (w > 1 || h > 1))
         {
@@ -1527,7 +1538,7 @@ static jint cfxOverviewHeightsImpl(
             }
             free(base);
         }
-        else if (stride >= 4 && (w > 1 || h > 1)
+        else if (truncateLegacy && stride >= 4 && (w > 1 || h > 1)
             && (int64_t) w * h >= CFX_LEGACY_TRUNCATE_MIN_CELLS)
         {
             const int firstOct = cfxLegacyDepthOctaveFloor(stride);
@@ -1584,7 +1595,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     if (ctx == NULL)
         return CFX_ERR_BAD_HANDLE;
     return cfxOverviewHeightsImpl(
-        env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &CFX_DETAIL_FULL
+        env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &CFX_DETAIL_FULL, 0
     );
 }
 
@@ -1605,7 +1616,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         return CFX_ERR_BAD_HANDLE;
     const CfxNoiseDetail detail = cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
     return cfxOverviewHeightsImpl(
-        env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &detail
+        env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &detail, 1
     );
 }
 

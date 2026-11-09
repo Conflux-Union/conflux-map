@@ -24,6 +24,13 @@
  *      cell-for-cell (position purity: the macro lattice is world-aligned,
  *      never window-aligned).
  *
+ *   4. COLSTRAT2: the shim's exact-column path (cfxSurfaceColumns ->
+ *      cfxLegacyExactColumns, the lazy quart-column solver) must be
+ *      bit-identical to cubiomes' mapOverworldSurfaceColumns in all four
+ *      planes at the same geometry. COLSTRAT only compares cubiomes' dense
+ *      sweep against its own 1x1 loop, so without COLSTRAT2 nothing in the
+ *      tree catches a transcription slip in the lazy solver.
+ *
  * Build (same source list as bench_legacy.c):
  *   zig cc -O2 -Inative/jni -Inative/cubiomes native/cubiomes/... \
  *       native/test_legacy_matrix.c -lm -o build/bin/test_legacy_matrix
@@ -149,7 +156,7 @@ static int fullTileExact(
     int rc = 0;
     const jint err = cfxOverviewHeightsImpl(
         env, ctx, blockX, blockZ, TILE, TILE, stride, (jintArray) optH,
-        &CFX_DETAIL_FULL);
+        &CFX_DETAIL_FULL, stride >= 4 ? 1 : 0);
     const int exErr = mapOverworldSurfaceColumns(
         solid, fluid, surfY, flags, &ctx->g, &ctx->sn,
         blockX, blockZ, TILE, TILE, stride);
@@ -191,8 +198,138 @@ static int fullTileExact(
     return rc;
 }
 
-int main(void)
+/* Positive evidence for CI logs: gates that only print on failure would
+ * otherwise look like they never ran. */
+static int colstrat2Cases = 0;
+static int truncentryCases = 0;
+
+/* COLSTRAT2: the shim's exact-column planes must equal cubiomes' at the same
+ * geometry. This is the only gate that exercises cfxLegacyExactColumns (the
+ * lazy quart-column solver behind cfxSurfaceColumns). */
+static void checkSurfaceColumns(
+    JNIEnv *env, CfxContext *ctx, long long seed, int blockX, int blockZ,
+    int g, int gs, int *hardFailures)
 {
+    const int n = g * g;
+    int *ref[4], *opt[4];
+    colstrat2Cases++;
+    int k;
+    for (k = 0; k < 4; k++)
+    {
+        ref[k] = malloc(sizeof(int) * (size_t) n);
+        opt[k] = malloc(sizeof(int) * (size_t) n);
+        if (ref[k] == NULL || opt[k] == NULL)
+        {
+            printf("COLSTRAT2 seed=%lld o=(%d,%d) s=%d: ERROR alloc\n",
+                seed, blockX, blockZ, gs);
+            (*hardFailures)++;
+            for (k = 0; k < 4; k++) { free(ref[k]); free(opt[k]); }
+            return;
+        }
+    }
+    const int er = mapOverworldSurfaceColumns(
+        ref[0], ref[1], ref[2], ref[3],
+        &ctx->g, &ctx->sn, blockX, blockZ, g, g, gs);
+    const jint eo =
+        Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxSurfaceColumns(
+            env, NULL, (jlong) (intptr_t) ctx, blockX, blockZ, g, g, gs,
+            (jintArray) opt[0], (jintArray) opt[1],
+            (jintArray) opt[2], (jintArray) opt[3]);
+    if (er != 0 || eo != CFX_OK)
+    {
+        printf("COLSTRAT2 seed=%lld o=(%d,%d) s=%d: ERROR cubiomes=%d shim=%d\n",
+            seed, blockX, blockZ, gs, er, (int) eo);
+        (*hardFailures)++;
+    }
+    else
+    {
+        for (k = 0; k < 4; k++)
+        {
+            const int at = cmp_ints(ref[k], opt[k], n);
+            if (at >= 0)
+            {
+                printf("COLSTRAT2 seed=%lld o=(%d,%d) s=%d: plane %d mismatch at (%d,%d) (%d vs %d)\n",
+                    seed, blockX, blockZ, gs, k, at % g, at / g,
+                    ref[k][at], opt[k][at]);
+                (*hardFailures)++;
+            }
+        }
+    }
+    for (k = 0; k < 4; k++) { free(ref[k]); free(opt[k]); }
+}
+
+/* TRUNCENTRY: truncation must follow the entry, not the window geometry.
+ * A 64x64 stride-8 window is 4096 cells (at CFX_LEGACY_TRUNCATE_MIN_CELLS),
+ * so it sits exactly where the old geometry gate would truncate: the full
+ * entry must still reproduce master bit-for-bit, and the coarse entry must
+ * still actually truncate (otherwise the optimisation silently died). */
+static void checkTruncEntryGates(
+    JNIEnv *env, CfxContext *ctx, long long seed, int blockX, int blockZ,
+    int *hardFailures)
+{
+    const int g = 64, gs = 8;
+    const int n = g * g;
+    truncentryCases++;
+    int *biomes = malloc(sizeof(int) * (size_t) n);
+    int *full = malloc(sizeof(int) * (size_t) n);
+    int *coarse = malloc(sizeof(int) * (size_t) n);
+    if (biomes == NULL || full == NULL || coarse == NULL)
+    {
+        printf("TRUNCENTRY seed=%lld: ERROR alloc\n", seed);
+        (*hardFailures)++;
+        free(biomes); free(full); free(coarse);
+        return;
+    }
+    if (refBiomesStrided(ctx, blockX, blockZ, g, g, gs, biomes) != CFX_OK)
+    {
+        printf("TRUNCENTRY seed=%lld o=(%d,%d): ERROR biomes\n", seed, blockX, blockZ);
+        (*hardFailures)++;
+        free(biomes); free(full); free(coarse);
+        return;
+    }
+    const jint ef = cfxOverviewHeightsImpl(
+        env, ctx, blockX, blockZ, g, g, gs, (jintArray) full, &CFX_DETAIL_FULL, 0);
+    const CfxNoiseDetail coarseDetail =
+        cfxNoiseDetailForStride(&ctx->g.bn.terrain, gs);
+    const jint ec = cfxOverviewHeightsImpl(
+        env, ctx, blockX, blockZ, g, g, gs, (jintArray) coarse, &coarseDetail, 1);
+    if (ef != CFX_OK || ec != CFX_OK)
+    {
+        printf("TRUNCENTRY seed=%lld o=(%d,%d): ERROR full=%d coarse=%d\n",
+            seed, blockX, blockZ, (int) ef, (int) ec);
+        (*hardFailures)++;
+    }
+    else
+    {
+        int j, i, mismatch = 0, truncated = 0;
+        for (j = 0; j < g; j++)
+            for (i = 0; i < g; i++)
+            {
+                const int idx = j * g + i;
+                const int ref = cfxLegacyOverviewHeight(
+                    ctx, biomes[idx], blockX + i * gs, blockZ + j * gs);
+                if (full[idx] != ref) mismatch++;
+                if (coarse[idx] != full[idx]) truncated++;
+            }
+        if (mismatch)
+        {
+            printf("TRUNCENTRY seed=%lld o=(%d,%d): full entry truncated %d cells (contract violation)\n",
+                seed, blockX, blockZ, mismatch);
+            (*hardFailures)++;
+        }
+        if (!truncated)
+        {
+            printf("TRUNCENTRY seed=%lld o=(%d,%d): coarse entry did not truncate (optimisation dead)\n",
+                seed, blockX, blockZ);
+            (*hardFailures)++;
+        }
+    }
+    free(biomes); free(full); free(coarse);
+}
+
+int main(int argc, char **argv)
+{
+    const int fullSweep = argc > 1 && strcmp(argv[1], "--full") == 0;
     struct JNINativeInterface_ iface;
     memset(&iface, 0, sizeof(iface));
     iface.GetArrayLength = dummy_GetArrayLength;
@@ -241,7 +378,7 @@ int main(void)
                 int *anchorB = malloc(sizeof(int) * (size_t) gn);
                 const jint e2 = cfxOverviewHeightsImpl(
                     p_env, &ctx, blockX, blockZ, g, g, gs,
-                    (jintArray) anchorOpt, &CFX_DETAIL_FULL);
+                    (jintArray) anchorOpt, &CFX_DETAIL_FULL, 0);
                 const int eb = refBiomesStrided(&ctx, blockX, blockZ, g, g, gs, anchorB);
                 if (e2 != CFX_OK || eb != CFX_OK)
                 {
@@ -319,6 +456,27 @@ int main(void)
                 }
             }
 
+            /* COLSTRAT2: production LOD0 anchor geometry (34x34 stride 8) on
+             * every seed/origin, plus the other strides on two origins to bound
+             * runtime. Pass --full to sweep all 90 combinations. */
+            {
+                static const int sc[5] = { 1, 4, 8, 16, 32 };
+                int q;
+                for (q = 0; q < 5; q++)
+                {
+                    if (sc[q] != 8 && !fullSweep && (si != 0 || oi >= 2))
+                        continue;
+                    checkSurfaceColumns(
+                        p_env, &ctx, (long long) seeds[si], blockX, blockZ,
+                        34, sc[q], &hardFailures);
+                }
+            }
+
+            /* TRUNCENTRY: entry contract for truncation, once per seed. */
+            if (oi == 0)
+                checkTruncEntryGates(p_env, &ctx, (long long) seeds[si],
+                    blockX, blockZ, &hardFailures);
+
             /* Position purity: two overlapping stride-1/2 windows must agree
              * on the shared cells (world-aligned macro lattice). */
             if (oi == 0)
@@ -333,10 +491,10 @@ int main(void)
                     int *b = malloc(sizeof(int) * (size_t) w * w);
                     const jint ea = cfxOverviewHeightsImpl(
                         p_env, &ctx, blockX, blockZ, w, w, pstride,
-                        (jintArray) a, &CFX_DETAIL_FULL);
+                        (jintArray) a, &CFX_DETAIL_FULL, 0);
                     const jint eb2 = cfxOverviewHeightsImpl(
                         p_env, &ctx, blockX + shift*pstride, blockZ + shift*pstride,
-                        w, w, pstride, (jintArray) b, &CFX_DETAIL_FULL);
+                        w, w, pstride, (jintArray) b, &CFX_DETAIL_FULL, 0);
                     if (ea != CFX_OK || eb2 != CFX_OK)
                     {
                         printf("PURITY s=%d: ERROR %d %d\n", pstride, (int) ea, (int) eb2);
@@ -369,9 +527,16 @@ int main(void)
                 int *refB = malloc(sizeof(int) * (size_t) cells);
                 int *surfB = malloc(sizeof(int) * (size_t) cells);
 
+                /* Mirror the production entry: the coarse lattice runs through
+                 * cfxOverviewHeightsCoarse, which is the only caller allowed to
+                 * truncate. Truncation is bound to the entry, never to the
+                 * window geometry. */
+                const CfxNoiseDetail latticeDetail = stride >= 4
+                    ? cfxNoiseDetailForStride(&ctx.g.bn.terrain, stride)
+                    : CFX_DETAIL_FULL;
                 const jint errOpt = cfxOverviewHeightsImpl(
                     p_env, &ctx, blockX, blockZ, TILE, TILE, stride,
-                    (jintArray) optH, &CFX_DETAIL_FULL);
+                    (jintArray) optH, &latticeDetail, stride >= 4 ? 1 : 0);
 
                 /* Reference biome grid: master's row loop at stride >= 4,
                  * the unchanged dense path at stride < 4. */
@@ -416,7 +581,7 @@ int main(void)
                         int micro[1];
                         const jint e1 = cfxOverviewHeightsImpl(
                             p_env, &ctx, blockX + 5*stride, blockZ + 7*stride,
-                            1, 1, 4, (jintArray) micro, &CFX_DETAIL_FULL);
+                            1, 1, 4, (jintArray) micro, &CFX_DETAIL_FULL, 0);
                         const int refMicro = cfxLegacyOverviewHeight(
                             &ctx, refB[7*TILE+5],
                             blockX + 5*stride, blockZ + 7*stride);
@@ -458,6 +623,8 @@ int main(void)
     printDrift("macro windows (stride<4) ", &macroStats);
     printDrift("trunc windows (stride>=4)", &truncStats);
 
+    printf("\ngates: COLSTRAT2 %d cases, TRUNCENTRY %d cases\n",
+        colstrat2Cases, truncentryCases);
     printf("\nhard failures: %d\n", hardFailures);
     return hardFailures == 0 ? 0 : 1;
 }

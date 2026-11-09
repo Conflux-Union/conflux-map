@@ -67,15 +67,17 @@ the version's own terrain generator.
 Both terrain families solve their overview the same accelerated way. The pre-1.18 depth noise is
 solved once per world-aligned quart corner (vanilla 1.17 itself evaluates that noise per quart
 column) and each output pixel bilinearly interpolates the biome-independent base before adding its
-own per-biome depth term; coarse windows and the quart lattice itself skip the depth-noise octaves
-shorter than half the sampling stride, which hold 0.39% of the noise's amplitude - the same shape
-the 1.18+ density solve uses. The pre-1.18 paths additionally share one dense two-dimensional biome
+own per-biome depth term; the coarse anchor entry and the quart lattice itself skip the depth-noise
+octaves shorter than half the sampling stride (seven of sixteen at stride 4, 0.19% of the noise's
+amplitude, keeping wavelengths >= 2.56 blocks) - the same shape the 1.18+ density solve uses. The
+pre-1.18 paths additionally share one dense two-dimensional biome
 generation per strided scale-4-and-above window instead of re-running the layer stack per sample
 row, and the two overview-sized biome windows a tile needs are memoized so the surface-biome pass
-reads back the grid the overview pass already built. Waterline micro queries and the small
-exact-anchor grids keep the
-full-detail per-pixel entry, so the residual correction and shoreline refinement above see the
-values they always did.
+reads back the grid the overview pass already built. Truncation follows the entry, not the window
+geometry: `overviewHeightsCoarse` may truncate, while `overviewHeights` returns exact per-position
+heights at any cell count, so the exact anchors and the residual correction above see the values
+they always did. Pre-1.18 output has no waterline micro-query pass of its own - the 1.18+ shoreline
+refinement described below applies to the modern lattice only.
 Final surface biomes use the corrected heights. Fluid is categorical and resolved independently at
 every output pixel. Exact anchors provide water confidence, which is bilinearly interpolated before
 being combined with the corrected terrain floor and final ocean/river biome. The categorical flag

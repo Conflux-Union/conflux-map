@@ -70,6 +70,38 @@ final List<String> nativeCflags = [
     '-Inative/jni', '-Inative/cubiomes',
 ]
 
+// Provenance for the committed binaries is generated from the build outputs themselves: a
+// hand-copied digest can drift from the bytes it claims to describe, a computed one cannot.
+static String sha256Hex(final File f) {
+    return java.security.MessageDigest.getInstance('SHA-256').digest(f.bytes).encodeHex().toString()
+}
+
+/** Replaces (or appends) the WASM row of native/prebuilt/BUILD_INFO.md in place. */
+static void updateBuildInfoWasmRow(final File buildInfo, final File wasm, final String zigVersion) {
+    final String row = "| `common/src/main/resources/webmap/predictor.wasm` | `wasm32-wasi` | " +
+        '`zig cc -target wasm32-wasi -mexec-model=reactor -O3 -g0 -msimd128`' +
+        " | `${sha256Hex(wasm)}` | ${String.format('%,d', wasm.length())} bytes |\n"
+    final String header = "## Web Map WASM Asset Provenance\n\n" +
+        "- **Cross-Compiler Toolchain**: `zig cc ${zigVersion}`\n\n" +
+        "| Asset | Target Triple | Compiler Command | SHA-256 Checksum | Size |\n" +
+        "|---|---|---|---|---|\n"
+    final String existing = buildInfo.exists() ? buildInfo.text : ''
+    final String rowPattern = /(?m)^\| `common\/src\/main\/resources\/webmap\/predictor\.wasm`.*$/
+    if (existing =~ rowPattern) {
+        buildInfo.text = existing.replaceAll(rowPattern,
+            java.util.regex.Matcher.quoteReplacement(row.trim()))
+        return
+    }
+    if (existing.contains('## Web Map WASM Asset Provenance')) {
+        buildInfo.text = existing.trim() + '\n' + row
+        return
+    }
+    buildInfo.parentFile.mkdirs()
+    final String head = existing.replaceAll(/(?s)\n+$/, '')
+    final String wasmSection = header + row
+    buildInfo.text = head + (head.isEmpty() ? '' : '\n\n') + wasmSection
+}
+
 final List<String> webPredictorSources = [
     'native/web/confluxpredict.c',
     'native/cubiomes/biomenoise.c',
@@ -97,6 +129,12 @@ tasks.register('buildWebPredictor', Exec) {
         '-Wl,--export=cfxWebCanopyData',
         '-Wl,--export-memory', '-o', outFile.absolutePath,
     ] + webPredictorSources + ['-lm'])
+    doLast {
+        final String zigVersion = ['zig', 'version'].execute().text.trim()
+        final File buildInfo = rootProject.file('native/prebuilt/BUILD_INFO.md')
+        updateBuildInfoWasmRow(buildInfo, outFile, zigVersion)
+        println "buildWebPredictor: predictor.wasm built (${outFile.length()} bytes, sha256: ${sha256Hex(outFile)})"
+    }
 }
 
 tasks.register('buildNativesHost', Exec) {
@@ -112,6 +150,60 @@ tasks.register('buildNativesHost', Exec) {
     }
     workingDir rootProject.projectDir
     commandLine(['cc'] + nativeCflags + ['-o', outFile.absolutePath] + nativeSources + ['-lm'])
+}
+
+// Pre-1.18 overview harnesses (native/test_legacy_matrix.c, native/test_web_legacy.c).
+// These pin the accelerated legacy paths against master's per-pixel formula, cubiomes' exact
+// columns (COLSTRAT2) and the web predictor's bit-for-bit parity. Kept off the `check`
+// lifecycle like the build tasks above, because they need a host C toolchain; CI runs them
+// explicitly. -PfullLegacyMatrix widens COLSTRAT2 to every seed/origin/stride combination.
+tasks.register('testNativeLegacy') {
+    group = 'verification'
+    description = 'Builds and runs the pre-1.18 legacy overview harnesses with the host C compiler.'
+    final List<String> cubiomesSources = nativeSources.findAll {
+        !it.contains('confluxnative.c') && !it.contains('anvilscan.c')
+    }
+    final List<String> harnessCflags = [
+        '-O2', '-g0', '-fno-fast-math', '-ffp-contract=off', '-Wall',
+        '-Inative/jni', '-Inative/cubiomes',
+    ]
+    final File matrixBin = rootProject.file('build/bin/test_legacy_matrix')
+    final File webBin = rootProject.file('build/bin/test_web_legacy')
+    final boolean fullMatrix = project.hasProperty('fullLegacyMatrix')
+    doLast {
+        if (['which', 'cc'].execute().waitFor() != 0) {
+            throw new GradleException('testNativeLegacy needs a host C compiler (`cc`) on PATH.')
+        }
+        matrixBin.parentFile.mkdirs()
+        final List<List<String>> builds = [
+            ['cc'] + harnessCflags + ['-o', matrixBin.absolutePath, 'native/test_legacy_matrix.c'] + cubiomesSources + ['-lm'],
+            ['cc'] + harnessCflags + ['-o', webBin.absolutePath, 'native/test_web_legacy.c'] + cubiomesSources + ['-lm'],
+        ]
+        builds.each { final List<String> command ->
+            final Process process = command.execute(null, rootProject.projectDir)
+            final StringWriter output = new StringWriter()
+            process.waitForProcessOutput(output, output)
+            if (process.exitValue() != 0) {
+                throw new GradleException("Native harness build failed:\n${command.join(' ')}\n${output}")
+            }
+        }
+        final List<List<String>> runs = [
+            fullMatrix ? [matrixBin.absolutePath, '--full'] : [matrixBin.absolutePath],
+            [webBin.absolutePath],
+        ]
+        runs.each { final List<String> command ->
+            final Process process = command.execute(null, rootProject.projectDir)
+            final StringWriter output = new StringWriter()
+            process.waitForProcessOutput(output, output)
+            logger.lifecycle(output.toString().readLines().findAll {
+                it.contains('mismatch') || it.contains('failures') || it.contains('drift') ||
+                    it.startsWith('macro ') || it.startsWith('trunc ')
+            }.join('\n'))
+            if (process.exitValue() != 0) {
+                throw new GradleException("Native harness failed (exit ${process.exitValue()}):\n${output}")
+            }
+        }
+    }
 }
 
 tasks.register('buildNativesAll') {
@@ -156,5 +248,36 @@ tasks.register('buildNativesAll') {
                 }
             }
         }
+        // Provenance is a build product: hash the bytes this run just wrote, and carry the
+        // existing WASM section forward instead of dropping it.
+        final String zigVersion = ['zig', 'version'].execute().text.trim()
+        final File buildInfo = rootProject.file('native/prebuilt/BUILD_INFO.md')
+        final String previous = buildInfo.exists() ? buildInfo.text : ''
+        final String existingWasm = previous.contains('## Web Map WASM Asset Provenance')
+            ? previous.substring(previous.indexOf('## Web Map WASM Asset Provenance'))
+            : ''
+        final StringBuilder doc = new StringBuilder()
+        doc << '# Prebuilt Native Binary Provenance\n\n'
+        doc << "- **Cross-Compiler Toolchain**: `zig cc ${zigVersion}`\n"
+        doc << "- **Compiler CFlags**: `${nativeCflags.join(' ')}`\n"
+        doc << '- **Build Task**: `./gradlew buildNativesAll`\n\n'
+        doc << '## Target Binaries & SHA-256 Checksums\n\n'
+        doc << '| Target Platform | Binary File | Target Triple | SHA-256 Checksum | Size |\n'
+        doc << '|---|---|---|---|---|\n'
+        final Map<String, String> labels = [
+            'windows-x86_64': 'Windows x86_64', 'linux-x86_64': 'Linux x86_64',
+            'linux-aarch64': 'Linux aarch64', 'macos-x86_64': 'macOS x86_64',
+            'macos-aarch64': 'macOS aarch64',
+        ]
+        final List<Map<String, String>> built = []
+        targets.each { final Map<String, String> target ->
+            final File outFile = new File(rootProject.file("native/prebuilt/${target.dir}"), target.lib)
+            doc << "| ${labels[target.dir]} | `${target.dir}/${target.lib}` | `${target.zigTarget}` | " +
+                "`${sha256Hex(outFile)}` | ${String.format('%,d', outFile.length())} bytes |\n"
+            built << target
+        }
+        buildInfo.parentFile.mkdirs()
+        buildInfo.text = doc.toString() + (existingWasm ? '\n' + existingWasm : '')
+        println "buildNativesAll: native/prebuilt/BUILD_INFO.md regenerated (${built.size()} targets)"
     }
 }

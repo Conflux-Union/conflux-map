@@ -627,10 +627,16 @@ static double cfxWebSampleOctaveAmpSuffix(const OctaveNoise *noise, double x, do
  * apply. Waterline micro queries and small exact-anchor grids stay on the
  * full-detail per-pixel entry (see CFX_WEB_LEGACY_TRUNCATE_MIN_CELLS).
  */
+/* Octave count of the legacy depth noise (`octdepth`, omin=-15). */
+#define CFX_WEB_LEGACY_DEPTH_OCTAVES 16
+
 static int cfxWebLegacyDepthOctaveFloor(int stride)
 {
     int k = 0;
-    while (k < 16 && (double) (1 << k) < 25.0 * stride)
+    /* Stop one short of the octave count: an empty suffix would make the
+     * depth term identically zero and collapse every height to a constant
+     * (mirrors the JNI shim). */
+    while (k < CFX_WEB_LEGACY_DEPTH_OCTAVES - 1 && (double) (1 << k) < 25.0 * stride)
         k++;
     return k;
 }
@@ -752,9 +758,10 @@ static int cfxWebOverviewBiomes(
  * (mirrors the JNI shim's CFX_LEGACY_TRUNCATE_MIN_CELLS). */
 #define CFX_WEB_LEGACY_TRUNCATE_MIN_CELLS 4096
 
+
 static int cfxWebOverviewHeightsImpl(
     int blockX, int blockZ, int w, int h, int stride, int *out,
-    const CfxWebNoiseDetail *detail
+    const CfxWebNoiseDetail *detail, int truncateLegacy
 )
 {
     if (mc >= MC_1_18)
@@ -887,7 +894,7 @@ static int cfxWebOverviewHeightsImpl(
         }
         free(base);
     }
-    else if (stride >= 4 && (w > 1 || h > 1)
+    else if (truncateLegacy && stride >= 4 && (w > 1 || h > 1)
         && cells >= CFX_WEB_LEGACY_TRUNCATE_MIN_CELLS)
     {
         const int firstOct = cfxWebLegacyDepthOctaveFloor(stride);
@@ -926,7 +933,7 @@ static int cfxWebOverviewHeights(
 )
 {
     return cfxWebOverviewHeightsImpl(
-        blockX, blockZ, w, h, stride, out, &CFX_WEB_DETAIL_FULL
+        blockX, blockZ, w, h, stride, out, &CFX_WEB_DETAIL_FULL, 0
     );
 }
 
@@ -944,7 +951,7 @@ static int cfxWebOverviewHeightsCoarse(
         &generator.bn.terrain, stride
     );
     return cfxWebOverviewHeightsImpl(
-        blockX, blockZ, w, h, stride, out, &detail
+        blockX, blockZ, w, h, stride, out, &detail, 1
     );
 }
 

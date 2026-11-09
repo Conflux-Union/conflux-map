@@ -86,7 +86,7 @@ int main(void)
                     origins[oi][0], origins[oi][1], TILE, TILE, stride, webH);
                 const jint errShim = cfxOverviewHeightsImpl(
                     p_env, &ctx, origins[oi][0], origins[oi][1], TILE, TILE,
-                    stride, (jintArray) shimH, &CFX_DETAIL_FULL);
+                    stride, (jintArray) shimH, &CFX_DETAIL_FULL, 0);
                 if (errWeb != CFX_WEB_OK || errShim != CFX_OK)
                 {
                     printf("seed %lld o=(%d,%d) s=%d: ERROR web=%d shim=%d\n",
@@ -147,7 +147,7 @@ int main(void)
         int *shimH = malloc(sizeof(int) * (size_t) cells);
         cfxWebOverviewHeights(256, -256, TILE, TILE, 1, webH);
         cfxOverviewHeightsImpl(p_env, &ctxB, 256, -256, TILE, TILE, 1,
-            (jintArray) shimH, &CFX_DETAIL_FULL);
+            (jintArray) shimH, &CFX_DETAIL_FULL, 0);
         int k, at = -1;
         for (k = 0; k < cells; k++)
             if (webH[k] != shimH[k])

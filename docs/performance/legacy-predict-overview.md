@@ -44,15 +44,18 @@ Three separate costs dominate, in different proportions per LOD:
    interpolated per output pixel, exactly mirroring the 1.18+ macro grid's
    structure. Per-biome depth stays per-pixel. LOD0 drops from ~66k solves to
    ~4.4k.
-2. **Octave truncation for stride >= 4** (LOD2-4) and for the lattice corners
-   themselves. `octdepth` stores 16 octaves finest-first (omin=-15, octave i
-   carries wavelength 2^i/50 blocks and amplitude 2^i/65535); windows whose
-   neighbouring pixels are `stride` blocks apart skip the octaves shorter than
-   half the sampling stride - the same "one octave beyond the strict Nyquist
-   limit" cut the modern coarse lattices apply. The eight finest octaves hold
-   0.39% of the total amplitude. Waterline micro queries (1x1 stride-4) and
-   the small exact-anchor grids stay on the full-detail per-pixel entry
-   bit-for-bit (below `CFX_LEGACY_TRUNCATE_MIN_CELLS`).
+2. **Octave truncation for the coarse entry** (LOD2-4 anchor sweeps) and for
+   the lattice corners themselves. `octdepth` stores 16 octaves finest-first
+   (omin=-15, octave i carries wavelength 2^i/50 blocks and amplitude
+   2^i/65535); the coarse entry skips the octaves shorter than half the
+   sampling stride - the same "one octave beyond the strict Nyquist limit" cut
+   the modern coarse lattices apply. At stride 4 that drops the seven finest
+   octaves (0.19% of the total amplitude) and keeps wavelengths >= 2.56
+   blocks; one octave is always retained, so arbitrarily large strides degrade
+   to the coarsest octave instead of a constant depth offset. Waterline micro
+   queries (1x1 stride-4) and the small exact-anchor grids stay on the
+   full-detail per-pixel entry bit-for-bit: truncation is bound to the
+   `overviewHeightsCoarse` entry, never inferred from the window geometry.
 3. **Banded dense biome generation at scale >= 4.** Scales above the Voronoi
    zoom are query-shape invariant, so the sample rows share one dense 2D
    generation (chunked at `CFX_MAX_CELLS`); the read-out is bit-identical to
@@ -65,7 +68,13 @@ Three separate costs dominate, in different proportions per LOD:
 
 ## Results (same benchmark, optimized)
 
-| LOD | stride | optimized overview | memo hit | optimized total/tile | speedup vs master |
+`bench_legacy.c` times the overview component only: the overview height solve
+plus the `cfxSurfaceBiomes` pass, with the biome-memo hit cost shown
+separately. It does **not** include the exact-anchor pass or the rest of the
+Java tile pipeline, so the last two columns are overview-scoped, not
+end-to-end.
+
+| LOD | stride | optimized overview | memo hit | overview subtotal | overview speedup vs master |
 |---|---|---|---|---|---|
 | 0 | 1 | 1.89 ms | 0.005 ms | ~1.90 ms | **25x** |
 | 1 | 2 | 5.87 ms | 0.005 ms | ~5.87 ms | **8.8x** |
@@ -73,7 +82,16 @@ Three separate costs dominate, in different proportions per LOD:
 | 3 | 8 | 22.34 ms | 0.006 ms | ~22.35 ms | **5.0x** |
 | 4 | 16 | 32.00 ms | 0.006 ms | ~32.01 ms | **5.2x** |
 
-1.17.1 LOD0 (~1.9 ms/tile) now sits well below the 1.18+ optimized LOD0 tile
+End to end the picture is very different at LOD0: the tile is dominated by the
+34x34 stride-8 exact-anchor pass (430-450 ms of a ~490 ms master tile, the same
+on master because vanilla-exact columns read every density level). The lazy
+column solver in this branch cuts that pass to 342 ms, so a full LOD0 tile goes
+from ~490 ms to ~344 ms (**~1.4x** end to end) while the overview component
+itself is ~25x. Quoting 25x as a tile-level speedup overstates the gain by an
+order of magnitude; the LOD2-4 rows are closer to end-to-end because the anchor
+window shrinks with the LOD.
+
+1.17.1 LOD0 overview (~1.9 ms) now sits well below the 1.18+ optimized LOD0 tile
 (~20.7 ms, perf/cpu-noise-simd-avx2), as expected for a 2D closed-form terrain
 model. The remaining LOD2-4 cost is the span-sized scale-4 biome field
 (13-18 ms at LOD4) plus 66.5k truncated octave solves; both have known further

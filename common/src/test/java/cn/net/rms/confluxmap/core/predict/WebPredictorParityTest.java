@@ -43,13 +43,13 @@ class WebPredictorParityTest {
         }
         final int legacy = McVersions.toCubiomes("1.17.1").orElseThrow();
         for (int lod = 0; lod <= 4; lod++) {
-            if (lod >= 3) {
-                assertParity(legacy, PredictionDimensions.OVERWORLD, lod, wasm, dumpScript);
-            }
+            // Both phases at every LOD: the quart lattice floors to absolute world
+            // coordinates, so a negative origin must not shift the sampled grid.
             assertParity(
                 legacy, PredictionDimensions.OVERWORLD, lod, -65_539, -32_771,
                 wasm, dumpScript
             );
+            assertParity(legacy, PredictionDimensions.OVERWORLD, lod, wasm, dumpScript);
         }
         assertParity(
             current, PredictionDimensions.OVERWORLD, 4, -65_536, -65_536,
