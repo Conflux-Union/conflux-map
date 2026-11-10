@@ -393,10 +393,7 @@ public final class ConfluxConfig {
     /**
      * Engine for the predicted underlay: GPU uses the OpenCL executor when the machine has a
      * working device and silently serves the CPU reference otherwise; CPU never touches the
-     * GPU. The effective engine participates in the prediction identity ({@link
-     * PredictionBackend} on {@code GpuBackend}), so peers only share residual patches when
-     * their engines actually agree. GPU is the default because the executor is validated
-     * against drift budgets and the fallback is exact.
+     * GPU. Both backends produce the same baseline, so residual patches remain compatible.
      */
     public PredictionBackend predictionBackend = PredictionBackend.GPU;
     /**

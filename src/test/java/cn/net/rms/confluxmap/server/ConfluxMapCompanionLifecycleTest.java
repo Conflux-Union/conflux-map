@@ -31,6 +31,17 @@ final class ConfluxMapCompanionLifecycleTest {
     }
 
     @Test
+    void integratedServerPreservesTheClientPredictionBackend() throws IOException {
+        final String source = readSource(findProjectRoot().resolve(
+            "src/main/java/cn/net/rms/confluxmap/server/ConfluxMapCompanion.java"
+        ));
+        final String starting = between(source, "private void onServerStarting(", "private void onServerStarted(");
+        assertTrue(starting.contains(
+            "if (server.isDedicated()) {\n            GpuBackend.configure(config.predictionBackend);\n        }"
+        ), "only dedicated servers may apply the companion backend to the shared native engine");
+    }
+
+    @Test
     void nativeLibraryIsLoadedFromTheGameDirectoryNotTheWorldSave() throws IOException {
         final String source = readSource(
             findProjectRoot().resolve(

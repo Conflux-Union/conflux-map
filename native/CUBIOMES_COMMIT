@@ -134,27 +134,16 @@ Verification for this pin:
     a drift shift from the NVIDIA 580.119.02 driver on this workstation,
     with zero exact-contract failures anywhere in the matrix. Rebudgeting
     the float buckets is a separate scope decision.
-  - conflux-map integration (2026-11-10, fp32 sparse seam): buildNativesHost
-    rebuilds the committed linux-x86_64 library with -DCUBIOMES_ENABLE_GPU
-    and the two GPU sources against this pin; the shim's sparse refinement
-    entries attempt the fp32 sparse kernels above the existing gates
-    (CFX_GPU_HEIGHT_MIN_CELLS / CFX_GPU_BIOME_MIN_CELLS) and fall back to
-    their CPU loops otherwise - the seam's GPU serves are now
-    drift-budgeted fp32 (product decision: the visual map path accepts
-    coordinate-dependent drift), while the rect entries and every repair
-    path stay bit-exact. The :common:test suite passes 1661/1661 against
-    the rebuilt library: NativeSparseGpuEngagementTest and
-    NativeSparseBatchParityTest assert the sparse seam under drift bounds
-    with printed measured rates (composed-tile biome mismatch
-    0.0045-0.0075%, heights max |dY| 1 at the probe origins) and keep
-    exact equality for the latched/CPU-only comparisons; the two web port
-    parity suites pin the Java side to the CPU reference (engine forced
-    off) so the wasm port-equivalence gates stay bit-exact on GPU
-    machines (buildNativesAll was not re-run this round: zig is not
-    installed on this machine; the windows/macos/linux-aarch64 prebuilts
-    predate even the Phase 2 sparse JNI symbols, so those platforms latch
-    the sparse capability off and keep the pre-sparse behavior - rebuilds
-    pending a zig host).
+  - conflux-map integration (2026-11-10, exact sparse baseline): the JNI
+    sparse refinement entries use the fp64 kernels above the existing
+    gates (CFX_GPU_HEIGHT_MIN_CELLS / CFX_GPU_BIOME_MIN_CELLS), with CPU
+    fallback below the gates or when the device refuses. Residual patches
+    omit unchanged samples, so CPU/GPU and full-tile/cropped-window
+    sampling must produce identical baselines. NativeSparseGpuEngagementTest
+    and NativeSparseBatchParityTest assert exact equality across those
+    paths on the RTX 4060. buildNativesAll rebuilt all five release
+    targets against this pin and shim ABI 17, including the null OpenCL
+    runtime guard; only linux-x86_64 was functionally exercised.
   - conflux-map integration (2026-11-10, fp32 surface-columns seam - PARKED
     the same day, kept as the restoration recipe):
     buildNativesHost rebuilds the committed linux-x86_64 library with the col

@@ -105,10 +105,8 @@ public final class ServerConfig {
     /**
      * Engine for the companion's own prediction baseline (patch generation and seed-derived
      * features). GPU uses the OpenCL executor when the host has a working device and serves
-     * the exact CPU reference otherwise. The effective engine participates in the prediction
-     * identity ({@code GpuBackend}), so this companion only residual-diff-codes against
-     * clients whose prediction engines actually agree with its own; everyone else gets
-     * absolute patches without any protocol change.
+     * the exact CPU reference otherwise. Both backends produce the same residual baseline.
+     * Integrated servers use the client's backend because the native engine is process-global.
      */
     public PredictionBackend predictionBackend = PredictionBackend.GPU;
 

@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.core.predict;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -14,21 +15,7 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-/**
- * Engagement and drift bounds of the GPU-served sparse refinement seam: the shim's packed sparse
- * entries must attempt the fork's float point kernels for chunk shapes at or above the
- * rect-path gates ({@code CFX_GPU_HEIGHT_MIN_CELLS} = 256 points, {@code
- * CFX_GPU_BIOME_MIN_CELLS} = 1024 cells; the probe chunks below sit at or above both), a
- * below-gate chunk must stay on the CPU loops without counting as a GPU stage, and the same
- * coastline composition must land on drift-bounded {@link BaselineGrid} arrays with the engine
- * forced off and with it serving. The seam serves the fp32 kernels since Phase 5, so the
- * served side approximates the CPU reference: every plane must show a nonzero mismatch (zero
- * drift would mean the seam silently fell back to the CPU loops) inside the smoke bounds
- * (biome-style planes under a 2% mismatch rate, height-style planes under |dY| &lt;= 8 over
- * same-status pairs), with the measured rates printed for calibration. Dispatch engagement is
- * attributed per call through {@link NativeBaselineSampler#gpuStageStats()} deltas, the same
- * mechanism the rect tests use.
- */
+/** Exact baseline parity and dispatch engagement of the sparse fp64 kernels. */
 class NativeSparseGpuEngagementTest {
     /** Same fixed seed {@code PredictionNativeIntegrationTest} uses. */
     private static final long SEED = 146008555L;
@@ -120,20 +107,41 @@ class NativeSparseGpuEngagementTest {
             "a below-gate cell chunk must not count as a GPU stage");
     }
 
-    /**
-     * The drift-bound gate across the transport switch: the identical coastline composition at
-     * the two sparse-carrying LODs must stay inside the Phase 5 smoke bounds whether every
-     * eligible stage - the sparse chunks and the rect anchors around them - was GPU-served or
-     * CPU-solved. The rect entries are bit-exact on both sides, so every difference is the
-     * sparse seam's fp32 drift; the measured rates print per plane and every plane must drift
-     * nonzero, proving the float kernels actually served.
-     */
     @Test
     void compositionMatchesAcrossTheEngineSwitch() {
         final BaselineGrid[] off = compose(PredictionBackend.CPU);
         final BaselineGrid[] auto = compose(PredictionBackend.GPU);
         for (final int lod : new int[] {LOD2, LOD4}) {
-            assertGridsDriftBounded(off[lod], auto[lod], lod);
+            assertArrayEquals(off[lod].terrainY, auto[lod].terrainY, "terrain at lod" + lod);
+            assertArrayEquals(off[lod].biomeId, auto[lod].biomeId, "biomes at lod" + lod);
+            assertArrayEquals(off[lod].fluidY, auto[lod].fluidY, "fluid at lod" + lod);
+            assertArrayEquals(off[lod].baseSurfaceY, auto[lod].baseSurfaceY, "surface at lod" + lod);
+            assertArrayEquals(off[lod].surfaceFlags, auto[lod].surfaceFlags, "flags at lod" + lod);
+        }
+    }
+
+    @Test
+    void gpuWindowsMatchFullTileAcrossSparseDispatchThresholds() {
+        final BaselineGrid full = LodSampling.sample(sampler, false, LOD4, 0, 0);
+        assertNotNull(full);
+        for (int minZ = 0; minZ < 256; minZ += 16) {
+            for (int minX = 0; minX < 256; minX += 16) {
+                final BaselineGrid window = LodSampling.sampleOverworldWindow(
+                    sampler, LOD4, 0, 0, minX, minZ, minX + 15, minZ + 15
+                );
+                assertNotNull(window);
+                for (int pixelZ = minZ; pixelZ < minZ + 16; pixelZ++) {
+                    for (int pixelX = minX; pixelX < minX + 16; pixelX++) {
+                        final int index = BaselineGrid.index(pixelX, pixelZ);
+                        final String pixel = "pixel " + pixelX + "," + pixelZ;
+                        assertEquals(full.terrainY[index], window.terrainY[index], "terrain " + pixel);
+                        assertEquals(full.biomeId[index], window.biomeId[index], "biome " + pixel);
+                        assertEquals(full.fluidY[index], window.fluidY[index], "fluid " + pixel);
+                        assertEquals(full.baseSurfaceY[index], window.baseSurfaceY[index], "surface " + pixel);
+                        assertEquals(full.surfaceFlags[index], window.surfaceFlags[index], "flags " + pixel);
+                    }
+                }
+            }
         }
     }
 
@@ -212,16 +220,6 @@ class NativeSparseGpuEngagementTest {
             assertNotNull(grids[lod], "composition must succeed at lod" + lod + " on " + backend);
         }
         return grids;
-    }
-
-    private static void assertGridsDriftBounded(
-        final BaselineGrid expected, final BaselineGrid actual, final int lod
-    ) {
-        // The class-level serving assumption backs the nonzero-drift proof on the directly-served
-        // planes; the derived planes gate on bounds only.
-        SparseDriftGates.assertGridsDriftBounded(
-            expected, actual, "lod" + lod + " at " + COAST_X + "," + COAST_Z, true, true
-        );
     }
 
     /**

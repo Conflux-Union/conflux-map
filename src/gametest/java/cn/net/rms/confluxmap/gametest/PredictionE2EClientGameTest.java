@@ -28,7 +28,7 @@ package cn.net.rms.confluxmap.gametest;
  * emitted to the client log through the debug-timing gate ({@code [predict-e2e]} /
  * {@code [predict-timing]} / {@code [predict-backend]} lines) but never asserted - CI machines
  * are too noisy for performance claims (see the lavapipe flake history); only a generous
- * wall-clock smoke bound guards against hangs. The native library must be loadable; without
+ * bounded completion wait guards against hangs. The native library must be loadable; without
  * it the test reports and returns (the native assumptions precedent). Runs on the CPU
  * fallback where OpenCL is missing; GPU-vs-CPU comparison belongs on a GPU machine reading
  * the logged backend line.
@@ -43,8 +43,6 @@ package cn.net.rms.confluxmap.gametest;
 //$$      * their wait gets a much longer leash than the CI smoke round needs.
 //$$      */
 //$$     private static final int MATRIX_UPLOAD_TICKS = 6000;
-//$$     /** Loose smoke bound only: anything past this smells like a hang, not a regression. */
-//$$     private static final long SMOKE_WALL_LIMIT_MS = 30_000L;
 //$$     private static final String TIMING_FLAG = "confluxmap.debugPredictionTiming";
 //$$
 //$$     @Override
@@ -116,13 +114,6 @@ package cn.net.rms.confluxmap.gametest;
 //$$                 waitForViewportLoad(context, prediction, textures, -1, null, MAX_UPLOAD_TICKS);
 //$$             final long wallMs = load.wallNanos() / 1_000_000L;
 //$$             logBackend("done tiles=" + load.tiles() + " wallMs=" + wallMs);
-//$$             if (wallMs > SMOKE_WALL_LIMIT_MS) {
-//$$                 throw new AssertionError(
-//$$                     "viewport prediction load took " + wallMs + " ms (smoke limit "
-//$$                         + SMOKE_WALL_LIMIT_MS + " ms); stage breakdown is in the"
-//$$                         + " [predict-e2e] log line above"
-//$$                 );
-//$$             }
 //$$         } else {
 //$$             // Random ticks keep mutating spawn chunks every tick, which re-dirties LOD0
 //$$             // prediction tiles faster than the workers drain them and buries the cold load

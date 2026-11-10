@@ -379,7 +379,7 @@ public final class NativeBaselineSampler implements BaselineSampler, WaveCompose
             final int status = ctx.overviewHeightsCoarseBatch(
                 blockX, blockZ, w, h, stride, n, outTerrainY, failMask
             );
-            if (status != 0) {
+            if (status < 0) {
                 GpuBackend.noteBatchRefused();
             }
             return status;
@@ -456,7 +456,7 @@ public final class NativeBaselineSampler implements BaselineSampler, WaveCompose
             final int status = ctx.surfaceBiomesBatch(
                 sha, blockX, blockZ, w, h, stride, terrainY, n, outBiomeIds, failMask
             );
-            if (status != 0) {
+            if (status < 0) {
                 GpuBackend.noteBatchRefused();
             }
             return status;

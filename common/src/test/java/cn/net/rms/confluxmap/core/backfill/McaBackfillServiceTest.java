@@ -70,6 +70,7 @@ class McaBackfillServiceTest {
     private static final class FakeScanner implements McaRegionScanner {
         final AtomicLong mtime = new AtomicLong(MTIME);
         final AtomicInteger scanCount = new AtomicInteger();
+        final CountDownLatch scanStarted = new CountDownLatch(1);
         /** File-stat probes from the viewport patrol; the throttle test's observation point. */
         final AtomicInteger mtimeProbes = new AtomicInteger();
         final AtomicReference<CountDownLatch> scanGate = new AtomicReference<>();
@@ -90,6 +91,7 @@ class McaBackfillServiceTest {
         ) {
             lastScanThread.set(Thread.currentThread().getName());
             scanCount.incrementAndGet();
+            scanStarted.countDown();
             if (poisonMtimeDuringScan) {
                 mtime.incrementAndGet();
             }
@@ -241,7 +243,9 @@ class McaBackfillServiceTest {
     void fileChangedMidScanIsDiscarded() throws Exception {
         scanner.poisonMtimeDuringScan = true;
         service.reportViewport(DimensionId.OVERWORLD, 0, 0, 0, 0, 0);
-        Thread.sleep(200L);
+        assertTrue(scanner.scanStarted.await(5, TimeUnit.SECONDS), "scan must start");
+        executors.scans().shutdown();
+        assertTrue(executors.scans().awaitTermination(5, TimeUnit.SECONDS), "scan must finish");
 
         assertEquals(1, scanner.scanCount.get());
         assertNull(mapWorlds.current().store(MapLayer.SURFACE).region(0, 0),

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.nativepredict.CubiomesContext;
 import cn.net.rms.confluxmap.nativepredict.CubiomesContexts;
+import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import java.security.MessageDigest;
@@ -63,6 +64,31 @@ class BatchDispatchParityTest {
             "probe tile must sample");
         Assumptions.assumeTrue((sampler.gpuStageStats() - before) >>> 32 > 0,
             "engine is not serving stages on a GPU; batch parity is unobservable");
+    }
+
+    @Test
+    void unsupportedLegacyBatchesDoNotDisableModernBatchDispatch() {
+        assertTrue(GpuBackend.batchDispatchAvailable());
+        final NativeBaselineSampler legacy = new NativeBaselineSampler(
+            McVersions.toCubiomes("1.17.1").orElseThrow(), SEED, PredictionDimensions.OVERWORLD, 0
+        );
+        final int[] origins = {0, 256};
+        final int[] sizes = {130, 130};
+        final int[] strides = {4, 4};
+        final int[] out = new int[2 * 130 * 130];
+        final int[] failMask = new int[1];
+        assertNotEquals(0, legacy.overviewHeightsCoarseBatch(
+            origins, origins, sizes, sizes, strides, 2, out, failMask
+        ));
+        assertTrue(GpuBackend.batchDispatchAvailable(), "legacy height refusal must stay local");
+        assertNotEquals(0, legacy.surfaceBiomesBatch(
+            origins, origins, sizes, sizes, strides, out, 2, new int[out.length], failMask
+        ));
+        assertTrue(GpuBackend.batchDispatchAvailable(), "legacy biome refusal must stay local");
+        assertEquals(0, sampler.overviewHeightsCoarseBatch(
+            origins, origins, sizes, sizes, strides, 2, out, failMask
+        ));
+        assertEquals(0, failMask[0]);
     }
 
     @Test

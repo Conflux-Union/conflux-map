@@ -136,7 +136,9 @@ public final class ConfluxMapCompanion {
     private void onServerStarting(final MinecraftServer server) {
         ServerChunkDirtyHandler.bind(null);
         config = configIo.load();
-        GpuBackend.configure(config.predictionBackend);
+        if (server.isDedicated()) {
+            GpuBackend.configure(config.predictionBackend);
+        }
         runtime.deactivate();
         summaries = null;
         quadraLayouts = Map.of();

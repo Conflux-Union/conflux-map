@@ -110,7 +110,7 @@ static uint64_t cfxGetBatchMarshalNanos(void)
 }
 #endif /* CUBIOMES_ENABLE_GPU */
 
-#define CFX_ABI 16
+#define CFX_ABI 17
 #define CFX_NETHER_ROOF_Y 127
 
 #define CFX_OK              0
@@ -1749,20 +1749,6 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     int k;
     if (ctx->mc >= MC_1_18)
     {
-        /*
-         * The fork's gpuCfxOverviewHeightsSparseFloat resolves the same quart
-         * points cfxOverviewHeightAt does (CFX_DETAIL_FULL on both sides, so
-         * a GPU serve and a CPU repair answer identical queries) in one
-         * kernel launch and one readback per chunk, as the single-precision
-         * execution of the same expression - approximate against the CPU
-         * reference within the Phase 5 drift budget, not bit-exact. A chunk
-         * at or above the rect path's gate counts as a tracked stage; the
-         * sparse entry is whole-or-nothing - refusal fires before any GPU
-         * work or output write and never carries a failMask - so falling
-         * through hands the entire chunk to the identical CPU loop. The
-         * quart coords are staged apart from the marshalled block coords so
-         * the repair keeps its inputs.
-         */
         const int gpuEligible = n >= CFX_GPU_HEIGHT_MIN_CELLS;
         ctx->stageCalls += gpuEligible;
 #ifdef CUBIOMES_ENABLE_GPU
@@ -1778,7 +1764,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
                     x4[k] = floordiv(blockX[k], 4);
                     z4[k] = floordiv(blockZ[k], 4);
                 }
-                gpuServed = gpuCfxOverviewHeightsSparseFloat(
+                gpuServed = gpuCfxOverviewHeightsSparse(
                     heights, &ctx->g.bn, x4, z4, n, 0, 0, 0
                 ) == 0;
                 free(quart);
@@ -1874,26 +1860,13 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     int k;
     if (ctx->mc >= MC_1_18)
     {
-        /*
-         * Same dispatch as the heights entry, with the biome gate on the cell
-         * count: gpuCfxSurfaceBiomesSparseFloat answers the cell x edge x
-         * edge lattice of cfxSurfaceBiomeAt samples in one launch and one
-         * readback (the entry validation above already bounds the points
-         * total to CFX_MAX_CELLS, inside the kernel's own cap), as the
-         * single-precision execution of the same per-point chain -
-         * approximate against the CPU reference within the Phase 5 drift
-         * budget, clamping the staged terrainY at 62 exactly like the CPU
-         * loop. Whole-or-nothing refusal falls through to that loop
-         * untouched; the voronoi sha comes from the same packed engine
-         * state the rect batch reads.
-         */
         const int gpuEligible = n >= CFX_GPU_BIOME_MIN_CELLS;
         ctx->stageCalls += gpuEligible;
 #ifdef CUBIOMES_ENABLE_GPU
         int gpuServed = 0;
         if (gpuEligible)
         {
-            gpuServed = gpuCfxSurfaceBiomesSparseFloat(
+            gpuServed = gpuCfxSurfaceBiomesSparse(
                 out, &ctx->g.bn, ctx->g.sha, cellX, cellZ, terrainY, edge, stride, n
             ) == 0;
             ctx->stageGpuCalls += gpuServed;
