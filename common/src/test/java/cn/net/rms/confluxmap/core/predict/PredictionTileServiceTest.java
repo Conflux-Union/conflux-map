@@ -123,6 +123,59 @@ class PredictionTileServiceTest {
         }
     }
 
+    /**
+     * Cross-LOD fallback validity: coverage events fire at every LOD but only the viewport's LOD
+     * recomposes, so a parent left behind by a zoom-in must report stale until its LOD returns.
+     */
+    @Test
+    void realCoverageChangeStalesOutOfViewportParentUntilItsLodReturns(
+        @TempDir final Path tempDir
+    ) throws InterruptedException {
+        final SessionGuard sessionGuard = new SessionGuard();
+        final SessionGuard.Session session = sessionGuard.begin(WORLD, DIM);
+        final MapWorldService worlds = new MapWorldService();
+        worlds.switchSession(session);
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(
+            worlds, executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.FLAT, WorldPreset.DEFAULT);
+        state.setFlatBaseline(new FlatBaseline(1, 63, SurfaceKind.LAND.ordinal(), 11, 0));
+        final PredictionTileService predictionTiles = newService(
+            sessionGuard, state, executors, uploads
+        );
+        predictionTiles.bindCorrectionStore(new CorrectionStore(tempDir));
+        final TileKey parent = new TileKey(WORLD, DIM, "surface!pred", 1, 0, 0);
+
+        try {
+            predictionTiles.setViewport(DIM, 1, 0, 0, 0, 0);
+            predictionTiles.requestTile(parent);
+            awaitIdle(predictionTiles);
+            assertTrue(predictionTiles.compositionCurrent(parent),
+                "a freshly composed parent is a valid cross-LOD fallback stand-in");
+
+            // Zoom in: the parent's LOD leaves the viewport, so the coverage event below marks
+            // it stale without recomposing - the state its GPU texture would be stretched over
+            // newly resident real lod-0 tiles in.
+            predictionTiles.setViewport(DIM, 0, 0, 1, 0, 1);
+            uploads.markChunksStored(
+                session.token(), DIM, MapLayer.SURFACE, List.of(new TileService.RegionUnit(0, 0))
+            );
+            awaitIdle(predictionTiles);
+            assertFalse(predictionTiles.compositionCurrent(parent),
+                "a parent whose real coverage changed behind the zoomed-in viewport is stale");
+
+            // Zoom back out: the viewport refresh recomposes the parent, restoring validity.
+            predictionTiles.setViewport(DIM, 1, 0, 0, 0, 0);
+            awaitIdle(predictionTiles);
+            assertTrue(predictionTiles.compositionCurrent(parent),
+                "the recompose that lands once the parent's LOD is viewed again clears the stale mark");
+        } finally {
+            executors.shutdown(2000L);
+        }
+    }
+
     @Test
     void fullscreenViewportCompositionsUseTheWholeWorkerPool() throws InterruptedException {
         final SessionGuard sessionGuard = new SessionGuard();

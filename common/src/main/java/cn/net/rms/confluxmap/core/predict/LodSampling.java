@@ -1149,11 +1149,15 @@ public final class LodSampling {
                 final int h00 = lattice.heights[anchorZ * lattice.w + anchorX];
                 int value = h00;
                 if (oddX != 0 || oddZ != 0) {
-                    final int h10 = lattice.heights[anchorZ * lattice.w + anchorX + 1];
+                    // Read the right-hand anchor only when it exists: at the last lattice column the
+                    // unconditional read wrapped into the next row (dead value when oddX == 0, but a
+                    // stray read on the last row).
+                    final boolean hasRight = anchorX + 1 < lattice.w;
+                    final int h10 = hasRight ? lattice.heights[anchorZ * lattice.w + anchorX + 1] : h00;
                     final int top = oddX != 0 ? lerp(h00, h10, 1, 2) : h00;
                     if (oddZ != 0) {
                         final int h01 = lattice.heights[(anchorZ + 1) * lattice.w + anchorX];
-                        final int bottom = oddX != 0
+                        final int bottom = oddX != 0 && hasRight
                             ? lerp(h01, lattice.heights[(anchorZ + 1) * lattice.w + anchorX + 1], 1, 2)
                             : h01;
                         value = lerp(top, bottom, 1, 2);
@@ -1225,14 +1229,26 @@ public final class LodSampling {
                     continue;
                 }
                 final int h00 = lattice.heights[anchorZ * lattice.w + anchorX];
-                final int h10 = lattice.heights[anchorZ * lattice.w + anchorX + 1];
-                int lowest = Math.min(h00, h10);
-                int highest = Math.max(h00, h10);
+                int lowest = h00;
+                int highest = h00;
+                /*
+                 * Bounds check, not a parity check. The envelope must keep the right-hand anchor
+                 * for every pixel that has one - at the last lattice column anchorX + 1 wraps into
+                 * the next row (and past the array on the last row), so only that column skips it.
+                 * Keying this on `oddX != 0` instead would silently drop the right anchor for every
+                 * even pixel, narrowing the band and skipping exact waterline solves it used to do.
+                 */
+                final boolean hasRight = anchorX + 1 < lattice.w;
+                if (hasRight) {
+                    final int h10 = lattice.heights[anchorZ * lattice.w + anchorX + 1];
+                    lowest = Math.min(lowest, h10);
+                    highest = Math.max(highest, h10);
+                }
                 if (oddZ != 0) {
                     final int h01 = lattice.heights[(anchorZ + 1) * lattice.w + anchorX];
                     lowest = Math.min(lowest, h01);
                     highest = Math.max(highest, h01);
-                    if (oddX != 0) {
+                    if (hasRight) {
                         final int h11 = lattice.heights[(anchorZ + 1) * lattice.w + anchorX + 1];
                         lowest = Math.min(lowest, h11);
                         highest = Math.max(highest, h11);
@@ -1395,11 +1411,11 @@ public final class LodSampling {
      * as the per-pixel pass would resolve that column. Returns null when the grid is not
      * supersampled or the sampler cannot serve the query.
      *
-     * <p>Opting-in samplers first take the sparse-lattice path ({@link
-     * #sampleSubBiomeLatticeRange}) - at LOD2-4, where the cell lattice covers plain per-pixel
-     * biomes; the dense sweep here stays as the fallback and as the value-level contract that
-     * path must reproduce outside its copied cells. A supersampled grid from a re-enabled
-     * sub-sampling config would use it for the 2x2 sweep.
+     * <p>The sparse-lattice path ({@link #sampleSubBiomeLatticeRange}) is chosen by the callers
+     * before falling back here; this method itself always runs the dense sweep and exists as that
+     * fallback and as the value-level contract the lattice path must reproduce outside its copied
+     * cells. A supersampled grid from a re-enabled sub-sampling config would use it for the 2x2
+     * sweep.
      */
     private static int[] sampleSubBiomeRaw(
         final BaselineSampler sampler,
@@ -1408,16 +1424,6 @@ public final class LodSampling {
         final int tileOriginZ,
         final BaselineGrid grid
     ) {
-        if (sampler.interpolatableOverviewHeights() && lod >= OVERVIEW_ANCHOR_MIN_LOD) {
-            final int[] fromLattice = sampleSubBiomeLatticeRange(
-                sampler, lod, tileOriginX, tileOriginZ, grid.subPerAxis,
-                0, 0, LATTICE_CELL_COUNT, LATTICE_CELL_COUNT,
-                grid.terrainY, 0, 0, BaselineGrid.SIZE
-            );
-            if (fromLattice != null) {
-                return fromLattice;
-            }
-        }
         if (!grid.supersampled()) {
             return null;
         }
@@ -1461,13 +1467,36 @@ public final class LodSampling {
     }
 
     /** Whether all four corner anchors of one lattice cell are water biomes. */
+    private static int waterFreezeClass(final int biomeId) {
+        if (biomeId == 10 || biomeId == 11) {
+            return 1; // frozen ocean / frozen river (surface ice)
+        }
+        if (biomeId == 50) {
+            return 2; // deep frozen ocean
+        }
+        return 0; // standard non-frozen water
+    }
+
     private static boolean allAnchorsWater(
         final int[] anchorBiomes, final int anchorsW, final int localKx, final int localKz
     ) {
-        return BiomeTable.get(anchorBiomes[localKz * anchorsW + localKx]).waterBiome()
-            && BiomeTable.get(anchorBiomes[localKz * anchorsW + localKx + 1]).waterBiome()
-            && BiomeTable.get(anchorBiomes[(localKz + 1) * anchorsW + localKx]).waterBiome()
-            && BiomeTable.get(anchorBiomes[(localKz + 1) * anchorsW + localKx + 1]).waterBiome();
+        final int b00 = anchorBiomes[localKz * anchorsW + localKx];
+        final int b10 = anchorBiomes[localKz * anchorsW + localKx + 1];
+        final int b01 = anchorBiomes[(localKz + 1) * anchorsW + localKx];
+        final int b11 = anchorBiomes[(localKz + 1) * anchorsW + localKx + 1];
+
+        if (!BiomeTable.get(b00).waterBiome()
+            || !BiomeTable.get(b10).waterBiome()
+            || !BiomeTable.get(b01).waterBiome()
+            || !BiomeTable.get(b11).waterBiome()) {
+            return false;
+        }
+
+        // Must preserve identical freeze semantics across all four corners
+        final int fClass = waterFreezeClass(b00);
+        return fClass == waterFreezeClass(b10)
+            && fClass == waterFreezeClass(b01)
+            && fClass == waterFreezeClass(b11);
     }
 
     /** Whether all four pixel heights of one lattice cell sit under the fluid-decides band. */
@@ -1576,8 +1605,11 @@ public final class LodSampling {
      * height alone classifies the column. Every other cell solves its sub-samples exactly, each
      * with its own pixel's height - value-for-value what the dense sweep returns. Because
      * cells, anchors and heights are all absolute to the tile, a window update that expands to
-     * cell boundaries reproduces the full tile's sweep bit-for-bit. Returns the raw sweep for
-     * the requested cell range (window layout, {@code cellsW*step} wide), or null on failure.
+     * cell boundaries reproduces the full tile's sweep bit-for-bit. Refining cells are collected
+     * and dispatched in bounded chunks (per-cell below the sparse threshold), so the first
+     * failing chunk repairs cell by cell exactly where the dense sweep would have failed.
+     * Returns the raw sweep for the requested cell range (window layout, {@code cellsW*step}
+     * wide), or null on failure.
      */
     private static int[] runSubBiomeCells(
         final BaselineSampler sampler,

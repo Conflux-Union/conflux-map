@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -655,5 +656,38 @@ class CubiomesNativeTest {
 
         assertTrue(NativeLib.init(freshBaseDir), "init must still succeed after finding a corrupt file on disk");
         assertTrue(Files.size(libFile) > 4, "corrupted file must be re-extracted back to its proper (much larger) content");
+    }
+
+    /**
+     * The stride-4 sibling of the position-purity contract: since LOD2's dense overview now runs
+     * through the adaptive macro grid, a window must return exactly the values the full tile
+     * returns for the same world columns. A phase or clamp bug here tears tiles at their seams.
+     * Offset 64 is a multiple of the stride so the two grids share sample columns.
+     */
+    @Test
+    void cfxOverviewHeightsStride4IsPositionPure() {
+        try (CubiomesContext ctx = CubiomesContext.create(mc21(), 146008555L, OVERWORLD, 0)) {
+            assertNotNull(ctx);
+            final int stride = 4;
+            final int fullW = 258;
+            final int winW = 130;
+            final int offsetPixels = 64 / stride;
+            final int[] full = new int[fullW * fullW];
+            final int[] window = new int[winW * winW];
+
+            assertEquals(0, ctx.overviewHeights(0, 0, fullW, fullW, stride, full));
+            assertEquals(0, ctx.overviewHeights(64, 64, winW, winW, stride, window));
+
+            for (int j = 0; j < winW; j++) {
+                for (int i = 0; i < winW; i++) {
+                    final int expected = full[(j + offsetPixels) * fullW + (i + offsetPixels)];
+                    final int actual = window[j * winW + i];
+                    if (expected != actual) {
+                        fail("stride-4 macro grid is not position pure at pixel (" + i + "," + j
+                            + "): full=" + expected + " window=" + actual);
+                    }
+                }
+            }
+        }
     }
 }

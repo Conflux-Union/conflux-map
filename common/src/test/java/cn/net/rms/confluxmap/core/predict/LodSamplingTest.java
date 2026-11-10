@@ -20,6 +20,129 @@ import org.junit.jupiter.params.provider.ValueSource;
  * another tile's data at all.
  */
 class LodSamplingTest {
+    @ParameterizedTest
+    @ValueSource(ints = {2, 3, 4})
+    void adjacentBiomeRefinementsShareOneBatchWithoutChangingPixelInputs(final int lod) {
+        final int blocksPerPixel = 1 << lod;
+        final int[] surfaceCalls = {0};
+        final int[] sparseCalls = {0};
+        final String[] firstCallAt = {""};
+        final BaselineSampler sampler = new BaselineSampler() {
+            @Override
+            public boolean interpolatableOverviewHeights() {
+                return true;
+            }
+
+            @Override
+            public boolean biomes(
+                final int scale, final int x, final int z, final int w, final int h,
+                final int[] out
+            ) {
+                throw new AssertionError("the height-aware biome sweep must succeed");
+            }
+
+            @Override
+            public boolean heights(
+                final int x4, final int z4, final int w, final int h, final int[] out
+            ) {
+                return false;
+            }
+
+            @Override
+            public boolean endHeights(
+                final int x4, final int z4, final int w, final int h, final int[] out
+            ) {
+                return false;
+            }
+
+            @Override
+            public boolean overviewHeights(
+                final int blockX, final int blockZ, final int w, final int h,
+                final int stride, final int[] out
+            ) {
+                for (int z = 0; z < h; z++) {
+                    for (int x = 0; x < w; x++) {
+                        out[z * w + x] = 100 + Math.floorMod(
+                            Math.floorDiv(blockX + x * stride, blocksPerPixel)
+                                + 3 * Math.floorDiv(blockZ + z * stride, blocksPerPixel),
+                            9
+                        );
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public boolean surfaceBiomes(
+                final int blockX, final int blockZ, final int w, final int h,
+                final int stride, final int[] terrainY, final int[] out
+            ) {
+                surfaceCalls[0]++;
+                for (int z = 0; z < h; z++) {
+                    for (int x = 0; x < w; x++) {
+                        out[z * w + x] = refinementBiome(
+                            blockX + x * stride, blockZ + z * stride,
+                            terrainY[z * w + x], blocksPerPixel
+                        );
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public boolean surfaceBiomesSparse(
+                final int[] cellX, final int[] cellZ, final int edge,
+                final int stride, final int[] terrainYPacked,
+                final int n, final int[] outBiomeIdsPacked
+            ) {
+                sparseCalls[0] += n;
+                final int points = edge * edge;
+                for (int c = 0; c < n; c++) {
+                    for (int p = 0; p < points; p++) {
+                        outBiomeIdsPacked[c * points + p] = refinementBiome(
+                            cellX[c] + (p % edge) * stride,
+                            cellZ[c] + (p / edge) * stride,
+                            terrainYPacked[c * points + p], blocksPerPixel
+                        );
+                    }
+                }
+                return true;
+            }
+        };
+        final int originX = -8192;
+        final int originZ = 4096;
+        final BaselineGrid grid = LodSampling.sample(sampler, false, lod, originX, originZ);
+        assertNotNull(grid);
+        for (int z = -1; z <= 256; z++) {
+            for (int x = -1; x <= 256; x++) {
+                final int pixel = BaselineGrid.index(x, z);
+                assertEquals(
+                    refinementBiome(originX + x * blocksPerPixel, originZ + z * blocksPerPixel,
+                        grid.terrainY[pixel], blocksPerPixel),
+                    grid.biomeId[pixel], "biome at " + x + "," + z
+                );
+            }
+        }
+        // The anchor sweep stays one plain rect query; every refining cell beyond it is
+        // collected and dispatched through the bounded sparse chunk transport, and the
+        // per-point entry only runs when a chunk fails (it did not here).
+        assertEquals(1, surfaceCalls[0],
+            "one anchor rect query plus chunked refinements, first call at " + firstCallAt[0]);
+        assertTrue(sparseCalls[0] > 0, "refining cells share sparse chunk dispatches");
+    }
+
+    private static int refinementBiome(
+        final int blockX, final int blockZ, final int height, final int blocksPerPixel
+    ) {
+        // Adjacent cell anchors differ by at least one id even when their heights differ,
+        // forcing refinement; the low bit makes an incorrectly packed height observable.
+        final int parity = Math.floorMod(
+            Math.floorDiv(blockX + blocksPerPixel, 2 * blocksPerPixel)
+                + Math.floorDiv(blockZ + blocksPerPixel, 2 * blocksPerPixel), 2
+        );
+        return 4 + 2 * parity + (height & 1);
+    }
+
     private static final PositionBasedFakeSampler SAMPLER = new PositionBasedFakeSampler();
 
     @ParameterizedTest

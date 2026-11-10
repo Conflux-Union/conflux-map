@@ -180,6 +180,11 @@ class TileVisualSnapshotTest {
             tileCostDir.resolve("visual").resolve("contact-sheet.png"),
             sheetBaseline, sheetCurrent
         );
+
+        if (!wroteBaseline) {
+            assertTrue(legacyExact, "1.17.1 legacyExact bit-identical baseline frozen contract violated!");
+            assertTrue(maxOceanToLandPct < 0.3, "Rendered ocean-to-land flip rate must stay below 0.3% (actual: " + maxOceanToLandPct + "%)");
+        }
     }
 
     private static String comboId(final String version, final int lod, final int regionIdx) {
@@ -267,8 +272,9 @@ class TileVisualSnapshotTest {
         }
         diff.oceanToLandPct = baselineWaterPixels == 0
             ? 0.0 : 100.0 * oceanToLand / baselineWaterPixels;
-        diff.landToOceanPct = baselineWaterPixels == 0
-            ? 0.0 : 100.0 * landToOcean / baselineWaterPixels;
+        final long baselineLandPixels = RENDER_PIXELS - baselineWaterPixels;
+        diff.landToOceanPct = baselineLandPixels == 0
+            ? 0.0 : 100.0 * landToOcean / baselineLandPixels;
         diff.visibleDiffPct = 100.0 * visiblePixels / RENDER_PIXELS;
         diff.meanColorDelta = (double) colorSum / RENDER_PIXELS;
         return diff;

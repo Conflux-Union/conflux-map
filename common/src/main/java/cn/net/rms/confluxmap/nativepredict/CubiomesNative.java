@@ -203,8 +203,9 @@ final class CubiomesNative {
     );
 
     /**
-     * Coarse-lattice overview for the LOD2-4 anchor sweeps: skips terrain-noise octaves whose
-     * wavelength is shorter than the sampling stride (stride {@code <} 8 keeps full detail).
+     * Coarse-lattice overview for the LOD2-4 anchor sweeps. On pre-1.18 worlds this entry may
+     * skip depth-noise octaves shorter than half the sampling stride (the plain entry never
+     * truncates); 1.18+ behavior matches {@link #cfxOverviewHeights}.
      */
     static native int cfxOverviewHeightsCoarse(
         long handle,

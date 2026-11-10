@@ -1,7 +1,7 @@
 upstream: https://github.com/Cubitect/cubiomes (active line: xpple/cubiomes master)
 fork:     https://github.com/Conflux-Union/cubiomes (this project's fork)
-commit:   1d10bdf5371ba72f58fc1d59374f637c5d83f9eb
-commit date: 2026-11-10T15:34:11+08:00
+commit:   095b6010dff0d1c694434b15c183524d7b01d61c
+commit date: 2026-11-10T18:49:17+08:00
 pinned via: native/cubiomes git submodule (converted from a vendored copy on 2026-07-17)
 license: MIT (see native/cubiomes/LICENSE)
 
@@ -76,7 +76,7 @@ Fork contents kept on top of upstream master:
     bit-identical before and after. Batched z-stride
     entries (gpuMapOverworldSurfaceBiomeRows / gpuMapOverworldTerrainHeightRows)
     fold streamed overview-row sets into one dispatch. Default mode is
-    env-driven (CUBIOMES_GPU, auto); gpuSetMode() overrides. 1d10bdf parks
+    env-driven (CUBIOMES_GPU, auto); gpuSetMode() overrides. 095b6010 parks
     the whole surface-columns path behind `#if 0` guards after the composed
     A/B measurement found the seam net-wall negative in the product's
     serving shape (opening wall +6.2%, first tile +76%): the col kernels
@@ -121,7 +121,7 @@ Verification for this pin:
     (1M-class) with the cave-mouth and 30M-border probes printing only - the
     carve-discontinuity and coordinate-quantization classes (border flags
     0.955%, |dY| 82), the same print-only classification the mod's
-    composed-tile gates use. Re-run green 2026-11-10 at 1d10bdf parking the
+    composed-tile gates use. Re-run green 2026-11-10 at 095b6010 parking the
     col path: clean rebuild with zero compiler warnings, the default matrix
     reproduces the pre-col run shape minus the col sections (BUDGET OK:
     1239534 points unchanged), the rebuilt linux-x86_64 library carries no
@@ -175,7 +175,7 @@ Verification for this pin:
     measurement then returned a net-wall negative verdict on the seam
     (opening wall +6.2%, first tile +76%, no compensating niche under the
     product's 8-way CPU parallelism, shared in-order queue, and tile-sized
-    batches), so the col path is commented out in both repos as of 1d10bdf:
+    batches), so the col path is commented out in both repos as of 095b6010:
     `#if 0` guards disable the shim's GPU attempt block, its
     cfxGpuColumnMinAnchors gate, and the CFX_GPU_COLUMN_MIN_ANCHORS define,
     while the fork's parked guards take the col kernels out of

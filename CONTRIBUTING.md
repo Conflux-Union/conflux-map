@@ -65,6 +65,7 @@ Notes:
 5. **Mixins are registered in `src/main/resources/confluxmap.mixins.json`**, which is expanded per version at build time; there are no per-version copies to keep in sync.
 6. **`native/cubiomes` is a submodule.** Don't edit it in place; changes go through the fork and a submodule pin bump.
 7. **English everywhere in code, comments, and commit messages.**
+8. **Markdown stays in the established documents.** User-facing behavior goes in `README.md`/`README_CN.md` (maintainers curate those); developer contracts and workflows go in the existing `docs/` files (e.g. `docs/reference-specs/`). Do not add new `.md` files for measurement reports, validation logs, benchmark summaries, or build/binary provenance — that evidence belongs in the PR description, an issue, or tests. `docs/performance/` and `native/prebuilt/BUILD_INFO.md` were removed on purpose; do not reintroduce them.
 
 ## Testing
 

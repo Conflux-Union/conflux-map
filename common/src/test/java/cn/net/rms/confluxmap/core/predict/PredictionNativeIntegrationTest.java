@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
+import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import java.util.OptionalInt;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
@@ -565,38 +566,49 @@ class PredictionNativeIntegrationTest {
      * must reproduce the full tile's values pixel for pixel, copied cells included. Window
      * shapes cover corner/edge positions and odd/even offsets, i.e. every partial-cell expansion
      * path, including the widened biome-anchor margin the waterline gate reads.
+     *
+     * <p>The engine is pinned off for this contract: window determinism holds on one serving
+     * reference. In auto mode a full tile's above-gate chunks serve the fp32 kernels while a
+     * small window's anchor grid stays below the gate on the CPU, and the two references
+     * disagree by construction since the shim adopted the waterline lround the kernels do not
+     * encode (that cross-reference drift is the engagement suite's engine-switch gate).
      */
     @Test
     void coarseLodWindowsReproduceTheFullTileLatticeSweep() {
-        for (final int lod : new int[] {2, 3, 4}) {
-            final NativeBaselineSampler sampler = new NativeBaselineSampler(mc21(), SEED, 0, 0);
-            final BaselineGrid full = LodSampling.sample(sampler, false, lod, 4096, -8192);
-            assertNotNull(full);
+        GpuBackend.configure(PredictionBackend.CPU);
+        try {
+            for (final int lod : new int[] {2, 3, 4}) {
+                final NativeBaselineSampler sampler = new NativeBaselineSampler(mc21(), SEED, 0, 0);
+                final BaselineGrid full = LodSampling.sample(sampler, false, lod, 4096, -8192);
+                assertNotNull(full);
 
-            final int[][] windows = {
-                {0, 0, 1, 1},
-                {37, 61, 37, 61},
-                {113, 47, 119, 53},
-                {0, 254, 3, 255},
-                {252, 0, 255, 7},
-            };
-            for (final int[] bounds : windows) {
-                final BaselineGrid window = LodSampling.sampleOverworldWindow(
-                    sampler, lod, 4096, -8192, bounds[0], bounds[1], bounds[2], bounds[3]
-                );
-                assertNotNull(window, "window sampling must succeed: " + java.util.Arrays.toString(bounds));
-                for (int z = bounds[1]; z <= bounds[3]; z++) {
-                    for (int x = bounds[0]; x <= bounds[2]; x++) {
-                        final int index = BaselineGrid.index(x, z);
-                        assertEquals(full.terrainY[index], window.terrainY[index],
-                            "terrain at lod " + lod + " pixel " + x + "," + z);
-                        assertEquals(full.biomeId[index], window.biomeId[index],
-                            "biome at lod " + lod + " pixel " + x + "," + z);
-                        assertEquals(full.surfaceFlags[index], window.surfaceFlags[index],
-                            "surface flags at lod " + lod + " pixel " + x + "," + z);
+                final int[][] windows = {
+                    {0, 0, 1, 1},
+                    {37, 61, 37, 61},
+                    {113, 47, 119, 53},
+                    {0, 254, 3, 255},
+                    {252, 0, 255, 7},
+                };
+                for (final int[] bounds : windows) {
+                    final BaselineGrid window = LodSampling.sampleOverworldWindow(
+                        sampler, lod, 4096, -8192, bounds[0], bounds[1], bounds[2], bounds[3]
+                    );
+                    assertNotNull(window, "window sampling must succeed: " + java.util.Arrays.toString(bounds));
+                    for (int z = bounds[1]; z <= bounds[3]; z++) {
+                        for (int x = bounds[0]; x <= bounds[2]; x++) {
+                            final int index = BaselineGrid.index(x, z);
+                            assertEquals(full.terrainY[index], window.terrainY[index],
+                                "terrain at lod " + lod + " pixel " + x + "," + z);
+                            assertEquals(full.biomeId[index], window.biomeId[index],
+                                "biome at lod " + lod + " pixel " + x + "," + z);
+                            assertEquals(full.surfaceFlags[index], window.surfaceFlags[index],
+                                "surface flags at lod " + lod + " pixel " + x + "," + z);
+                        }
                     }
                 }
             }
+        } finally {
+            GpuBackend.configure(PredictionBackend.GPU);
         }
     }
 

@@ -7,8 +7,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
+import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -16,15 +18,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
  * Transport parity, repair, and call accounting of sparse refinement against per-point
- * sampling. Since the fp32 unification the height and biome kernel entries round
- * independently, so cross-transport comparisons ride tight parity bounds (|dY| &lt;= 1 per
- * value, categorical under 2%) instead of bit equality; request collection, repair behavior
- * and call accounting stay exact.
+ * sampling. Comparisons run on the CPU reference (the engine is pinned off per test): the
+ * packed transports are dispatch-shape contracts - request collection, repair behavior and
+ * call accounting stay exact, and with one serving formula both transports resolve the same
+ * values. The fp32 GPU kernels approximate the fork's own transcription of the per-point
+ * formula, and their drift against the CPU reference is bounded by the GPU engagement
+ * suites, not here.
  */
 class NativeSparseBatchParityTest {
     /** Same fixed seed {@code PredictionNativeIntegrationTest} uses. */
@@ -44,6 +49,15 @@ class NativeSparseBatchParityTest {
         Assumptions.assumeTrue(
             NativeLib.initForTests(), "native prediction library unavailable on this platform"
         );
+        // Dispatch-shape parity is a CPU-reference contract: in auto mode the packed entries
+        // serve the fp32 kernels, which transcribe the fork's pre-merge rounding and drift
+        // against this build's CPU reference. Pinning CPU keeps both transports on one formula.
+        GpuBackend.configure(PredictionBackend.CPU);
+    }
+
+    @AfterEach
+    void restoreEngineMode() {
+        GpuBackend.configure(PredictionBackend.GPU);
     }
 
     private static int mc21() {

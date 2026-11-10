@@ -103,6 +103,11 @@ jobs:
           # Gametest servers all bind the default port, so they cannot run as parallel
           # tasks inside one invocation; the GameTest-Matrix job runs them instead.
           ./gradlew -Pversion="$BUILD_VERSION" $tasks -x runGametest
+      # Native harnesses need gcc/cc, so they are NOT part of the version subprojects' `check`
+      # (that would break Windows/macOS contributors). This Linux job runs them explicitly:
+      # baseline anchor, position purity and the full ground-truth matrix with its gates.
+      - name: Verify native predictors
+        run: ./gradlew verifyNative
       - name: Connect client to server for shard
         timeout-minutes: 45
         env:
@@ -509,6 +514,8 @@ jobs:
             ${{ runner.os }}-gradle-
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
+      - name: Check native legacy prediction oracle & matrix parity
+        run: ./gradlew -Pversion="$BUILD_VERSION" testNativeLegacy
       - name: Check api module
         run: ./gradlew -Pversion="$BUILD_VERSION" :api:check
       - name: Stop Gradle daemon

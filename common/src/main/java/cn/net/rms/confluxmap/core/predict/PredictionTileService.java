@@ -182,7 +182,7 @@ public final class PredictionTileService {
     private final Set<TileKey> missingLowerCoverage = new HashSet<>();
     private long lowerCoverageGeneration;
     /** Guarded by {@code this}: invalidates compositions started before a manual/session reload. */
-    private long reloadGeneration;
+    private volatile long reloadGeneration;
 
     /** Latest fullscreen viewport; visible predictions are scheduled outward from its center. */
     private ViewportRect viewport;
@@ -1136,6 +1136,20 @@ public final class PredictionTileService {
             dirtyPut(key, session.token());
         }
         pump();
+    }
+
+    /**
+     * Whether the composition last uploaded for {@code key} still matches the state it was
+     * composed under. A predicted tile's pixels are transparent exactly where real data won at
+     * compose time; once real coverage (or the view mode) changes under it, that mask overstates
+     * prediction until a recompose lands - and only the current viewport's LOD recomposes. A
+     * cross-LOD consumer drawing a stale tile would paint fabricated terrain over newer real
+     * tiles, so {@code TileTextureManager}'s fallback probes consult this before binding.
+     */
+    public boolean compositionCurrent(final TileKey key) {
+        synchronized (this) {
+            return !staleRealCoverageTiles.contains(key) && !staleViewModeTiles.contains(key);
+        }
     }
 
     private void markBiomeDirtyIfRequested(final TileKey key, final long token) {
@@ -2349,12 +2363,17 @@ public final class PredictionTileService {
         final BaselineGrid grid,
         final DerivedGrid derived
     ) {
-        PackedSurfacePlane.unpackPlane(tile.packedSurfaceKind(), derived.surfaceY, derived.kind);
-        final byte[] fluidDepth = tile.fluidDepth();
+        reconstructGrids(tile.packedSurfaceKind(), tile.fluidDepth(), tile.biomes(), grid, derived);
+    }
+
+    private static void reconstructGrids(
+        final short[] surfaceKind, final byte[] fluidDepth, final byte[] biomes,
+        final BaselineGrid grid, final DerivedGrid derived
+    ) {
+        PackedSurfacePlane.unpackPlane(surfaceKind, derived.surfaceY, derived.kind);
         for (int i = 0; i < PackedSurfacePlane.CELLS; i++) {
             derived.fluidDepth[i] = fluidDepth[i] & 0xFF;
         }
-        final byte[] biomes = tile.biomes();
         for (int z = 0; z < BaselineGrid.PIXELS; z++) {
             for (int x = 0; x < BaselineGrid.PIXELS; x++) {
                 grid.biomeId[BaselineGrid.index(x, z)] = biomes[z * BaselineGrid.PIXELS + x] & 0xFF;

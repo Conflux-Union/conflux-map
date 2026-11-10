@@ -35,6 +35,7 @@
 #include <jni.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <limits.h>
 #include <math.h>
 #include <string.h>
@@ -131,6 +132,17 @@ static uint64_t cfxGetBatchMarshalNanos(void)
 #define GPU_METRICS_SLOTS 68
 #endif
 
+/* Coarse legacy overview windows at or above this cell count skip the
+ * sub-Nyquist depth-noise octaves (cfxLegacyDepthOctaveFloor). The Java tile
+ * pipeline's coarse windows are 258x258; the exact-residual anchor grids
+ * (34x34 and 18x18 at LOD0-1) and the stride-4 waterline micro queries stay
+ * below the bar and keep full detail, mirroring the modern path's separation
+ * between the full-detail entry and the truncated coarse lattices. */
+#define CFX_LEGACY_TRUNCATE_MIN_CELLS 4096
+
+/* Octave count of the legacy depth noise (`octdepth`, omin=-15). */
+#define CFX_LEGACY_DEPTH_OCTAVES 16
+
 typedef struct {
     Generator g;
     SurfaceNoise sn; /* Overworld terrain columns and End surface heights. */
@@ -145,6 +157,20 @@ typedef struct {
      * uint32 wraparound is harmless because Java only reads deltas. */
     uint32_t stageCalls;
     uint32_t stageGpuCalls;
+    /* Two-slot memo of the last cfxGenerateOverviewBiomes results. The Java
+     * tile pipeline requests the identical strided biome window twice per
+     * tile (once inside cfxOverviewHeights for terrain heights, once through
+     * cfxSurfaceBiomes), with the LOD0-1 exact-residual anchor window
+     * interleaved between them, so two slots hold both geometries and the
+     * second full layer-stack pass becomes a memcpy. Contexts are
+     * thread-confined, and the key below is complete: biomes are a pure
+     * function of (mc, seed, dim) context state plus the window geometry. */
+    int overviewMemoValid[2];
+    int overviewMemoX[2], overviewMemoZ[2], overviewMemoW[2], overviewMemoH[2];
+    int overviewMemoStride[2];
+    int *overviewMemoBiomes[2];
+    size_t overviewMemoCap[2];
+    int overviewMemoNext;
 } CfxContext;
 
 static CfxContext *cfxHandle(jlong handle) {
@@ -261,40 +287,317 @@ static int cfxGenerateBiomesStrided(
     }
 #endif
 
-    int j;
-    for (j = 0; j < h; j++)
+    /* Scales above the Voronoi zoom are pure zoom/island layer output, which
+     * is query-shape invariant, so the sample rows can share one dense 2D
+     * generation instead of re-running the whole layer stack per row. For a
+     * 258x258 LOD4 tile the per-row form issues 258 full stack traversals over
+     * a 1029-cell span (~54 ms measured on 1.17.1); banded dense generation
+     * covers the same cells with two <=1M-cell generations (~4 ms) and reads
+     * out bit-identical values. Bands cap at CFX_MAX_CELLS to keep the
+     * transient buffer at the established per-call ceiling. */
+    const int64_t unitsBudget = (int64_t) CFX_MAX_CELLS / rawWidth64;
+    const int64_t bandRows = (unitsBudget - 1) / stride + 1;
+    int j0 = 0;
+    while (j0 < h)
     {
-        const Range r = { scale, x, z + j*stride, rawWidth, 1, 0, 1 };
-        int *row = allocCache(&ctx->g, r);
-        if (row == NULL)
+        const int rows = (int64_t) (h - j0) < bandRows ? h - j0 : (int) bandRows;
+        const int bandUnitsH = (rows - 1) * stride + 1;
+        const Range r = { scale, x, z + j0*stride, rawWidth, bandUnitsH, 0, 1 };
+        int *band = allocCache(&ctx->g, r);
+        if (band == NULL)
             return CFX_ERR_ALLOC;
-        const int err = cfxGenerateBiomes(ctx, row, r, netherY);
+        const int err = cfxGenerateBiomes(ctx, band, r, netherY);
         if (err != 0)
         {
-            free(row);
+            free(band);
             return CFX_ERR_GENERATION;
         }
-        int i;
-        for (i = 0; i < w; i++)
-            sampled[j*w+i] = row[i*stride];
-        free(row);
+        int j, i;
+        for (j = 0; j < rows; j++)
+        {
+            int *dst = sampled + (size_t) (j0 + j) * w;
+            const int *src = band + (size_t) j * stride * rawWidth;
+            for (i = 0; i < w; i++)
+                dst[i] = src[i*stride];
+        }
+        free(band);
+        j0 += rows;
     }
     return CFX_OK;
+}
+
+/* Memoize tile-sized windows only; larger one-off sweeps would pin memory the
+ * tile pipeline never reuses. The tile window is 258x258 at every LOD, so
+ * 128k cells covers every repeated geometry the Java pipeline issues. */
+#define CFX_OVERVIEW_MEMO_MAX_CELLS (1 << 17)
+#define CFX_OVERVIEW_MEMO_SLOTS 2
+
+/* --- lazy pre-1.18 exact columns ------------------------------------------
+ *
+ * cubiomes' mapLegacyTerrainHeightBlocks samples a full 33-level density
+ * column for every quart cell of the window span before scanning for the
+ * surface crossing, while findLegacyTerrainSurface only ever reads the two
+ * levels bracketing the crossing it scans down to (mean ~14 of 33 levels on
+ * Overworld terrain). The structures below re-derive the identical math from
+ * public primitives - genBiomes, getBiomeDepthAndScale, sampleOctaveAmp,
+ * sampleSurfaceNoise, and rng.h's lerp3/clampedLerp - but evaluate column
+ * levels top-down on demand, so a span's cost tracks the terrain height
+ * instead of the full column count. cfxLegacyExactColumns reproduces
+ * mapOverworldSurfaceColumns' pre-1.18 solidY output bit for bit; the
+ * test_legacy_matrix COLSTRAT gate pins the two against each other.
+ *
+ * The biome kernel and point/level formulas are transcribed from
+ * generator.c's mapLegacyTerrainPoints / sampleLegacyTerrainColumn /
+ * findLegacyTerrainSurface (static there), including evaluation order, so
+ * floating-point results match exactly. */
+
+#define CFX_LEGACY_COLUMN_LEVELS 33
+/* Same cap cubiomes' dense column cache uses. */
+#define CFX_LEGACY_LAZY_CELL_LIMIT 70000
+
+typedef struct {
+    double density[CFX_LEGACY_COLUMN_LEVELS];
+    int minEvaluated; /* levels [minEvaluated, 32] hold values; 33 = none */
+} CfxLazyColumn;
+
+/* Vanilla's 1.17 biome-depth blend weights (generator.c biome_kernel). */
+static const float cfxBiomeKernel[25] = {
+    3.302044127F, 4.104975761F, 4.545454545F, 4.104975761F, 3.302044127F,
+    4.104975761F, 6.194967155F, 8.333333333F, 6.194967155F, 4.104975761F,
+    4.545454545F, 8.333333333F, 50.00000000F, 8.333333333F, 4.545454545F,
+    4.104975761F, 6.194967155F, 8.333333333F, 6.194967155F, 4.104975761F,
+    3.302044127F, 4.104975761F, 4.545454545F, 4.104975761F, 3.302044127F,
+};
+
+typedef struct {
+    double depth;
+    double scale;
+    double densityOffset;
+} CfxLegacyPoint;
+
+static void cfxLegacyEnsureLevel(
+    CfxLazyColumn *col, const CfxLegacyPoint *pt,
+    const SurfaceNoise *sn, int cellX, int cellZ, int level)
+{
+    while (col->minEvaluated > level)
+    {
+        col->minEvaluated--;
+        const int cellY = col->minEvaluated;
+        double density = sampleSurfaceNoise(sn, cellX, cellY, cellZ);
+        double fall = 1.0 - 2.0 * cellY / 32.0
+            + pt->densityOffset - 0.46875;
+        fall = pt->scale * (fall + pt->depth);
+        density += fall > 0.0 ? 4.0 * fall : fall;
+        density = clampedLerp((32.0 - cellY) / 3.0, -10.0, density);
+        col->density[cellY] = clampedLerp(cellY / 3.0, 15.0, density);
+    }
+}
+
+static int cfxLegacyFindSurface(
+    CfxLazyColumn *c00, CfxLazyColumn *c01,
+    CfxLazyColumn *c10, CfxLazyColumn *c11,
+    const CfxLegacyPoint *p00, const CfxLegacyPoint *p01,
+    const CfxLegacyPoint *p10, const CfxLegacyPoint *p11,
+    const SurfaceNoise *sn, int cellX, int cellZ, double dx, double dz)
+{
+    int cellY;
+    for (cellY = CFX_LEGACY_COLUMN_LEVELS - 2; cellY >= 0; cellY--)
+    {
+        cfxLegacyEnsureLevel(c00, p00, sn, cellX, cellZ, cellY);
+        cfxLegacyEnsureLevel(c00, p00, sn, cellX, cellZ, cellY + 1);
+        cfxLegacyEnsureLevel(c01, p01, sn, cellX, cellZ + 1, cellY);
+        cfxLegacyEnsureLevel(c01, p01, sn, cellX, cellZ + 1, cellY + 1);
+        cfxLegacyEnsureLevel(c10, p10, sn, cellX + 1, cellZ, cellY);
+        cfxLegacyEnsureLevel(c10, p10, sn, cellX + 1, cellZ, cellY + 1);
+        cfxLegacyEnsureLevel(c11, p11, sn, cellX + 1, cellZ + 1, cellY);
+        cfxLegacyEnsureLevel(c11, p11, sn, cellX + 1, cellZ + 1, cellY + 1);
+        int y;
+        for (y = 7; y >= 0; y--)
+        {
+            const double dy = y / 8.0;
+            const double density = lerp3(dy, dx, dz,
+                c00->density[cellY], c00->density[cellY + 1],
+                c10->density[cellY], c10->density[cellY + 1],
+                c01->density[cellY], c01->density[cellY + 1],
+                c11->density[cellY], c11->density[cellY + 1]);
+            if (density > 0.0)
+                return cellY * 8 + y;
+        }
+    }
+    return 0;
+}
+
+/* Pre-1.18 exact solid surface for a strided window, lazily evaluated.
+ * Returns 0 on success. */
+static int cfxLegacyExactColumns(
+    int *solidY, CfxContext *ctx,
+    int blockX, int blockZ, int w, int h, int stride)
+{
+    const int lastX = (int) ((int64_t) blockX + (int64_t) (w - 1) * stride);
+    const int lastZ = (int) ((int64_t) blockZ + (int64_t) (h - 1) * stride);
+    const int minCellX = floordiv(blockX, 4);
+    const int minCellZ = floordiv(blockZ, 4);
+    const int maxCellX = floordiv(lastX, 4) + 1;
+    const int maxCellZ = floordiv(lastZ, 4) + 1;
+    const int cellW = maxCellX - minCellX + 1;
+    const int cellH = maxCellZ - minCellZ + 1;
+    const size_t cellCount = (size_t) cellW * cellH;
+
+    /* Biome neighbourhood for the depth kernel, mirroring
+     * mapLegacyTerrainPoints' two-cell margin. */
+    Range r = { 4, minCellX - 2, minCellZ - 2, cellW + 5, cellH + 5, 0, 1 };
+    int *cache = allocCache(&ctx->g, r);
+    if (cache == NULL || genBiomes(&ctx->g, cache, r))
+    {
+        free(cache);
+        return 1;
+    }
+
+    CfxLegacyPoint *points = malloc(sizeof(CfxLegacyPoint) * cellCount);
+    CfxLazyColumn *columns = malloc(sizeof(CfxLazyColumn) * cellCount);
+    if (points == NULL || columns == NULL)
+    {
+        free(cache);
+        free(points);
+        free(columns);
+        return 1;
+    }
+    size_t k;
+    for (k = 0; k < cellCount; k++)
+        columns[k].minEvaluated = CFX_LEGACY_COLUMN_LEVELS;
+
+    int i, j;
+    for (j = 0; j < cellH; j++)
+    {
+        for (i = 0; i < cellW; i++)
+        {
+            const int id0 = cache[(size_t) (j + 2) * r.sx + (i + 2)];
+            double d0, s0;
+            getBiomeDepthAndScale(id0, &d0, &s0, NULL);
+            double wt = 0.0, ws = 0.0, wd = 0.0;
+            int jj, ii;
+            for (jj = 0; jj < 5; jj++)
+            {
+                for (ii = 0; ii < 5; ii++)
+                {
+                    double d, s;
+                    const int id = cache[(size_t) (j + jj) * r.sx + (i + ii)];
+                    getBiomeDepthAndScale(id, &d, &s, NULL);
+                    float weight = cfxBiomeKernel[jj * 5 + ii] / (float) (d + 2.0);
+                    if (d > d0)
+                        weight *= 0.5F;
+                    ws += s * weight;
+                    wd += d * weight;
+                    wt += weight;
+                }
+            }
+            ws = ws / wt * 0.9 + 0.1;
+            wd = ((wd / wt) * 4.0 - 1.0) / 8.0;
+            CfxLegacyPoint *pt = points + (size_t) j * cellW + i;
+            pt->depth = wd * (17.0 / 64.0);
+            pt->scale = 96.0 / ws;
+            const double off = sampleOctaveAmp(
+                &ctx->sn.octdepth, (double) (minCellX + i) * 200.0, 10.0,
+                (double) (minCellZ + j) * 200.0, 1.0, 0.0, 1.0);
+            double off2 = off * 65535.0 / 8000.0;
+            if (off2 < 0.0)
+                off2 = -0.3 * off2;
+            off2 = off2 * 3.0 - 2.0;
+            if (off2 > 1.0)
+                off2 = 1.0;
+            off2 *= 17.0 / 64.0;
+            pt->densityOffset = off2 < 0.0 ? off2 / 28.0 : off2 / 40.0;
+        }
+    }
+    free(cache);
+
+    for (j = 0; j < h; j++)
+    {
+        const int sampleZ = (int) ((int64_t) blockZ + (int64_t) j * stride);
+        const int cellZ = floordiv(sampleZ, 4);
+        const double dz = (sampleZ - cellZ * 4) / 4.0;
+        for (i = 0; i < w; i++)
+        {
+            const int sampleX = (int) ((int64_t) blockX + (int64_t) i * stride);
+            const int cellX = floordiv(sampleX, 4);
+            const double dx = (sampleX - cellX * 4) / 4.0;
+            const size_t index00 =
+                (size_t) (cellZ - minCellZ) * cellW + (cellX - minCellX);
+            solidY[(size_t) j * w + i] = cfxLegacyFindSurface(
+                columns + index00, columns + index00 + cellW,
+                columns + index00 + 1, columns + index00 + cellW + 1,
+                points + index00, points + index00 + cellW,
+                points + index00 + 1, points + index00 + cellW + 1,
+                &ctx->sn, cellX, cellZ, dx, dz);
+        }
+    }
+    free(points);
+    free(columns);
+    return 0;
 }
 
 static int cfxGenerateOverviewBiomes(
     CfxContext *ctx, int blockX, int blockZ, int w, int h, int blockStride, int *out
 ) {
+    const int cells = w * h;
+    int slot;
+    for (slot = 0; slot < CFX_OVERVIEW_MEMO_SLOTS; slot++)
+    {
+        if (ctx->overviewMemoValid[slot]
+            && ctx->overviewMemoX[slot] == blockX
+            && ctx->overviewMemoZ[slot] == blockZ
+            && ctx->overviewMemoW[slot] == w
+            && ctx->overviewMemoH[slot] == h
+            && ctx->overviewMemoStride[slot] == blockStride)
+        {
+            memcpy(out, ctx->overviewMemoBiomes[slot],
+                sizeof(int) * (size_t) cells);
+            return CFX_OK;
+        }
+    }
+
+    int err;
     if (blockStride < 4)
-        return cfxGenerateBiomesStrided(
+        err = cfxGenerateBiomesStrided(
             ctx, 1, blockX, blockZ, w, h, blockStride, CFX_NETHER_ROOF_Y, out
         );
-    if (blockStride % 4 != 0)
+    else if (blockStride % 4 != 0)
         return CFX_ERR_BAD_ARGS;
-    return cfxGenerateBiomesStrided(
-        ctx, 4, floordiv(blockX, 4), floordiv(blockZ, 4),
-        w, h, blockStride / 4, CFX_NETHER_ROOF_Y, out
-    );
+    else
+        err = cfxGenerateBiomesStrided(
+            ctx, 4, floordiv(blockX, 4), floordiv(blockZ, 4),
+            w, h, blockStride / 4, CFX_NETHER_ROOF_Y, out
+        );
+    if (err != CFX_OK)
+        return err;
+
+    if (cells <= CFX_OVERVIEW_MEMO_MAX_CELLS)
+    {
+        const int target = ctx->overviewMemoNext;
+        ctx->overviewMemoNext = (target + 1) % CFX_OVERVIEW_MEMO_SLOTS;
+        if (ctx->overviewMemoCap[target] < (size_t) cells)
+        {
+            int *grown = realloc(
+                ctx->overviewMemoBiomes[target], sizeof(int) * (size_t) cells);
+            if (grown != NULL)
+            {
+                ctx->overviewMemoBiomes[target] = grown;
+                ctx->overviewMemoCap[target] = (size_t) cells;
+            }
+        }
+        if (ctx->overviewMemoCap[target] >= (size_t) cells)
+        {
+            memcpy(ctx->overviewMemoBiomes[target], out,
+                sizeof(int) * (size_t) cells);
+            ctx->overviewMemoValid[target] = 1;
+            ctx->overviewMemoX[target] = blockX;
+            ctx->overviewMemoZ[target] = blockZ;
+            ctx->overviewMemoW[target] = w;
+            ctx->overviewMemoH[target] = h;
+            ctx->overviewMemoStride[target] = blockStride;
+        }
+    }
+    return CFX_OK;
 }
 
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxAbi(
@@ -323,19 +626,21 @@ JNIEXPORT jstring JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNativ
     JNIEnv *env, jclass clazz, jlongArray out
 ) {
     (void) clazz;
-    if (out == NULL || (*env)->GetArrayLength(env, out) < 3)
+    if (out == NULL || (*env)->GetArrayLength(env, out) < 4)
         return NULL;
-    jlong stats[3];
+    jlong stats[4];
 #ifdef CUBIOMES_ENABLE_GPU
     stats[0] = (jlong) gpuGetMode();
     stats[1] = (jlong) gpuDispatchCount();
     stats[2] = (jlong) gpuHeightDispatchCount();
+    stats[3] = (jlong) gpuEngineDead();
 #else
     stats[0] = 0; /* engine not compiled in: nothing runs (GPU_MODE_OFF) */
     stats[1] = 0;
     stats[2] = 0;
+    stats[3] = 0;
 #endif
-    (*env)->SetLongArrayRegion(env, out, 0, 3, stats);
+    (*env)->SetLongArrayRegion(env, out, 0, 4, stats);
     return (*env)->NewStringUTF(env,
 #ifdef CUBIOMES_ENABLE_GPU
         gpuDeviceName()
@@ -415,6 +720,9 @@ JNIEXPORT void JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     (void) clazz;
     CfxContext *ctx = cfxHandle(handle);
     if (ctx != NULL) {
+        int slot;
+        for (slot = 0; slot < CFX_OVERVIEW_MEMO_SLOTS; slot++)
+            free(ctx->overviewMemoBiomes[slot]);
         free(ctx);
     }
 }
@@ -937,8 +1245,48 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     }
 #endif
 #endif /* parked surface-columns GPU attempt */
+
+    /* Strategy dispatch. Pre-1.18 exact columns run through the lazy solver
+     * above whenever the span's quart-cell count fits the cache limit: it is
+     * bit-identical to the dense cubiomes path and evaluates only the column
+     * levels the surface scan reads (LOD0's 34x34 stride-8 anchor window:
+     * 430-450 ms -> ~0.2 ms per level-evaluated cell, measured below half
+     * the full-column cost), and it also beats the per-1x1 sparse loop,
+     * which repays a full layer-stack run per anchor. Larger legacy spans
+     * and every modern window keep the original dense-vs-sparse choice. */
     int err = 0;
-    if (denseColumns > sparseColumns)
+    if (ctx->mc < MC_1_18 && denseColumns <= CFX_LEGACY_LAZY_CELL_LIMIT)
+    {
+        if (cfxLegacyExactColumns(solidY, ctx, blockX, blockZ, w, h, stride))
+        {
+            err = CFX_ERR_GENERATION;
+        }
+        else
+        {
+            /* resolveSurfaceColumn (generator.c). */
+            int j, i;
+            for (j = 0; j < h; j++)
+            {
+                for (i = 0; i < w; i++)
+                {
+                    const int index = j * w + i;
+                    if (solidY[index] < 62)
+                    {
+                        fluidY[index] = 62;
+                        surfaceY[index] = 62;
+                        flags[index] = SURFACE_COLUMN_FLUID;
+                    }
+                    else
+                    {
+                        fluidY[index] = INT32_MIN;
+                        surfaceY[index] = solidY[index];
+                        flags[index] = 0;
+                    }
+                }
+            }
+        }
+    }
+    else if (denseColumns > sparseColumns)
     {
         /* Coarse LOD anchors are deliberately sparse across a large world span. Letting
          * cubiomes materialize every intervening quart column defeats that sampling budget;
@@ -1061,9 +1409,10 @@ static void cfxTerrainParameters(const BiomeNoise *bn, int cellX, int cellZ, flo
  * >= stride/4): the strict cut measured 0.38% ocean-to-land flips on the
  * visual corpus against a 0.3% gate - one block of ripple moves real
  * shorelines - while this cut measures 0.15%. Truncation deliberately changes
- * results at strides >= 8 only; the per-pixel full-detail entry keeps LOD0-1
- * overviews, the waterline-band solves and the exact-residual anchors at
- * today's values bit-for-bit.
+ * results at strides >= 4 in modern overviews (macro grid evaluation uses stride 4);
+ * the fixed-point convergence threshold is set to 1.5 blocks. LOD0-2 use world-aligned
+ * adaptive macro grid refinement (16x16 -> 8x8 -> 4x4) maintaining strict position purity
+ * across arbitrary tile shapes. Pre-1.18 paths remain bit-for-bit identical.
  */
 typedef struct {
     int mainFirst;   /* first octmain octave evaluated */
@@ -1073,8 +1422,18 @@ typedef struct {
 
 static const CfxNoiseDetail CFX_DETAIL_FULL = {0, 0, 0};
 
-#define CFX_DETAIL_MIN_STRIDE 8
+#define CFX_DETAIL_MIN_STRIDE 4
 #define CFX_JAGGED_KEEP_OCTAVES 4
+
+/* Waterline protection bands, in blocks. Two thresholds on purpose:
+ * CFX_WATERLINE_ROUND_* is the double-precision rounding guard (keep `floor` around sea level so a
+ * 62.4 column never rounds up across the water/land line), while CFX_WATERLINE_CELL_* is the integer
+ * relief band the adaptive macro grid uses to force exact point solves. They coincide numerically by
+ * design but answer different questions, so they are named separately. */
+#define CFX_WATERLINE_ROUND_LO 60.5
+#define CFX_WATERLINE_ROUND_HI 65.5
+#define CFX_WATERLINE_CELL_LO 61
+#define CFX_WATERLINE_CELL_HI 65
 
 static CfxNoiseDetail cfxNoiseDetailForStride(const SurfaceNoise *sn, int stride)
 {
@@ -1189,37 +1548,6 @@ static double cfxModernTerrainNoise(
 #define CFX_GPU_HEIGHT_MIN_CELLS 256
 #define CFX_GPU_BIOME_MIN_CELLS 1024
 
-/*
- * Bilinear quart-macro reconstruction: the same floordiv ladder the CPU
- * macro path runs, applied to whichever lattice (GPU or CPU) produced the
- * macro heights.
- */
-static void cfxInterpolateMacro(
-    int *heights, const int *macro,
-    int blockX, int blockZ, int w, int h, int stride,
-    int minX4, int minZ4, int gridW
-) {
-    int j, i;
-    for (j = 0; j < h; j++)
-    {
-        const int sampleZ = (int)((int64_t)blockZ + (int64_t)j*stride);
-        const int z4 = floordiv(sampleZ, 4);
-        const int fz = sampleZ - z4*4;
-        const int iz = z4 - minZ4;
-        for (i = 0; i < w; i++)
-        {
-            const int sampleX = (int)((int64_t)blockX + (int64_t)i*stride);
-            const int x4 = floordiv(sampleX, 4);
-            const int fx = sampleX - x4*4;
-            const int ix = x4 - minX4;
-            const int top = macro[iz*gridW+ix]
-                + floordiv((macro[iz*gridW+ix+1] - macro[iz*gridW+ix])*fx, 4);
-            const int bottom = macro[(iz+1)*gridW+ix]
-                + floordiv((macro[(iz+1)*gridW+ix+1] - macro[(iz+1)*gridW+ix])*fx, 4);
-            heights[j*w+i] = top + floordiv((bottom-top)*fz, 4);
-        }
-    }
-}
 
 static int cfxModernOverviewHeight(
     const CfxContext *ctx, int x4, int z4, const CfxNoiseDetail *detail
@@ -1254,7 +1582,10 @@ static int cfxModernOverviewHeight(
     const double base = 1.0 + offset + jagged;
     double y = 128.0 * base;
     if (factor <= 1e-9)
-        return (int) floor(y);
+    {
+        if (y >= CFX_WATERLINE_ROUND_LO && y <= CFX_WATERLINE_ROUND_HI) return (int) floor(y);
+        return (int) lround(y);
+    }
 
     int i;
     for (i = 0; i < CFX_OVERVIEW_ITERATIONS; i++)
@@ -1266,14 +1597,87 @@ static int cfxModernOverviewHeight(
         const double above = 128.0 * (base + noise / factor);
         const double below = 128.0 * (base + noise / (4.0 * factor));
         const double next = above >= 128.0 * base ? above : below;
-        if (fabs(next - y) < 0.5)
+        if (fabs(next - y) < 1.5)
         {
             y = next;
             break;
         }
         y = next;
     }
-    return (int) floor(y);
+    if (y >= CFX_WATERLINE_ROUND_LO && y <= CFX_WATERLINE_ROUND_HI)
+        return (int) floor(y);
+    return (int) lround(y);
+}
+
+/* sampleOctaveAmp over the octave suffix [firstOct, octcnt). octdepth stores
+ * its octaves finest-first (see cfxLegacyDepthOctaveFloor), so a suffix start
+ * drops the shortest-wavelength octaves while keeping the accumulation order
+ * of the survivors identical to sampleOctaveAmp. */
+static double cfxSampleOctaveAmpSuffix(const OctaveNoise *noise, double x, double y, double z,
+        double yamp, double ymin, int ydefault, int firstOct)
+{
+    double v = 0;
+    int i;
+    for (i = firstOct > 0 ? firstOct : 0; i < noise->octcnt; i++)
+    {
+        PerlinNoise *p = noise->octaves + i;
+        double lf = p->lacunarity;
+        double ax = maintainPrecision(x * lf);
+        double ay = ydefault ? -p->b : maintainPrecision(y * lf);
+        double az = maintainPrecision(z * lf);
+        double pv = samplePerlin(p, ax, ay, az, yamp * lf, ymin * lf);
+        v += p->amplitude * pv;
+    }
+    return v;
+}
+
+/*
+ * Octave truncation for the legacy depth noise on coarse LOD windows.
+ *
+ * octdepth is built with omin=-15 and 16 octaves, and octaveInit stores them
+ * finest-first: octave i carries lacunarity 2^-i and amplitude 2^i/65535, so
+ * at the overview's sampling argument (quart * 200 = block * 50) octave i has
+ * wavelength 2^i/50 blocks and the eight finest octaves hold just 0.39% of the
+ * total amplitude. For a window whose neighbouring output pixels are `stride`
+ * blocks apart, octaves with wavelength below stride/2 cannot show up except
+ * as aliasing, so the coarse windows skip them outright - the same
+ * "one octave beyond the strict stride Nyquist limit" cut the modern coarse
+ * lattices apply (see cfxNoiseDetailForStride). Truncation is deliberately
+ * withheld from waterline micro queries and small exact-anchor grids (see
+ * CFX_LEGACY_TRUNCATE_MIN_CELLS), which keep the full-detail per-pixel entry.
+ */
+static int cfxLegacyDepthOctaveFloor(int stride)
+{
+    int k = 0;
+    /* Stop one short of the octave count: an empty suffix would make the
+     * depth term identically zero and collapse every height to a constant.
+     * Beyond stride ~1311 the surviving octave is below the Nyquist limit
+     * anyway, so the result is merely coarse, never degenerate. */
+    while (k < CFX_LEGACY_DEPTH_OCTAVES - 1 && (double) (1 << k) < 25.0 * stride)
+        k++;
+    return k;
+}
+
+/* Biome-independent part of the legacy overview height, as today's per-pixel
+ * formula: the depth-noise offset with its full clamp chain, before the
+ * per-biome depth term and the final 128-scale. */
+static double cfxLegacyDensityOffset(
+    const SurfaceNoise *sn, double quartX, double quartZ, int firstOct
+) {
+    double offset = cfxSampleOctaveAmpSuffix(
+        &sn->octdepth, quartX * 200.0, 10.0, quartZ * 200.0,
+        1.0, 0.0, 1.0, firstOct
+    );
+    offset *= 65535.0 / 8000.0;
+    if (offset < 0.0)
+        offset *= -0.3;
+    offset = offset * 3.0 - 2.0;
+    if (offset > 1.0)
+        offset = 1.0;
+    offset *= 17.0 / 64.0;
+    return offset < 0.0
+        ? offset / 28.0
+        : offset / 40.0;
 }
 
 static int cfxLegacyOverviewHeight(
@@ -1284,22 +1688,9 @@ static int cfxLegacyOverviewHeight(
     (void) biomeScale;
     const double blendedDepth = ((biomeDepth * 4.0 - 1.0) / 8.0)
         * (17.0 / 64.0);
-    const double quartX = blockX / 4.0;
-    const double quartZ = blockZ / 4.0;
-    double offset = sampleOctaveAmp(
-        &ctx->sn.octdepth, quartX * 200.0, 10.0, quartZ * 200.0,
-        1.0, 0.0, 1.0
+    const double densityOffset = cfxLegacyDensityOffset(
+        &ctx->sn, blockX / 4.0, blockZ / 4.0, 0
     );
-    offset *= 65535.0 / 8000.0;
-    if (offset < 0.0)
-        offset *= -0.3;
-    offset = offset * 3.0 - 2.0;
-    if (offset > 1.0)
-        offset = 1.0;
-    offset *= 17.0 / 64.0;
-    const double densityOffset = offset < 0.0
-        ? offset / 28.0
-        : offset / 40.0;
     return (int) floor(128.0 * (0.53125 + densityOffset + blendedDepth));
 }
 
@@ -1314,10 +1705,43 @@ static int cfxOverviewHeightAt(
     return cfxModernOverviewHeight(ctx, floordiv(blockX, 4), floordiv(blockZ, 4), detail);
 }
 
+#include "adaptive_macro.h"
+
+/*
+ * Bilinear quart-macro reconstruction: the same unbiased symmetric ladder the
+ * CPU adaptive-macro path runs (cfxLerpSymmetric, see adaptive_macro.h),
+ * applied to whichever lattice (GPU or CPU) produced the macro heights, so
+ * the dispatch never changes the reconstruction's rounding.
+ */
+static void cfxInterpolateMacro(
+    int *heights, const int *macro,
+    int blockX, int blockZ, int w, int h, int stride,
+    int minX4, int minZ4, int gridW
+) {
+    int j, i;
+    for (j = 0; j < h; j++)
+    {
+        const int sampleZ = (int)((int64_t)blockZ + (int64_t)j*stride);
+        const int z4 = floordiv(sampleZ, 4);
+        const int fz = sampleZ - z4*4;
+        const int iz = z4 - minZ4;
+        for (i = 0; i < w; i++)
+        {
+            const int sampleX = (int)((int64_t)blockX + (int64_t)i*stride);
+            const int x4 = floordiv(sampleX, 4);
+            const int fx = sampleX - x4*4;
+            const int ix = x4 - minX4;
+            const int top = cfxLerpSymmetric(macro[iz*gridW+ix], macro[iz*gridW+ix+1], fx, 4);
+            const int bottom = cfxLerpSymmetric(macro[(iz+1)*gridW+ix], macro[(iz+1)*gridW+ix+1], fx, 4);
+            heights[j*w+i] = cfxLerpSymmetric(top, bottom, fz, 4);
+        }
+    }
+}
+
 static jint cfxOverviewHeightsImpl(
     JNIEnv *env, CfxContext *ctx,
     jint blockX, jint blockZ, jint w, jint h, jint stride,
-    jintArray outTerrainY, const CfxNoiseDetail *detail
+    jintArray outTerrainY, const CfxNoiseDetail *detail, int truncateLegacy
 ) {
     if (ctx->dim != DIM_OVERWORLD)
         return CFX_ERR_WRONG_DIM;
@@ -1391,7 +1815,9 @@ static jint cfxOverviewHeightsImpl(
             return CFX_OK;
         }
 #endif
-        if (stride < 4)
+        /* Micro-queries (e.g. 1x1 waterline band solves) preserve the exact, full-detail point solve
+         * contract required by Java's resolveOverviewBand, avoiding unnecessary macro grid allocation. */
+        if (stride <= 4 && (w > 1 || h > 1))
         {
             int *macro = malloc(sizeof(int) * (size_t)gridW * gridH);
             if (macro == NULL)
@@ -1399,12 +1825,15 @@ static jint cfxOverviewHeightsImpl(
                 free(heights);
                 return CFX_ERR_ALLOC;
             }
-            int j, i;
-            for (j = 0; j < gridH; j++)
-                for (i = 0; i < gridW; i++)
-                    macro[j*gridW+i] = cfxModernOverviewHeight(
-                        ctx, minX4+i, minZ4+j, detail
-                    );
+            CfxNoiseDetail macroDetail = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 4);
+            const CfxNoiseDetail *activeDetail = detail->truncated ? detail : &macroDetail;
+            int macroErr = cfxEvaluateAdaptiveMacroGrid(ctx, macro, gridW, gridH, minX4, minZ4, activeDetail);
+            if (macroErr != CFX_OK)
+            {
+                free(macro);
+                free(heights);
+                return macroErr;
+            }
             cfxInterpolateMacro(heights, macro,
                 blockX, blockZ, w, h, stride, minX4, minZ4, gridW);
             free(macro);
@@ -1440,16 +1869,124 @@ static jint cfxOverviewHeightsImpl(
             free(heights);
             return err;
         }
-        int j, i;
-        for (j = 0; j < h; j++)
+
+        /* --- pre-1.18 overview dispatch ---------------------------------
+         *
+         * The legacy height is a closed form: floor(128 * (0.53125 +
+         * densityOffset(x,z) + blendedDepth(biome))), where densityOffset is
+         * a single 16-octave depth-noise sample that depends on the block
+         * position only and blendedDepth is a per-biome table value. Two
+         * coarse-window accelerations mirror the modern macro grid above:
+         *
+         * stride < 4: the depth noise is sampled once per world-aligned
+         * quart corner (vanilla 1.17 itself evaluates the depth noise per
+         * quart column and interpolates the cell), and each output pixel
+         * bilinearly interpolates the biome-independent base before adding
+         * its own per-pixel biome depth. LOD0 tiles drop from one 16-octave
+         * solve per pixel to one per 4x4 block cell.
+         *
+         * stride >= 4: pixels already sit on distinct quart corners, so the
+         * macro grid cannot share work; the coarse entry instead skips the
+         * depth-noise octaves that are shorter than half the sampling stride
+         * (cfxLegacyDepthOctaveFloor). Truncation is bound to the entry, not
+         * to the window geometry: cfxOverviewHeights always returns the exact
+         * per-position heights, and only cfxOverviewHeightsCoarse (which sets
+         * truncateLegacy) truncates.
+         * Waterline micro queries and small exact-anchor grids therefore stay
+         * on the full-detail per-pixel entry whatever their cell count.
+         */
+        if (stride < 4 && (w > 1 || h > 1))
         {
-            const int sampleZ = (int)((int64_t)blockZ + (int64_t)j*stride);
-            for (i = 0; i < w; i++)
+            const int minX4 = floordiv(blockX, 4);
+            const int minZ4 = floordiv(blockZ, 4);
+            const int maxX4 = floordiv((int)lastX, 4) + 1;
+            const int maxZ4 = floordiv((int)lastZ, 4) + 1;
+            const int gridW = maxX4 - minX4 + 1;
+            const int gridH = maxZ4 - minZ4 + 1;
+            double *base = malloc(sizeof(double) * (size_t)gridW * gridH);
+            if (base == NULL)
             {
-                const int sampleX = (int)((int64_t)blockX + (int64_t)i*stride);
-                heights[j*w+i] = cfxLegacyOverviewHeight(
-                    ctx, biomes[j*w+i], sampleX, sampleZ
-                );
+                free(biomes);
+                free(heights);
+                return CFX_ERR_ALLOC;
+            }
+            int j, i;
+            /* The lattice resolves one offset per 4x4-block cell, so the
+             * corner solves apply the same coarse-window octave cut as a
+             * stride-4 window: octaves shorter than half the cell size hold
+             * 0.39% of the amplitude and only alias inside the bilinear
+             * interpolation anyway. */
+            const int latticeFirstOct = cfxLegacyDepthOctaveFloor(4);
+            for (j = 0; j < gridH; j++)
+                for (i = 0; i < gridW; i++)
+                    base[j*gridW+i] = 0.53125 + cfxLegacyDensityOffset(
+                        &ctx->sn, (double) (minX4 + i), (double) (minZ4 + j),
+                        latticeFirstOct
+                    );
+            for (j = 0; j < h; j++)
+            {
+                const int sampleZ = (int)((int64_t)blockZ + (int64_t)j*stride);
+                const int z4 = floordiv(sampleZ, 4);
+                const double fz = (double) (sampleZ - z4*4) / 4.0;
+                const int iz = z4 - minZ4;
+                for (i = 0; i < w; i++)
+                {
+                    const int sampleX = (int)((int64_t)blockX + (int64_t)i*stride);
+                    const int x4 = floordiv(sampleX, 4);
+                    const double fx = (double) (sampleX - x4*4) / 4.0;
+                    const int ix = x4 - minX4;
+                    double biomeDepth, biomeScale;
+                    getBiomeDepthAndScale(biomes[j*w+i], &biomeDepth, &biomeScale, NULL);
+                    (void) biomeScale;
+                    const double blendedDepth = ((biomeDepth * 4.0 - 1.0) / 8.0)
+                        * (17.0 / 64.0);
+                    const double b00 = base[iz*gridW+ix];
+                    const double top = b00 + (base[iz*gridW+ix+1] - b00) * fx;
+                    const double b01 = base[(iz+1)*gridW+ix];
+                    const double bottom = b01 + (base[(iz+1)*gridW+ix+1] - b01) * fx;
+                    const double lerped = top + (bottom - top) * fz;
+                    heights[j*w+i] = (int) floor(128.0 * (lerped + blendedDepth));
+                }
+            }
+            free(base);
+        }
+        else if (truncateLegacy && stride >= 4 && (w > 1 || h > 1)
+            && (int64_t) w * h >= CFX_LEGACY_TRUNCATE_MIN_CELLS)
+        {
+            const int firstOct = cfxLegacyDepthOctaveFloor(stride);
+            int j, i;
+            for (j = 0; j < h; j++)
+            {
+                const int sampleZ = (int)((int64_t)blockZ + (int64_t)j*stride);
+                for (i = 0; i < w; i++)
+                {
+                    const int sampleX = (int)((int64_t)blockX + (int64_t)i*stride);
+                    double biomeDepth, biomeScale;
+                    getBiomeDepthAndScale(biomes[j*w+i], &biomeDepth, &biomeScale, NULL);
+                    (void) biomeScale;
+                    const double blendedDepth = ((biomeDepth * 4.0 - 1.0) / 8.0)
+                        * (17.0 / 64.0);
+                    const double densityOffset = cfxLegacyDensityOffset(
+                        &ctx->sn, sampleX / 4.0, sampleZ / 4.0, firstOct
+                    );
+                    heights[j*w+i] =
+                        (int) floor(128.0 * (0.53125 + densityOffset + blendedDepth));
+                }
+            }
+        }
+        else
+        {
+            int j, i;
+            for (j = 0; j < h; j++)
+            {
+                const int sampleZ = (int)((int64_t)blockZ + (int64_t)j*stride);
+                for (i = 0; i < w; i++)
+                {
+                    const int sampleX = (int)((int64_t)blockX + (int64_t)i*stride);
+                    heights[j*w+i] = cfxLegacyOverviewHeight(
+                        ctx, biomes[j*w+i], sampleX, sampleZ
+                    );
+                }
             }
         }
         free(biomes);
@@ -1469,16 +2006,18 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     CfxContext *ctx = cfxHandle(handle);
     if (ctx == NULL)
         return CFX_ERR_BAD_HANDLE;
+    /* 1x1 micro-queries are strictly reserved for waterline / coastline point precision
+     * and must always preserve the unapproximated, full-detail point solve contract. */
+    const CfxNoiseDetail detail = (w == 1 && h == 1)
+        ? CFX_DETAIL_FULL
+        : cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
     return cfxOverviewHeightsImpl(
-        env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &CFX_DETAIL_FULL
+        env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &detail, 0
     );
 }
 
 /*
- * Coarse-lattice variant of cfxOverviewHeights for the LOD2-4 anchor sweeps:
- * same geometry and validation, but terrain-noise octaves shorter than the
- * sampling stride are skipped (see CfxNoiseDetail). Waterline-band and
- * exact-residual callers must keep the full-detail entry above.
+ * Coarse-lattice entry for the LOD2-4 anchor sweeps.
  */
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxOverviewHeightsCoarse(
     JNIEnv *env, jclass clazz, jlong handle,
@@ -1489,9 +2028,13 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     CfxContext *ctx = cfxHandle(handle);
     if (ctx == NULL)
         return CFX_ERR_BAD_HANDLE;
-    const CfxNoiseDetail detail = cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
+    /* Adaptive detail like the unified entry (1x1 micro queries stay full-detail); the
+     * only caller allowed to truncate the pre-1.18 depth-noise octaves. */
+    const CfxNoiseDetail detail = (w == 1 && h == 1)
+        ? CFX_DETAIL_FULL
+        : cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
     return cfxOverviewHeightsImpl(
-        env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &detail
+        env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &detail, 1
     );
 }
 
