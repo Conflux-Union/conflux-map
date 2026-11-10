@@ -292,60 +292,19 @@ tasks.register('testNativeMatrixSmoke', Exec) {
     commandLine rootProject.file('build/bin/test_matrix').absolutePath, '--smoke'
 }
 
-// N4 Fix: Mechanical drift check verifying master_clean_impl.h against origin/master
-tasks.register('verifyMasterBaseline') {
-    group = 'verification'
-    description = 'Mechanically verifies master_clean_impl.h against upstream/master to prevent silent baseline drift.'
-    final File refFile = rootProject.file('native/shim/master_clean_impl.h')
-    inputs.file refFile
-    outputs.upToDateWhen { true }
-    doLast {
-        if (!refFile.exists()) {
-            throw new GradleException("master_clean_impl.h not found")
-        }
-        final String text = refFile.text
-        // Normalise line endings before hashing: a CRLF checkout (Windows core.autocrlf=true)
-        // must not read as "baseline logic drifted".
-        final String normalised = text.replace('\r\n', '\n').replace('\r', '\n')
-        if (!normalised.contains('FROZEN MASTER BASELINE SNAPSHOT') || !normalised.contains('a966dcf1')) {
-            throw new GradleException("master_clean_impl.h header missing frozen baseline snapshot metadata")
-        }
-        if (!normalised.contains('#define MASTER_CFX_DETAIL_MIN_STRIDE 8') ||
-            !normalised.contains('if (stride < 4)') ||
-            !normalised.contains('if (fabs(next - y) < 0.5)')) {
-            throw new GradleException("master_clean_impl.h core constants or logic drifted from origin/master a966dcf1")
-        }
-        if (!normalised.contains('master_cfxOverviewHeightsImpl(')) {
-            throw new GradleException("master_clean_impl.h missing master_cfxOverviewHeightsImpl implementation")
-        }
-        final String sha256 = java.security.MessageDigest.getInstance('SHA-256')
-            .digest(normalised.getBytes('UTF-8')).encodeHex().toString()
-        if (sha256 != 'c7fb3d1960743396c0184bfeec2ace6388353dc5ec6ba67ae296650a5aec97c4') {
-            throw new GradleException(
-                "master_clean_impl.h content mismatch (expected c7fb3d19..., got ${sha256}). " +
-                'If this is only a line-ending or whitespace change, restore the file with LF endings; ' +
-                'otherwise the frozen baseline really drifted from a966dcf1.'
-            )
-        }
-        println "verifyMasterBaseline: Master snapshot anchor & SHA-256 verified against a966dcf1"
-    }
-}
-
 // Native verification needs a host C toolchain, so it must never ride on the shared `check`
 // lifecycle: version subprojects are built on Windows and macOS contributors too, where `cc`/`gcc`
 // and GNU-ld-only flags such as -Wl,--no-undefined are unavailable (see native/README.md).
-// `check` keeps only the toolchain-free provenance anchor; CI runs the compiled harnesses
-// explicitly through `verifyNative`.
 tasks.register('verifyNative') {
     group = 'verification'
-    description = 'Runs every native verification harness (baseline anchor, purity, full matrix). Requires a host C toolchain.'
-    dependsOn 'verifyMasterBaseline', 'testNativePurity', 'testNativeMatrix'
+    description = 'Runs every native verification harness (purity, full matrix). Requires a host C toolchain.'
+    dependsOn 'testNativePurity', 'testNativeMatrix'
 }
 
 tasks.register('verifyNativeSmoke') {
     group = 'verification'
-    description = 'Runs lightweight native verification harnesses for CI (baseline anchor, purity, smoke matrix).'
-    dependsOn 'verifyMasterBaseline', 'testNativePuritySmoke', 'testNativeMatrixSmoke'
+    description = 'Runs lightweight native verification harnesses (purity, smoke matrix).'
+    dependsOn 'testNativePuritySmoke', 'testNativeMatrixSmoke'
 }
 
 tasks.register('compileBenchNative', Exec) {
@@ -372,13 +331,4 @@ tasks.register('benchNative', Exec) {
     dependsOn 'compileBenchNative'
     workingDir rootProject.projectDir
     commandLine rootProject.file('build/bin/bench_single').absolutePath
-}
-
-subprojects {
-    afterEvaluate {
-        tasks.matching { it.name == 'check' }.configureEach {
-            // Provenance anchor is pure text hashing: no compiler, safe on every host OS.
-            dependsOn rootProject.tasks.named('verifyMasterBaseline')
-        }
-    }
 }

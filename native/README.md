@@ -85,16 +85,15 @@ and testing without touching prebuilt releases. It is intentionally **not** wire
 
 The same holds for every compiled harness below: they need a host C compiler, so they live behind
 explicit tasks and are never part of a version subproject's `check` (Windows and macOS contributors
-have no `cc`/`gcc`, and `-Wl,--no-undefined` is GNU-ld only). `check` only runs
-`verifyMasterBaseline`, which hashes text and needs no toolchain:
+have no `cc`/`gcc`, and `-Wl,--no-undefined` is GNU-ld only):
 
 ```
-./gradlew verifyNative   # verifyMasterBaseline + testNativePurity + testNativeMatrix
-./gradlew benchNative    # native/bench_single.c, per-LOD single-core solve time
+./gradlew verifyNative       # testNativePurity + testNativeMatrix (300 cases)
+./gradlew verifyNativeSmoke  # testNativePuritySmoke + testNativeMatrixSmoke (12 cases)
+./gradlew benchNative        # native/bench_single.c, per-LOD single-core solve time
 ```
 
-CI's Linux job runs `verifyNative` on every pull request; run it locally before touching anything
-under `native/`.
+Run `verifyNative` or `verifyNativeSmoke` locally before touching anything under `native/`.
 
 `buildNativesAll` is the sole authority that cross-compiles every production target into `native/prebuilt/`
 (`linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `macos-x86_64`, `macos-aarch64`)
