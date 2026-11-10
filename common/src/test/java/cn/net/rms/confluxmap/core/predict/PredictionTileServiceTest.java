@@ -1991,6 +1991,50 @@ class PredictionTileServiceTest {
     }
 
     @Test
+    void reloadResweepsTheNextViewportEvenWithoutReductionCaches() throws InterruptedException {
+        final SessionGuard sessionGuard = new SessionGuard();
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel());
+        final PredictionTileService predictionTiles = newService(sessionGuard, executors, uploads);
+        sessionGuard.begin(WORLD, DIM);
+
+        final int cap = executors.workerCount();
+        final CountDownLatch release = new CountDownLatch(1);
+        for (int i = 0; i < cap; i++) {
+            executors.workers().execute(() -> {
+                try {
+                    release.await();
+                } catch (final InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        }
+        Thread.sleep(50);
+
+        try {
+            // The e2e order: reload drops every cache, then the renderer moves the viewport.
+            // Resident-texture tiles then have neither a cache entry nor a missing-texture
+            // retry - only the reload's resweep schedules them.
+            predictionTiles.reloadAll();
+            predictionTiles.setViewport(DIM, 1, -1, 0, -1, 0);
+            final Set<TileKey> pending = predictionTiles.queuedOrInFlightKeysForTest();
+            for (int z = -1; z <= 0; z++) {
+                for (int x = -1; x <= 0; x++) {
+                    final TileKey key = new TileKey(WORLD, DIM, "surface!pred", 1, x, z);
+                    assertTrue(pending.contains(key), "reload must resweep viewport tile " + key);
+                }
+            }
+            // The resweep is reload-gated: a plain viewport move stays cache-gated.
+            final PredictionTileService fresh = newService(sessionGuard, executors, uploads);
+            fresh.setViewport(DIM, 1, -1, 0, -1, 0);
+            assertTrue(fresh.queuedOrInFlightKeysForTest().isEmpty(), "plain viewport moves must stay cache-gated");
+        } finally {
+            release.countDown();
+            executors.shutdown(2000);
+        }
+    }
+
+    @Test
     void menuTargetTilesComposeAheadOfBackgroundRequests(@TempDir final Path tempDir) throws InterruptedException {
         final SessionGuard sessionGuard = new SessionGuard();
         final MapExecutors executors = new MapExecutors();

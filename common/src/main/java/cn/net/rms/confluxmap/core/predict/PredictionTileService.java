@@ -183,6 +183,11 @@ public final class PredictionTileService {
     private long lowerCoverageGeneration;
     /** Guarded by {@code this}: invalidates compositions started before a manual/session reload. */
     private volatile long reloadGeneration;
+    /**
+     * Guarded by {@code this}: a reload dropped every cache, so the next viewport change must
+     * schedule its tiles regardless of reduction-cache state; consumed by the first sweep.
+     */
+    private boolean reloadAwaitingViewport;
 
     /** Latest fullscreen viewport; visible predictions are scheduled outward from its center. */
     private ViewportRect viewport;
@@ -748,6 +753,9 @@ public final class PredictionTileService {
         synchronized (this) {
             reloadGeneration++;
             lowerCoverageGeneration++;
+            // The ending session's armed reload resweep must not leak into the new world's
+            // first viewport: that sweep belongs to the session that requested it.
+            reloadAwaitingViewport = false;
             dirty.clear();
             queuedAtNanos.clear();
             urgent.clear();
@@ -777,6 +785,10 @@ public final class PredictionTileService {
         synchronized (this) {
             reloadGeneration++;
             lowerCoverageGeneration++;
+            // Reload drops every reduction cache; resident-texture tiles then get neither a
+            // cache entry nor a missing-texture retry - only the next viewport sweep
+            // reschedules them.
+            reloadAwaitingViewport = true;
             dirty.clear();
             queuedAtNanos.clear();
             urgent.clear();
@@ -886,6 +898,10 @@ public final class PredictionTileService {
                 if (predictedLayer == null) {
                     return;
                 }
+                // A reload armed a resweep: its reduction caches are gone, so the cache
+                // gate below would leave resident-texture tiles unscheduled forever.
+                final boolean fullResweep = reloadAwaitingViewport;
+                reloadAwaitingViewport = false;
                 final String layer = predictedLayer.cacheId();
                 for (int tileZ = minTileZ; tileZ <= maxTileZ; tileZ++) {
                     for (int tileX = minTileX; tileX <= maxTileX; tileX++) {
@@ -893,7 +909,8 @@ public final class PredictionTileService {
                             session.world(), dimension, layer + PredictedTileKeys.SUFFIX,
                             lod, tileX, tileZ
                         );
-                        if (mipCache.lowerCoverageValidatedAt(key, effectiveViewMode()) != PredictionMipCache.MISSING) {
+                        if (fullResweep
+                            || mipCache.lowerCoverageValidatedAt(key, effectiveViewMode()) != PredictionMipCache.MISSING) {
                             dirtyPut(key, session.token());
                         }
                     }
