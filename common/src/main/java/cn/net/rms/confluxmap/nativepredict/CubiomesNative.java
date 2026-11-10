@@ -52,9 +52,10 @@ final class CubiomesNative {
      * Compiles the engine's OpenCL programs now instead of on the first dispatch, so a cold
      * driver JIT (minutes for this kernel size) overlaps the game's startup instead of stalling
      * the first prediction tile. Dispatches that arrive while the compile runs keep serving the
-     * CPU reference. Returns {@code -1} when the engine mode is off, else bit 1 = climate
-     * runtime available, bit 2 = cfx program available. Idempotent per process. A library
-     * predating this export throws {@link UnsatisfiedLinkError}.
+     * CPU reference - except under {@code CUBIOMES_GPU=force}, which waits the build out and
+     * never serves the CPU for the transient window. Returns {@code -1} when the engine mode is
+     * off, else bit 1 = climate runtime available, bit 2 = cfx program available. Idempotent per
+     * process. A library predating this export throws {@link UnsatisfiedLinkError}.
      */
     static native int cfxGpuWarmup();
 

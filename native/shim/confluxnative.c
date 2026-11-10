@@ -2588,8 +2588,9 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
 #else
     /* Programs still compiling (warmup): the transient state must report
      * positively - per-tile fallback where the single entries serve the
-     * CPU reference, never the refusal that latches batching off. */
-    if (gpuBuildBusy())
+     * CPU reference, never the refusal that latches batching off. Force
+     * mode skips the fallback and lets the batch wait the build out. */
+    if (gpuBuildBusy() && gpuGetMode() != GPU_MODE_FORCE)
         return CFX_ERR_GPU_BUSY;
     int *in = malloc(sizeof(int) * (size_t) n * 5);
     int *nativeCells = malloc(sizeof(int) * (size_t) n);
@@ -2846,7 +2847,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     return -CFX_ERR_GENERATION;
 #else
     /* Same transient-busy contract as the heights batch above. */
-    if (gpuBuildBusy())
+    if (gpuBuildBusy() && gpuGetMode() != GPU_MODE_FORCE)
         return CFX_ERR_GPU_BUSY;
     int *in = malloc(sizeof(int) * (size_t) n * 5);
     int *nativeCells = malloc(sizeof(int) * (size_t) n);

@@ -168,9 +168,10 @@ public final class GpuBackend {
      * Starts the one background OpenCL warmup, so the program JIT (minutes on a cold driver
      * cache) overlaps the game's startup instead of stalling the first prediction dispatch:
      * dispatches that arrive while the compile runs serve the CPU reference, and the engine
-     * switches over from the next dispatch once the build lands. Only the Fabric client calls
-     * this - the server companions never dispatch prediction work. Eligible only when the user
-     * chose the GPU backend and the native library is loaded; the gate lives in {@link
+     * switches over from the next dispatch once the build lands (the env-forced engine is the
+     * exception - it waits the build out rather than serving the CPU). Only the Fabric client
+     * calls this - the server companions never dispatch prediction work. Eligible only when the
+     * user chose the GPU backend and the native library is loaded; the gate lives in {@link
      * #warmupEligible} for tests.
      */
     public static void warmupAsync() {
