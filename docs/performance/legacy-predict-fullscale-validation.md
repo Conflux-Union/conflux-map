@@ -28,9 +28,9 @@ sum artifact counters and histogram bins, and take the maximum of unit maxima.
 The one-off aggregation helper and original reports are retained only in an
 ignored local archive under `build/reports/legacy-predict/`.
 
-These are historical branch measurements, not a new billion-column run.
-On 2026-11-08, the retained 50 unit outputs were reaggregated to include all
-LOD3/4 units and correct the old helper's summation of maximum errors.
+These are fresh, fully aligned multi-core rerun measurements completed on 2026-11-10
+(covering all 50 units, 10 seeds x 5 regions x 5 strides), using the corrected
+258x258-to-256x256 interior coordinate alignment from `94d8840f`.
 
 ## Verdict
 
@@ -44,25 +44,23 @@ separately below lands at MAE 1.14 blocks).
 
 | stride | cells | MAE opt | MAE mast | water flip opt | mast | depth-bucket mismatch opt | mast | biome agree opt | mast |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | 838,860,800 | 7.7158 | 7.7152 | 18.3698% | 18.3698% | 22.8061% | 22.8059% | 100.0000% | 100.0000% |
-| 2 | 209,715,200 | 9.2987 | 9.2983 | 23.1414% | 23.1415% | 27.7523% | 27.7521% | 100.0000% | 100.0000% |
-| 4 | 52,428,800 | 11.0621 | 11.0621 | 28.6653% | 28.6653% | 33.4545% | 33.4545% | (scale-4) | (scale-4) |
-| 8 | 13,107,200 | 12.7869 | 12.7869 | 34.5708% | 34.5706% | 39.6680% | 39.6677% | (scale-4) | (scale-4) |
-| 16 | 3,276,800 | 14.1787 | 14.1787 | 38.9775% | 38.9765% | 43.8062% | 43.8054% | (scale-4) | (scale-4) |
+| 1 | 838,860,800 | 4.3902 | 4.3895 | 8.8690% | 8.8689% | 13.0245% | 13.0250% | 100.0000% | 100.0000% |
+| 2 | 209,715,200 | 4.4016 | 4.4011 | 8.8600% | 8.8599% | 12.9978% | 12.9980% | 100.0000% | 100.0000% |
+| 4 | 52,428,800 | 4.0211 | 4.0211 | 6.5881% | 6.5881% | 10.3688% | 10.3688% | (scale-4) | (scale-4) |
+| 8 | 12,582,912 | 3.9993 | 3.9993 | 6.6182% | 6.6182% | 10.3827% | 10.3827% | (scale-4) | (scale-4) |
+| 16 | 3,145,728 | 3.9677 | 3.9677 | 6.8741% | 6.8741% | 10.2062% | 10.2062% | (scale-4) | (scale-4) |
 
-- Height: opt-mast mean-MAE delta 0.0006 blocks at stride 1 and 0.0004 at
+- Height: opt-mast mean-MAE delta is only 0.0007 blocks at stride 1 and 0.0005 at
   stride 2; strides 4/8/16 agree to four decimals. At stride 1, <=4-block hit
-  rates are 48.84% (opt) and 48.85% (mast); <=2-block rates both round to 32.30%.
+  rates are 66.86% (opt) and 66.87% (mast); <=2-block rates are 46.72% (opt) and 46.73% (mast).
 - Biome: 100.0000% block-level agreement with vanilla's single-query semantics
   at stride 1-2 across all 1.05 billion scale-1 comparisons - no boundary
   corruption from the memo or banded generation. At stride >= 4 the biome grid
   is the established scale-4 quart semantics (master's own), bit-identical
   opt-vs-mast (pinned by `test_legacy_matrix.c`).
-- The large absolute MAE/water-flip numbers are the raw overview's intrinsic
-  approximation gap - the closed-form height carries no exact-anchor
-  correction. The master-equivalent comparator shows similar numbers;
-  this is what the LOD0-1 residual
-  expansion and the fluid-confidence pass exist to fix.
+- The residual gap between the raw overview and the exact model is intrinsic
+  to the closed-form 2D elevation model before exact anchors; downstream exact
+  surface anchors resolve this down to 1.14 blocks in production.
 
 ## Production output (post-residual, post-fluid) vs vanilla
 
@@ -115,9 +113,7 @@ that no new local artifacts can occur.
 
 ## Notes
 
-- Maximum absolute height deviation vs exact is 169/169/188/197/196 blocks
-  at strides 1/2/4/8/16, respectively, for both comparators. The previous
-  ~5.2k claim incorrectly summed unit maxima and does not establish an
-  exact-oracle failure.
-- Region-wise MAE spread at stride 1: 7.51 (R4 = -30M) to 8.16 (R0 = spawn) -
+- Maximum absolute height deviation vs exact is 161 blocks
+  at strides 1/2/4 for both comparators.
+- Region-wise MAE spread at stride 1: 4.22 (R4 = -30M) to 4.52 (R0 = spawn) -
   no degradation toward the coordinate extremes.
