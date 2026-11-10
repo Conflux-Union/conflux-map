@@ -781,6 +781,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     return CFX_OK;
 }
 
+#if 0 /* parked: the surface-columns GPU attempt after the seeded e2e A/B came out net-wall negative (first tile +76%); restore = flip this guard and the fork's parked guards, rebuild, then the env gate drives serving as before */
 /*
  * Gate for the exact-columns GPU attempt inside cfxSurfaceColumns: an anchor batch at or
  * above this count hands its whole grid to the fork's float point kernel in one dispatch.
@@ -828,6 +829,7 @@ static int cfxGpuColumnMinAnchors(void)
     }
     return cached;
 }
+#endif /* parked surface-columns GPU attempt */
 
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxSurfaceColumns(
     JNIEnv *env, jclass clazz, jlong handle,
@@ -877,6 +879,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     const int64_t denseColumns = (int64_t) (maxCellX - minCellX + 1)
         * (int64_t) (maxCellZ - minCellZ + 1);
     const int64_t sparseColumns = (int64_t) cells * 4;
+#if 0 /* parked: the surface-columns GPU attempt after the seeded e2e A/B came out net-wall negative (first tile +76%); restore = flip this guard and the fork's parked guards, rebuild, then the env gate drives serving as before */
     /*
      * GPU attempt for the exact-columns point seam, inside the version/dimension guards the
      * CPU path already applies (MC 1.18+ Overworld only - the kernel refuses the rest the
@@ -934,6 +937,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         return CFX_OK;
     }
 #endif
+#endif /* parked surface-columns GPU attempt */
     int err = 0;
     if (denseColumns > sparseColumns)
     {

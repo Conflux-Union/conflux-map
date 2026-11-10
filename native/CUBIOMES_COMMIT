@@ -1,7 +1,7 @@
 upstream: https://github.com/Cubitect/cubiomes (active line: xpple/cubiomes master)
 fork:     https://github.com/Conflux-Union/cubiomes (this project's fork)
-commit:   ea3178731fbf7922c357b2ca8eaa205f8cef7c8c
-commit date: 2026-11-10T13:44:32+08:00
+commit:   1d10bdf5371ba72f58fc1d59374f637c5d83f9eb
+commit date: 2026-11-10T15:34:11+08:00
 pinned via: native/cubiomes git submodule (converted from a vendored copy on 2026-07-17)
 license: MIT (see native/cubiomes/LICENSE)
 
@@ -76,7 +76,15 @@ Fork contents kept on top of upstream master:
     bit-identical before and after. Batched z-stride
     entries (gpuMapOverworldSurfaceBiomeRows / gpuMapOverworldTerrainHeightRows)
     fold streamed overview-row sets into one dispatch. Default mode is
-    env-driven (CUBIOMES_GPU, auto); gpuSetMode() overrides.
+    env-driven (CUBIOMES_GPU, auto); gpuSetMode() overrides. 1d10bdf parks
+    the whole surface-columns path behind `#if 0` guards after the composed
+    A/B measurement found the seam net-wall negative in the product's
+    serving shape (opening wall +6.2%, first tile +76%): the col kernels
+    leave GPU_CL_SRC_CFX (so cfx program JIT no longer pays their
+    cold-start cost) and GPU_INST_COUNT returns to 27 with the AN_* pack
+    block disabled. The kernels, entries, and drift-tier notes above stay
+    in the tree as the restoration recipe: flip the parked guards in both
+    repos and rebuild.
   - Nether fossils: upstream 32f6624 now ships its own terrain-validated
     fossil model, so the fork keeps only what upstream lacks - the
     getFeaturePos routing in getStructurePos (upstream leaves fossils
@@ -113,7 +121,13 @@ Verification for this pin:
     (1M-class) with the cave-mouth and 30M-border probes printing only - the
     carve-discontinuity and coordinate-quantization classes (border flags
     0.955%, |dY| 82), the same print-only classification the mod's
-    composed-tile gates use. Known pre-existing failure, not introduced by
+    composed-tile gates use. Re-run green 2026-11-10 at 1d10bdf parking the
+    col path: clean rebuild with zero compiler warnings, the default matrix
+    reproduces the pre-col run shape minus the col sections (BUDGET OK:
+    1239534 points unchanged), the rebuilt linux-x86_64 library carries no
+    col kernel source or gate strings, and :common:test passes 1666 tests
+    (0 failures, 5 skipped - the disabled col engagement class). Known
+    pre-existing failure, not introduced by
     this pin: `./gpu_test --full` misses the near-bucket float height
     budget (max dY 44.0 > 25.0; the calibration comment's observed
     baseline was dY 5) byte-identically on the pre-change base 2ec8385 -
@@ -141,7 +155,8 @@ Verification for this pin:
     predate even the Phase 2 sparse JNI symbols, so those platforms latch
     the sparse capability off and keep the pre-sparse behavior - rebuilds
     pending a zig host).
-  - conflux-map integration (2026-11-10, fp32 surface-columns seam):
+  - conflux-map integration (2026-11-10, fp32 surface-columns seam - PARKED
+    the same day, kept as the restoration recipe):
     buildNativesHost rebuilds the committed linux-x86_64 library with the col
     kernels, and the shim's cfxSurfaceColumns now attempts
     gpuCfxSurfaceColumnsPointsFloat for 1.18+ Overworld anchor batches at or
@@ -167,7 +182,21 @@ Verification for this pin:
     rates - categorical flags under 2% at every bucket (worst 1.81% at the
     30M border), heights at the near bucket |dY| <= 1, and the carve-class
     buckets (cave-mouth, 1M-class tile on carved terrain, 30M border)
-    reaching |dY| 36-93 printed without a bound.
+    reaching |dY| 36-93 printed without a bound. The composed A/B
+    measurement then returned a net-wall negative verdict on the seam
+    (opening wall +6.2%, first tile +76%, no compensating niche under the
+    product's 8-way CPU parallelism, shared in-order queue, and tile-sized
+    batches), so the col path is commented out in both repos as of 1d10bdf:
+    `#if 0` guards disable the shim's GPU attempt block, its
+    cfxGpuColumnMinAnchors gate, and the CFX_GPU_COLUMN_MIN_ANCHORS define,
+    while the fork's parked guards take the col kernels out of
+    GPU_CL_SRC_CFX (removing their first-use JIT cost), restore
+    GPU_INST_COUNT to 27, and drop the col entries and sections from the
+    compiled artifacts; NativeColumnGpuEngagementTest is class-level
+    @Disabled because the shim no longer attempts. The drift tiers and the
+    fp64 escalation notes above stay as the restoration recipe: flip the
+    parked guards in both repos, rebuild the native library, then the env
+    gate drives serving again.
   - Machine note (2026-11-09): CUBIOMES_GPU_PROFILING=1 degrades to
     unprofiled on this workstation. Deepin's nvidia-libopencl1
     580.119.02 loader accepts CL_QUEUE_PROFILING_ENABLE (it even reads

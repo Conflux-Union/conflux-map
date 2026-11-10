@@ -14,6 +14,7 @@ import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -40,6 +41,12 @@ import org.junit.jupiter.api.Test;
  * through {@link NativeBaselineSampler#gpuStageStats()} deltas, the same mechanism the sparse
  * suites use.
  */
+@Disabled("surface-columns GPU seam parked after the seeded e2e A/B came out net-wall negative "
+    + "in the product seam (opening wall +6.2%, first tile +76%): the shim no longer attempts "
+    + "the fork's column kernels (parked guards on both sides), so the serving and engagement "
+    + "assertions cannot run. Restoration = flip the parked guards in the shim and the fork, "
+    + "rebuild the native library, then remove this annotation. The class keeps compiling - "
+    + "SparseDriftGates stays shared infrastructure for the sparse suites.")
 class NativeColumnGpuEngagementTest {
     /** Same fixed seed {@code PredictionNativeIntegrationTest} uses. */
     private static final long SEED = 146008555L;
