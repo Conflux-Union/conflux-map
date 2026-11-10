@@ -17,9 +17,7 @@ final class PredictionQualityThresholds {
     private static final double MIN_SAMPLE_COMBINED = 0.58;
     private static final double MIN_MEAN_COVERAGE = 0.97;
     private static final double MIN_MEAN_KIND = 0.80;
-    // LOD0 uses an 8-pixel exact residual grid instead of generating all 65,536 columns. The
-    // 1.21.1 seed-0 corpus is the weakest supported baseline at roughly 2.28 MAE and 0.778 within
-    // two blocks, so these retain a narrow margin around the complete supported-version envelope.
+    // LOD0 uses an 8-pixel exact residual grid instead of generating all 65,536 columns.
     private static final double MAX_MEAN_HEIGHT_MAE = 2.30;
     private static final double MIN_MEAN_HEIGHT_WITHIN_TWO = 0.77;
     private static final double MIN_MEAN_FLUID = 0.80;

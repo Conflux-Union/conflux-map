@@ -38,6 +38,42 @@ preprocess {
 // runs as part of the normal build/check lifecycle: contributors without a C toolchain build
 // against the binaries already committed under native/prebuilt/, which common.gradle copies
 // into every version subproject's jar via processResources.
+// Shared provenance helpers: both the cross-compile task and the WASM task feed the same
+// BUILD_INFO.md, so neither can silently erase the other's audited digests.
+static String sha256Hex(final File f) {
+    return java.security.MessageDigest.getInstance('SHA-256').digest(f.bytes).encodeHex().toString()
+}
+
+/**
+ * Rewrites (or appends) the single WASM provenance row of native/prebuilt/BUILD_INFO.md so the
+ * recorded digest always matches the committed predictor.wasm. Idempotent: running it twice
+ * leaves one row, never two.
+ */
+static void updateBuildInfoWasmRow(final File buildInfo, final File wasm, final String zigVersion) {
+    final String checksum = sha256Hex(wasm)
+    final String row = "| `common/src/main/resources/webmap/predictor.wasm` | `wasm32-wasi` | " +
+        '`zig cc -target wasm32-wasi -mexec-model=reactor -O3 -g0 -msimd128`' +
+        " | `${checksum}` | ${String.format('%,d', wasm.length())} bytes |\n"
+    final String header = "## Web Map WASM Asset Provenance\n\n" +
+        "- **Cross-Compiler Toolchain**: `zig cc ${zigVersion}`\n\n" +
+        "| Asset | Target Triple | Compiler Command | SHA-256 Checksum | Size |\n" +
+        "|---|---|---|---|---|\n"
+    final String existing = buildInfo.exists() ? buildInfo.text : ''
+    final String sectionMarker = '## Web Map WASM Asset Provenance'
+    final String rowPattern = /(?m)^\| `common\/src\/main\/resources\/webmap\/predictor\.wasm`.*$/
+    if (existing =~ rowPattern) {
+        // Replace the row in place: rewriting the whole section would reflow blank lines and turn a
+        // one-line provenance update into unrelated markdown churn.
+        buildInfo.text = existing.replaceAll(rowPattern, java.util.regex.Matcher.quoteReplacement(row.trim()))
+    } else if (existing.contains(sectionMarker)) {
+        buildInfo.text = existing.trim() + '\n' + row
+    } else {
+        buildInfo.parentFile.mkdirs()
+        final String head = existing.replaceAll(/(?s)\n+$/, '')
+        buildInfo.text = head + (head.isEmpty() ? '' : '\n\n') + header + row
+    }
+}
+
 final List<String> nativeSources = [
     'native/shim/confluxnative.c',
     'native/shim/anvilscan.c',
@@ -65,7 +101,7 @@ final List<String> nativeSources = [
     'native/cubiomes/features/stronghold.c',
 ]
 final List<String> nativeCflags = [
-    '-shared', '-fPIC', '-O2', '-g0', '-fno-fast-math', '-ffp-contract=off', '-fvisibility=hidden', '-Wall',
+    '-shared', '-fPIC', '-O3', '-g0', '-fno-fast-math', '-ffp-contract=off', '-fvisibility=hidden', '-Wall',
     '-Wl,--no-undefined',
     '-Inative/jni', '-Inative/cubiomes',
 ]
@@ -88,7 +124,7 @@ tasks.register('buildWebPredictor', Exec) {
     outputs.file outFile
     workingDir rootProject.projectDir
     commandLine([
-        'zig', 'cc', '-target', 'wasm32-wasi', '-O3', '-g0', '-fno-fast-math',
+        'zig', 'cc', '-target', 'wasm32-wasi', '-mexec-model=reactor', '-O3', '-g0', '-fno-fast-math',
         '-ffp-contract=off', '-fvisibility=hidden', '-ffunction-sections',
         '-fdata-sections', '-msimd128', '-Inative/cubiomes', '-Wl,--no-entry',
         '-Wl,--gc-sections', '-Wl,--export=cfxWebInit',
@@ -97,23 +133,38 @@ tasks.register('buildWebPredictor', Exec) {
         '-Wl,--export=cfxWebCanopyData',
         '-Wl,--export-memory', '-o', outFile.absolutePath,
     ] + webPredictorSources + ['-lm'])
+    doLast {
+        final String sha256 = sha256Hex(outFile)
+        println "buildWebPredictor: predictor.wasm built (${outFile.length()} bytes, sha256: ${sha256})"
+        // Provenance is a build product, never hand-copied: keep BUILD_INFO.md's audited digest in
+        // lockstep with the asset this task just wrote, so the two can only ever be committed together.
+        final File buildInfo = rootProject.file('native/prebuilt/BUILD_INFO.md')
+        final String zigVersion = ['zig', 'version'].execute().text.trim()
+        updateBuildInfoWasmRow(buildInfo, outFile, zigVersion)
+        println "buildWebPredictor: native/prebuilt/BUILD_INFO.md WASM row updated"
+    }
 }
 
+// N3 Fix: buildNativesHost only writes to build/natives/host/, NEVER pollutes native/prebuilt/
 tasks.register('buildNativesHost', Exec) {
     group = 'build'
-    description = 'Compiles the cubiomes+shim native library for this host (linux-x86_64) into native/prebuilt/.'
-    final File outFile = rootProject.file('native/prebuilt/linux-x86_64/libconfluxnative.so')
+    description = 'Compiles the cubiomes+shim native library for local development/testing (linux-x86_64) into build/natives/host/.'
+    final File hostOutDir = rootProject.file('build/natives/host/linux-x86_64')
+    final File outFile = new File(hostOutDir, 'libconfluxnative.so')
     inputs.files(nativeSources.collect { final String src -> rootProject.file(src) })
+    inputs.file rootProject.file('native/shim/adaptive_macro.h')
     inputs.dir rootProject.file('native/cubiomes/tables')
     inputs.dir rootProject.file('native/jni')
+    inputs.dir rootProject.file('native/shim')
     outputs.file outFile
     doFirst {
-        outFile.parentFile.mkdirs()
+        hostOutDir.mkdirs()
     }
     workingDir rootProject.projectDir
     commandLine(['cc'] + nativeCflags + ['-o', outFile.absolutePath] + nativeSources + ['-lm'])
 }
 
+// N1 & N3 Fix: buildNativesAll is the SOLE authority that generates native/prebuilt/ and BUILD_INFO.md
 tasks.register('buildNativesAll') {
     group = 'build'
     description = 'Cross-compiles the native library for every supported target with zig cc (maintainer-only; see native/README.md).'
@@ -128,12 +179,22 @@ tasks.register('buildNativesAll') {
             )
         }
         final List<Map<String, String>> targets = [
-            [zigTarget: 'x86_64-linux-gnu.2.17', dir: 'linux-x86_64', lib: 'libconfluxnative.so'],
-            [zigTarget: 'aarch64-linux-gnu.2.17', dir: 'linux-aarch64', lib: 'libconfluxnative.so'],
-            [zigTarget: 'x86_64-windows-gnu', dir: 'windows-x86_64', lib: 'confluxnative.dll'],
-            [zigTarget: 'x86_64-macos', dir: 'macos-x86_64', lib: 'libconfluxnative.dylib'],
-            [zigTarget: 'aarch64-macos', dir: 'macos-aarch64', lib: 'libconfluxnative.dylib'],
+            [name: 'Windows x86_64', zigTarget: 'x86_64-windows-gnu', dir: 'windows-x86_64', lib: 'confluxnative.dll'],
+            [name: 'Linux x86_64', zigTarget: 'x86_64-linux-gnu.2.17', dir: 'linux-x86_64', lib: 'libconfluxnative.so'],
+            [name: 'Linux aarch64', zigTarget: 'aarch64-linux-gnu.2.17', dir: 'linux-aarch64', lib: 'libconfluxnative.so'],
+            [name: 'macOS x86_64', zigTarget: 'x86_64-macos', dir: 'macos-x86_64', lib: 'libconfluxnative.dylib'],
+            [name: 'macOS aarch64', zigTarget: 'aarch64-macos', dir: 'macos-aarch64', lib: 'libconfluxnative.dylib'],
         ]
+        final String zigVersion = 'zig version'.execute().text.trim()
+        final StringBuilder mdTable = new StringBuilder()
+        mdTable.append("# Prebuilt Native Binary Provenance\n\n")
+        mdTable.append("- **Cross-Compiler Toolchain**: `zig cc ${zigVersion}`\n")
+        mdTable.append("- **Compiler CFlags**: `${nativeCflags.join(' ')}`\n")
+        mdTable.append("- **Build Task**: `./gradlew buildNativesAll`\n\n")
+        mdTable.append("## Target Binaries & SHA-256 Checksums\n\n")
+        mdTable.append("| Target Platform | Binary File | Target Triple | SHA-256 Checksum | Size |\n")
+        mdTable.append("|---|---|---|---|---|\n")
+
         targets.each { final Map<String, String> target ->
             final File outDir = rootProject.file("native/prebuilt/${target.dir}")
             outDir.mkdirs()
@@ -145,9 +206,6 @@ tasks.register('buildNativesAll') {
             if (process.exitValue() != 0) {
                 throw new GradleException("zig cc failed for target ${target.zigTarget} (exit ${process.exitValue()}):\n${output}")
             }
-            // The Windows (MinGW) link step also drops an import lib + a multi-megabyte PDB next
-            // to the DLL; both are link-time-only artifacts a JNI System.load() never touches,
-            // not worth committing.
             final String baseName = target.lib.replaceAll(/\.[^.]+$/, '')
             [".lib", ".pdb"].each { final String ext ->
                 final File byproduct = new File(outDir, baseName + ext)
@@ -155,6 +213,154 @@ tasks.register('buildNativesAll') {
                     byproduct.delete()
                 }
             }
+            final String sha256 = sha256Hex(outFile)
+            mdTable.append("| ${target.name} | `${target.dir}/${target.lib}` | `${target.zigTarget}` | `${sha256}` | ${String.format('%,d', outFile.length())} bytes |\n")
+        }
+        final File buildInfo = rootProject.file('native/prebuilt/BUILD_INFO.md')
+        buildInfo.text = mdTable.toString()
+        // Re-append the WASM provenance section: this task owns the whole file, so dropping the
+        // section here would silently delete the audited predictor.wasm digest.
+        final File wasm = rootProject.file('common/src/main/resources/webmap/predictor.wasm')
+        if (wasm.exists()) {
+            updateBuildInfoWasmRow(buildInfo, wasm, zigVersion)
+        }
+    }
+}
+
+tasks.register('compileTestNativePurity', Exec) {
+    group = 'build'
+    description = 'Compiles native position purity test executable.'
+    dependsOn 'buildNativesHost'
+    final File binFile = rootProject.file('build/bin/test_purity')
+    final List<String> cubiomesOnlySources = nativeSources.findAll { !it.contains('confluxnative.c') }
+    final List<File> inputSourceFiles = (cubiomesOnlySources + ['native/test_dual_precision.c']).collect { rootProject.file(it) }
+    inputs.files(inputSourceFiles)
+    inputs.dir rootProject.file('native/cubiomes/tables')
+    inputs.dir rootProject.file('native/jni')
+    inputs.dir rootProject.file('native/shim')
+    outputs.file binFile
+    doFirst {
+        binFile.parentFile.mkdirs()
+    }
+    workingDir rootProject.projectDir
+    commandLine(['gcc', '-O2', '-g0', '-Inative/jni', '-Inative/cubiomes', '-Inative/shim'] + cubiomesOnlySources + ['native/test_dual_precision.c', '-lm', '-o', binFile.absolutePath])
+}
+
+tasks.register('testNativePurity', Exec) {
+    group = 'verification'
+    description = 'Executes native position purity test assertions.'
+    dependsOn 'compileTestNativePurity'
+    workingDir rootProject.projectDir
+    commandLine rootProject.file('build/bin/test_purity').absolutePath
+}
+
+tasks.register('compileTestNativeMatrix', Exec) {
+    group = 'verification'
+    description = 'Compiles native 75-case full matrix verification harness.'
+    final File binFile = rootProject.file('build/bin/test_matrix')
+    final List<String> cubiomesOnlySources = nativeSources.findAll { !it.contains('confluxnative.c') }
+    final List<File> inputSourceFiles = (cubiomesOnlySources + ['native/test_full_matrix.c']).collect { rootProject.file(it) }
+    inputs.files(inputSourceFiles)
+    inputs.dir rootProject.file('native/cubiomes/tables')
+    inputs.dir rootProject.file('native/jni')
+    inputs.dir rootProject.file('native/shim')
+    outputs.file binFile
+    doFirst {
+        binFile.parentFile.mkdirs()
+    }
+    workingDir rootProject.projectDir
+    commandLine(['gcc', '-O2', '-g0', '-Inative/jni', '-Inative/cubiomes', '-Inative/shim'] + cubiomesOnlySources + ['native/test_full_matrix.c', '-lm', '-o', binFile.absolutePath])
+}
+
+tasks.register('testNativeMatrix', Exec) {
+    group = 'verification'
+    description = 'Executes native full matrix agreement and flip threshold test assertions.'
+    dependsOn 'compileTestNativeMatrix'
+    workingDir rootProject.projectDir
+    commandLine rootProject.file('build/bin/test_matrix').absolutePath
+}
+
+// N4 Fix: Mechanical drift check verifying master_clean_impl.h against origin/master
+tasks.register('verifyMasterBaseline') {
+    group = 'verification'
+    description = 'Mechanically verifies master_clean_impl.h against upstream/master to prevent silent baseline drift.'
+    final File refFile = rootProject.file('native/shim/master_clean_impl.h')
+    inputs.file refFile
+    outputs.upToDateWhen { true }
+    doLast {
+        if (!refFile.exists()) {
+            throw new GradleException("master_clean_impl.h not found")
+        }
+        final String text = refFile.text
+        // Normalise line endings before hashing: a CRLF checkout (Windows core.autocrlf=true)
+        // must not read as "baseline logic drifted".
+        final String normalised = text.replace('\r\n', '\n').replace('\r', '\n')
+        if (!normalised.contains('FROZEN MASTER BASELINE SNAPSHOT') || !normalised.contains('a966dcf1')) {
+            throw new GradleException("master_clean_impl.h header missing frozen baseline snapshot metadata")
+        }
+        if (!normalised.contains('#define MASTER_CFX_DETAIL_MIN_STRIDE 8') ||
+            !normalised.contains('if (stride < 4)') ||
+            !normalised.contains('if (fabs(next - y) < 0.5)')) {
+            throw new GradleException("master_clean_impl.h core constants or logic drifted from origin/master a966dcf1")
+        }
+        if (!normalised.contains('master_cfxOverviewHeightsImpl(')) {
+            throw new GradleException("master_clean_impl.h missing master_cfxOverviewHeightsImpl implementation")
+        }
+        final String sha256 = java.security.MessageDigest.getInstance('SHA-256')
+            .digest(normalised.getBytes('UTF-8')).encodeHex().toString()
+        if (sha256 != 'c7fb3d1960743396c0184bfeec2ace6388353dc5ec6ba67ae296650a5aec97c4') {
+            throw new GradleException(
+                "master_clean_impl.h content mismatch (expected c7fb3d19..., got ${sha256}). " +
+                'If this is only a line-ending or whitespace change, restore the file with LF endings; ' +
+                'otherwise the frozen baseline really drifted from a966dcf1.'
+            )
+        }
+        println "verifyMasterBaseline: Master snapshot anchor & SHA-256 verified against a966dcf1"
+    }
+}
+
+// Native verification needs a host C toolchain, so it must never ride on the shared `check`
+// lifecycle: version subprojects are built on Windows and macOS contributors too, where `cc`/`gcc`
+// and GNU-ld-only flags such as -Wl,--no-undefined are unavailable (see native/README.md).
+// `check` keeps only the toolchain-free provenance anchor; CI runs the compiled harnesses
+// explicitly through `verifyNative`.
+tasks.register('verifyNative') {
+    group = 'verification'
+    description = 'Runs every native verification harness (baseline anchor, purity, full matrix). Requires a host C toolchain.'
+    dependsOn 'verifyMasterBaseline', 'testNativePurity', 'testNativeMatrix'
+}
+
+tasks.register('compileBenchNative', Exec) {
+    group = 'verification'
+    description = 'Compiles the single-core benchmark harness (native/bench_single.c).'
+    final File binFile = rootProject.file('build/bin/bench_single')
+    final List<String> cubiomesOnlySources = nativeSources.findAll { !it.contains('confluxnative.c') }
+    final List<File> inputSourceFiles = (cubiomesOnlySources + ['native/bench_single.c']).collect { rootProject.file(it) }
+    inputs.files(inputSourceFiles)
+    inputs.dir rootProject.file('native/cubiomes/tables')
+    inputs.dir rootProject.file('native/jni')
+    inputs.dir rootProject.file('native/shim')
+    outputs.file binFile
+    doFirst {
+        binFile.parentFile.mkdirs()
+    }
+    workingDir rootProject.projectDir
+    commandLine(['gcc', '-O3', '-g0', '-fno-fast-math', '-ffp-contract=off', '-Inative/jni', '-Inative/cubiomes', '-Inative/shim'] + cubiomesOnlySources + ['native/bench_single.c', '-lm', '-o', binFile.absolutePath])
+}
+
+tasks.register('benchNative', Exec) {
+    group = 'verification'
+    description = 'Measures per-LOD single-core solve time (opt-in; numbers depend on host CPU).'
+    dependsOn 'compileBenchNative'
+    workingDir rootProject.projectDir
+    commandLine rootProject.file('build/bin/bench_single').absolutePath
+}
+
+subprojects {
+    afterEvaluate {
+        tasks.matching { it.name == 'check' }.configureEach {
+            // Provenance anchor is pure text hashing: no compiler, safe on every host OS.
+            dependsOn rootProject.tasks.named('verifyMasterBaseline')
         }
     }
 }

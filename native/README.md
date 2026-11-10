@@ -74,20 +74,32 @@ dead-section elimination and WASM SIMD. The Web Worker first paints the cheap
 terrain overview, then refines LOD 0-1 with the sparse exact residual grid while
 keeping prediction work off the page's rendering thread.
 
-`buildNativesHost` (root `build.gradle`) compiles `prebuilt/linux-x86_64/` with
-the host `cc` - this is what CI/contributors on Linux x86_64 run to refresh
-that one target. It is intentionally **not** wired into `build`/`check`;
-regenerate it manually and commit the result whenever the shim or the pinned
-cubiomes commit changes:
+`buildNativesHost` (root `build.gradle`) compiles `build/natives/host/linux-x86_64/` with
+the host `cc` - this is what CI and local contributors on Linux x86_64 run for local development
+and testing without touching prebuilt releases. It is intentionally **not** wired into general
+`build`/`check` lifecycle tasks:
 
 ```
 ./gradlew buildNativesHost
 ```
 
-`buildNativesAll` cross-compiles every target (`linux-x86_64`, `linux-aarch64`,
-`windows-x86_64`, `macos-x86_64`, `macos-aarch64`) using
-[zig cc](https://ziglang.org/) as a batteries-included cross C toolchain. It
-is maintainer-only tooling for cutting a full release of the native library
+The same holds for every compiled harness below: they need a host C compiler, so they live behind
+explicit tasks and are never part of a version subproject's `check` (Windows and macOS contributors
+have no `cc`/`gcc`, and `-Wl,--no-undefined` is GNU-ld only). `check` only runs
+`verifyMasterBaseline`, which hashes text and needs no toolchain:
+
+```
+./gradlew verifyNative   # verifyMasterBaseline + testNativePurity + testNativeMatrix
+./gradlew benchNative    # native/bench_single.c, per-LOD single-core solve time
+```
+
+CI's Linux job runs `verifyNative` on every pull request; run it locally before touching anything
+under `native/`.
+
+`buildNativesAll` is the sole authority that cross-compiles every production target into `native/prebuilt/`
+(`linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `macos-x86_64`, `macos-aarch64`) and updates
+`native/prebuilt/BUILD_INFO.md` using [zig cc](https://ziglang.org/) as a batteries-included cross C toolchain.
+It is maintainer-only tooling for cutting a full release of the native library
 and is expected to fail loudly ("zig required") on machines without `zig` on
 `PATH` - that is not a build break, just a signal to either install zig or
 fall back to `buildNativesHost` for a same-platform build.
@@ -108,7 +120,7 @@ Zig target triples used, and the resulting file per OS:
 | macOS x86_64 | `x86_64-macos` | `libconfluxnative.dylib` |
 | macOS aarch64 | `aarch64-macos` | `libconfluxnative.dylib` |
 
-Both tasks use the same compile flags: `-shared -fPIC -O2 -g0 -fno-fast-math
+Both tasks use the same compile flags: `-shared -fPIC -O3 -g0 -fno-fast-math
 -ffp-contract=off -fvisibility=hidden -Wall -Inative/jni -Inative/cubiomes`.
 `-g0` prevents compiler-version defaults from embedding debug information in
 release binaries. `-fno-fast-math`/`-ffp-contract=off` matter for determinism -

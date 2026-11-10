@@ -1883,6 +1883,46 @@ class PredictionTileServiceTest {
         }
     }
 
+    @Test
+    void viewportDynamicallyAdaptsBaselineCacheLimit() {
+        final SessionGuard sessionGuard = new SessionGuard();
+        final MapExecutors executors = new MapExecutors();
+        final MapWorldService worlds = new MapWorldService();
+        final TileService uploads = new TileService(
+            worlds, executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final PredictionTileService service = newService(sessionGuard, executors, uploads);
+
+        // MapQuality BALANCED default limit is 256 for mip, baseline defaults to minimal 32
+        service.setMapQuality(ConfluxConfig.MapQuality.BALANCED);
+        assertEquals(32, service.baselineCacheLimitForTest());
+
+        // Small viewport (1x1 = 1 tile): stays at minimal 32
+        service.setViewport(DIM, 0, 0, 0, 0, 0);
+        assertEquals(32, service.baselineCacheLimitForTest());
+
+        // Medium viewport (8x5 = 40 tiles, * 1.5 = 60): expands dynamically to 60
+        service.setViewport(DIM, 0, 0, 7, 0, 4);
+        assertEquals(60, service.baselineCacheLimitForTest());
+
+        // 4K extreme viewport (16x10 = 160 tiles, * 1.5 = 240): expands dynamically to 240
+        service.setViewport(DIM, 0, 0, 15, 0, 9);
+        assertEquals(240, service.baselineCacheLimitForTest());
+
+        // Zooming in (back to 1 tile): anti-churn preserves 240
+        service.setViewport(DIM, 0, 0, 0, 0, 0);
+        assertEquals(240, service.baselineCacheLimitForTest());
+
+        // Quality tier switch to ULTRA_PERFORMANCE smoothly clamps active limit to 64
+        service.setMapQuality(ConfluxConfig.MapQuality.ULTRA_PERFORMANCE);
+        assertEquals(64, service.baselineCacheConfiguredLimitForTest());
+        assertEquals(64, service.baselineCacheLimitForTest());
+
+        // Now even under 4K extreme viewport (16x10), it is strictly clamped to configured ceiling 64
+        service.setViewport(DIM, 0, 0, 15, 0, 9);
+        assertEquals(64, service.baselineCacheLimitForTest());
+    }
+
     private static TileUpdate latestUpdate(final TileService uploads, final TileKey key) {
         return uploads.drainUploads(64).stream()
             .filter(update -> update.key().equals(key))
