@@ -2602,6 +2602,7 @@ class PredictionTileServiceTest {
                 tiles.add(surfaceTile(tileX, tileZ));
             }
         }
+        final Map<TileKey, int[]> freshPixels = new HashMap<>();
         try {
             // A 3x3 viewport holds every tile the flip must repaint: a view-mode flip only
             // repaints requested tiles inside the viewport, so the ring preload alone would
@@ -2611,7 +2612,7 @@ class PredictionTileServiceTest {
                 service.requestTile(key);
             }
             awaitIdle(service, 10_000L);
-            uploads.drainUploads(64);
+            uploads.drainUploads(64).forEach(update -> freshPixels.put(update.key(), update.argbPixels()));
             final int firstRoundCalls = sampler.perTileCalls.size() + sampler.batchCalls.size();
             assertTrue(firstRoundCalls > 0, "the opening round must sample through the fake");
             assertEquals(
@@ -2632,11 +2633,21 @@ class PredictionTileServiceTest {
 
             service.setViewMode(PredictionViewMode.EVERYWHERE);
             awaitIdle(service, 10_000L);
-            uploads.drainUploads(64);
+            final List<TileUpdate> flipBack = uploads.drainUploads(64);
+            assertEquals(
+                tiles, flipBack.stream().map(TileUpdate::key).collect(Collectors.toSet()),
+                "flipping back must repaint the whole viewport again"
+            );
             assertEquals(
                 firstRoundCalls, sampler.perTileCalls.size() + sampler.batchCalls.size(),
                 "flipping back must serve from the same baselines again"
             );
+            for (final TileUpdate update : flipBack) {
+                assertArrayEquals(
+                    freshPixels.get(update.key()), update.argbPixels(),
+                    "a baseline hit must re-shade into the very pixels the fresh compose produced"
+                );
+            }
         } finally {
             executors.shutdown(2000L);
         }
@@ -2737,7 +2748,11 @@ class PredictionTileServiceTest {
             service.setViewport(DIM, 2, 0, 0, 0, 0);
             service.requestTile(key);
             awaitIdle(service, 10_000L);
-            uploads.drainUploads(64);
+            final int[] uncorrected = uploads.drainUploads(64).stream()
+                .filter(update -> update.key().equals(key))
+                .reduce((first, second) -> second)
+                .orElseThrow()
+                .argbPixels();
             final int freshCalls = sampler.perTileCalls.size() + sampler.batchCalls.size();
             assertTrue(freshCalls > 0, "the first compose must sample through the fake");
             assertEquals(1, service.baselineCacheSizeForTest());
@@ -2763,9 +2778,9 @@ class PredictionTileServiceTest {
                 1, service.baselineCacheSizeForTest(),
                 "a hit must not republish or evict its own entry"
             );
-            assertTrue(
-                java.util.Arrays.stream(corrected.argbPixels()).anyMatch(pixel -> pixel != 0),
-                "the corrected recomposition must still paint predicted pixels"
+            assertFalse(
+                java.util.Arrays.equals(uncorrected, corrected.argbPixels()),
+                "the baseline-served recomposition must apply the committed correction"
             );
         } finally {
             executors.shutdown(2000L);
