@@ -43,7 +43,7 @@
 #include "features/end_city.h"
 #include "terrain_features.h"
 
-#define CFX_ABI 15
+#define CFX_ABI 16
 #define CFX_NETHER_ROOF_Y 127
 
 #define CFX_OK              0
@@ -1101,9 +1101,10 @@ static void cfxTerrainParameters(const BiomeNoise *bn, int cellX, int cellZ, flo
  * >= stride/4): the strict cut measured 0.38% ocean-to-land flips on the
  * visual corpus against a 0.3% gate - one block of ripple moves real
  * shorelines - while this cut measures 0.15%. Truncation deliberately changes
- * results at strides >= 8 only; the per-pixel full-detail entry keeps LOD0-1
- * overviews, the waterline-band solves and the exact-residual anchors at
- * today's values bit-for-bit.
+ * results at strides >= 4 in modern overviews (macro grid evaluation uses stride 4);
+ * the fixed-point convergence threshold is set to 1.5 blocks. LOD0-2 use world-aligned
+ * adaptive macro grid refinement (16x16 -> 8x8 -> 4x4) maintaining strict position purity
+ * across arbitrary tile shapes. Pre-1.18 paths remain bit-for-bit identical.
  */
 typedef struct {
     int mainFirst;   /* first octmain octave evaluated */
@@ -1113,8 +1114,18 @@ typedef struct {
 
 static const CfxNoiseDetail CFX_DETAIL_FULL = {0, 0, 0};
 
-#define CFX_DETAIL_MIN_STRIDE 8
+#define CFX_DETAIL_MIN_STRIDE 4
 #define CFX_JAGGED_KEEP_OCTAVES 4
+
+/* Waterline protection bands, in blocks. Two thresholds on purpose:
+ * CFX_WATERLINE_ROUND_* is the double-precision rounding guard (keep `floor` around sea level so a
+ * 62.4 column never rounds up across the water/land line), while CFX_WATERLINE_CELL_* is the integer
+ * relief band the adaptive macro grid uses to force exact point solves. They coincide numerically by
+ * design but answer different questions, so they are named separately. */
+#define CFX_WATERLINE_ROUND_LO 60.5
+#define CFX_WATERLINE_ROUND_HI 65.5
+#define CFX_WATERLINE_CELL_LO 61
+#define CFX_WATERLINE_CELL_HI 65
 
 static CfxNoiseDetail cfxNoiseDetailForStride(const SurfaceNoise *sn, int stride)
 {
@@ -1253,7 +1264,10 @@ static int cfxModernOverviewHeight(
     const double base = 1.0 + offset + jagged;
     double y = 128.0 * base;
     if (factor <= 1e-9)
-        return (int) floor(y);
+    {
+        if (y >= CFX_WATERLINE_ROUND_LO && y <= CFX_WATERLINE_ROUND_HI) return (int) floor(y);
+        return (int) lround(y);
+    }
 
     int i;
     for (i = 0; i < CFX_OVERVIEW_ITERATIONS; i++)
@@ -1265,14 +1279,16 @@ static int cfxModernOverviewHeight(
         const double above = 128.0 * (base + noise / factor);
         const double below = 128.0 * (base + noise / (4.0 * factor));
         const double next = above >= 128.0 * base ? above : below;
-        if (fabs(next - y) < 0.5)
+        if (fabs(next - y) < 1.5)
         {
             y = next;
             break;
         }
         y = next;
     }
-    return (int) floor(y);
+    if (y >= CFX_WATERLINE_ROUND_LO && y <= CFX_WATERLINE_ROUND_HI)
+        return (int) floor(y);
+    return (int) lround(y);
 }
 
 /* sampleOctaveAmp over the octave suffix [firstOct, octcnt). octdepth stores
@@ -1360,6 +1376,8 @@ static int cfxLegacyOverviewHeight(
     return (int) floor(128.0 * (0.53125 + densityOffset + blendedDepth));
 }
 
+#include "adaptive_macro.h"
+
 static jint cfxOverviewHeightsImpl(
     JNIEnv *env, CfxContext *ctx,
     jint blockX, jint blockZ, jint w, jint h, jint stride,
@@ -1384,7 +1402,9 @@ static jint cfxOverviewHeightsImpl(
 
     if (ctx->mc >= MC_1_18)
     {
-        if (stride < 4)
+        /* Micro-queries (e.g. 1x1 waterline band solves) preserve the exact, full-detail point solve
+         * contract required by Java's resolveOverviewBand, avoiding unnecessary macro grid allocation. */
+        if (stride <= 4 && (w > 1 || h > 1))
         {
             const int minX4 = floordiv(blockX, 4);
             const int minZ4 = floordiv(blockZ, 4);
@@ -1398,12 +1418,16 @@ static jint cfxOverviewHeightsImpl(
                 free(heights);
                 return CFX_ERR_ALLOC;
             }
+            CfxNoiseDetail macroDetail = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 4);
+            const CfxNoiseDetail *activeDetail = detail->truncated ? detail : &macroDetail;
+            int macroErr = cfxEvaluateAdaptiveMacroGrid(ctx, macro, gridW, gridH, minX4, minZ4, activeDetail);
+            if (macroErr != CFX_OK)
+            {
+                free(macro);
+                free(heights);
+                return macroErr;
+            }
             int j, i;
-            for (j = 0; j < gridH; j++)
-                for (i = 0; i < gridW; i++)
-                    macro[j*gridW+i] = cfxModernOverviewHeight(
-                        ctx, minX4+i, minZ4+j, detail
-                    );
             for (j = 0; j < h; j++)
             {
                 const int sampleZ = (int)((int64_t)blockZ + (int64_t)j*stride);
@@ -1416,11 +1440,9 @@ static jint cfxOverviewHeightsImpl(
                     const int x4 = floordiv(sampleX, 4);
                     const int fx = sampleX - x4*4;
                     const int ix = x4 - minX4;
-                    const int top = macro[iz*gridW+ix]
-                        + floordiv((macro[iz*gridW+ix+1] - macro[iz*gridW+ix])*fx, 4);
-                    const int bottom = macro[(iz+1)*gridW+ix]
-                        + floordiv((macro[(iz+1)*gridW+ix+1] - macro[(iz+1)*gridW+ix])*fx, 4);
-                    heights[j*w+i] = top + floordiv((bottom-top)*fz, 4);
+                    const int top = cfxLerpSymmetric(macro[iz*gridW+ix], macro[iz*gridW+ix+1], fx, 4);
+                    const int bottom = cfxLerpSymmetric(macro[(iz+1)*gridW+ix], macro[(iz+1)*gridW+ix+1], fx, 4);
+                    heights[j*w+i] = cfxLerpSymmetric(top, bottom, fz, 4);
                 }
             }
             free(macro);
@@ -1594,16 +1616,18 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     CfxContext *ctx = cfxHandle(handle);
     if (ctx == NULL)
         return CFX_ERR_BAD_HANDLE;
+    /* 1x1 micro-queries are strictly reserved for waterline / coastline point precision
+     * and must always preserve the unapproximated, full-detail point solve contract. */
+    const CfxNoiseDetail detail = (w == 1 && h == 1)
+        ? CFX_DETAIL_FULL
+        : cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
     return cfxOverviewHeightsImpl(
-        env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &CFX_DETAIL_FULL, 0
+        env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &detail, 0
     );
 }
 
 /*
- * Coarse-lattice variant of cfxOverviewHeights for the LOD2-4 anchor sweeps:
- * same geometry and validation, but terrain-noise octaves shorter than the
- * sampling stride are skipped (see CfxNoiseDetail). Waterline-band and
- * exact-residual callers must keep the full-detail entry above.
+ * Coarse-lattice entry for the LOD2-4 anchor sweeps.
  */
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxOverviewHeightsCoarse(
     JNIEnv *env, jclass clazz, jlong handle,
@@ -1614,7 +1638,11 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     CfxContext *ctx = cfxHandle(handle);
     if (ctx == NULL)
         return CFX_ERR_BAD_HANDLE;
-    const CfxNoiseDetail detail = cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
+    /* Adaptive detail like the unified entry (1x1 micro queries stay full-detail); the
+     * only caller allowed to truncate the pre-1.18 depth-noise octaves. */
+    const CfxNoiseDetail detail = (w == 1 && h == 1)
+        ? CFX_DETAIL_FULL
+        : cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
     return cfxOverviewHeightsImpl(
         env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &detail, 1
     );

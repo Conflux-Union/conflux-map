@@ -123,6 +123,11 @@ public record TileUpdate(
         if (!older.key.equals(newer.key)) {
             throw new IllegalArgumentException("cannot merge updates for different tiles");
         }
+        // A complete replacement owns every pixel and light value. Retaining older rectangles
+        // would copy two full planes and make the renderer upload overwritten pixels again.
+        if (newer.changed.equals(FULL_TILE)) {
+            return newer;
+        }
         final int[] pixels = new int[256 * 256];
         copyRects(older, pixels);
         copyRects(newer, pixels);

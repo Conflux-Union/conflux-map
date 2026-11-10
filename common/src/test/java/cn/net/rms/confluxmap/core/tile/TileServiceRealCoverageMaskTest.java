@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.tile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.color.DaylightModel;
@@ -172,6 +173,70 @@ class TileServiceRealCoverageMaskTest {
         }
     }
 
+    @Test
+    void sparseNegativeRegionsPreservePerPixelSyncAndLocalAuthorityAtEveryCoarseLod() {
+        final MapExecutors executors = new MapExecutors(1);
+        try {
+            for (int lod = 1; lod <= TileMath.MAX_LOD; lod++) {
+                final MapWorldService worlds = new MapWorldService();
+                final SessionGuard.Session session = new SessionGuard.Session(
+                    1L, WorldIdentity.singleplayer("sparse-negative-mask"), DimensionId.OVERWORLD
+                );
+                worlds.switchSession(session);
+                final TileService tiles = new TileService(
+                    worlds, executors, new ConfluxConfig(), new DaylightModel()
+                );
+                final int chunks = 16 << lod;
+                final int base = -chunks;
+                final int pixelsPerChunk = 16 >> lod;
+                // The first four chunks straddle the negative region boundary on both axes;
+                // the last observed chunk also checks the far edge next to world zero.
+                final int[][] observed = {{15, 15}, {16, 15}, {15, 16}, {16, 16}, {chunks - 1, chunks - 1}};
+                for (int i = 0; i < observed.length; i++) {
+                    final long revision = i == 2 ? Long.MIN_VALUE : 10L;
+                    assertTrue(worlds.current().put(MapLayer.SURFACE,
+                        snapshotAt(session.token(), revision, base + observed[i][0], base + observed[i][1]),
+                        i == 2 ? SampleSource.IMPORTED : SampleSource.REAL_LIVE));
+                }
+                assertTrue(worlds.current().put(MapLayer.SURFACE,
+                    snapshotAt(session.token(), 10L, base + 17, base + 17), SampleSource.PREDICTED));
+                tiles.setLocalAuthorityViewport(new ChunkViewport(base + 16, base + 16, base + 16, base + 16));
+                final TileKey key = new TileKey(session.world(), session.dimension(),
+                    MapLayer.SURFACE.cacheId(), lod, -1, -1);
+                final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
+                final long[] revisions = new long[chunks * chunks];
+                Arrays.fill(revisions, Long.MIN_VALUE);
+                for (int i = 0; i < observed.length; i++) {
+                    final int x = observed[i][0];
+                    final int z = observed[i][1];
+                    PatchCodec.setEvaluated(evaluated, z * pixelsPerChunk * 256 + x * pixelsPerChunk);
+                    revisions[z * chunks + x] = i == 1 ? 9L : i == 4 ? 10L : 11L;
+                }
+                for (final CorrectionProfile profile : CorrectionProfile.values()) {
+                    final int[] pixels = predictedTile();
+                    final int[] expected = predictedTile();
+                    for (int i = 0; i < observed.length; i++) {
+                        final int x0 = observed[i][0] * pixelsPerChunk;
+                        final int z0 = observed[i][1] * pixelsPerChunk;
+                        for (int z = z0; z < z0 + pixelsPerChunk; z++) {
+                            Arrays.fill(expected, z * 256 + x0, z * 256 + x0 + pixelsPerChunk,
+                                Argb.TRANSPARENT);
+                        }
+                        // Newer evaluated sync can cover observed terrain outside player view;
+                        // unevaluated pixels, older/equal sync, and the player-view chunk stay local.
+                        if (profile.carriesSourceMetadata() && (i == 0 || i == 2)) {
+                            expected[z0 * 256 + x0] = PREDICTED;
+                        }
+                    }
+                    tiles.maskPredictedPixels(key, pixels, evaluated, revisions, profile);
+                    assertArrayEquals(expected, pixels, "LOD" + lod + " profile " + profile);
+                }
+            }
+        } finally {
+            executors.shutdown(1000L);
+        }
+    }
+
     private static int[] predictedTile() {
         final int[] pixels = new int[TileMath.TILE_SIZE * TileMath.TILE_SIZE];
         Arrays.fill(pixels, PREDICTED);
@@ -215,12 +280,18 @@ class TileServiceRealCoverageMaskTest {
     }
 
     private static ChunkSnapshot snapshot(final long token, final long revision) {
+        return snapshotAt(token, revision, 0, 0);
+    }
+
+    private static ChunkSnapshot snapshotAt(
+        final long token, final long revision, final int chunkX, final int chunkZ
+    ) {
         final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
         Arrays.fill(surfaceY, (short) 65);
         final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
         Arrays.fill(kind, (byte) SurfaceKind.LAND.ordinal());
         return new ChunkSnapshot(
-            0, 0, token, revision,
+            chunkX, chunkZ, token, revision,
             surfaceY, new String[ChunkSnapshot.COLUMNS], new byte[ChunkSnapshot.COLUMNS],
             new int[ChunkSnapshot.COLUMNS], new int[ChunkSnapshot.COLUMNS],
             new int[ChunkSnapshot.COLUMNS], kind, new byte[ChunkSnapshot.COLUMNS]

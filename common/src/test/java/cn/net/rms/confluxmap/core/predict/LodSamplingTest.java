@@ -20,6 +20,103 @@ import org.junit.jupiter.params.provider.ValueSource;
  * another tile's data at all.
  */
 class LodSamplingTest {
+    @ParameterizedTest
+    @ValueSource(ints = {2, 3, 4})
+    void adjacentBiomeRefinementsShareOneBatchWithoutChangingPixelInputs(final int lod) {
+        final int blocksPerPixel = 1 << lod;
+        final int[] surfaceCalls = {0};
+        final BaselineSampler sampler = new BaselineSampler() {
+            @Override
+            public boolean interpolatableOverviewHeights() {
+                return true;
+            }
+
+            @Override
+            public boolean biomes(
+                final int scale, final int x, final int z, final int w, final int h,
+                final int[] out
+            ) {
+                throw new AssertionError("the height-aware biome sweep must succeed");
+            }
+
+            @Override
+            public boolean heights(
+                final int x4, final int z4, final int w, final int h, final int[] out
+            ) {
+                return false;
+            }
+
+            @Override
+            public boolean endHeights(
+                final int x4, final int z4, final int w, final int h, final int[] out
+            ) {
+                return false;
+            }
+
+            @Override
+            public boolean overviewHeights(
+                final int blockX, final int blockZ, final int w, final int h,
+                final int stride, final int[] out
+            ) {
+                for (int z = 0; z < h; z++) {
+                    for (int x = 0; x < w; x++) {
+                        out[z * w + x] = 100 + Math.floorMod(
+                            Math.floorDiv(blockX + x * stride, blocksPerPixel)
+                                + 3 * Math.floorDiv(blockZ + z * stride, blocksPerPixel),
+                            9
+                        );
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public boolean surfaceBiomes(
+                final int blockX, final int blockZ, final int w, final int h,
+                final int stride, final int[] terrainY, final int[] out
+            ) {
+                surfaceCalls[0]++;
+                for (int z = 0; z < h; z++) {
+                    for (int x = 0; x < w; x++) {
+                        out[z * w + x] = refinementBiome(
+                            blockX + x * stride, blockZ + z * stride,
+                            terrainY[z * w + x], blocksPerPixel
+                        );
+                    }
+                }
+                return true;
+            }
+        };
+        final int originX = -8192;
+        final int originZ = 4096;
+        final BaselineGrid grid = LodSampling.sample(sampler, false, lod, originX, originZ);
+        assertNotNull(grid);
+        for (int z = -1; z <= 256; z++) {
+            for (int x = -1; x <= 256; x++) {
+                final int pixel = BaselineGrid.index(x, z);
+                assertEquals(
+                    refinementBiome(originX + x * blocksPerPixel, originZ + z * blocksPerPixel,
+                        grid.terrainY[pixel], blocksPerPixel),
+                    grid.biomeId[pixel], "biome at " + x + "," + z
+                );
+            }
+        }
+        assertEquals(130, surfaceCalls[0],
+            "one anchor batch plus one refinement batch per two-pixel row");
+    }
+
+    private static int refinementBiome(
+        final int blockX, final int blockZ, final int height, final int blocksPerPixel
+    ) {
+        // Adjacent cell anchors differ by at least one id even when their heights differ,
+        // forcing refinement; the low bit makes an incorrectly packed height observable.
+        final int parity = Math.floorMod(
+            Math.floorDiv(blockX + blocksPerPixel, 2 * blocksPerPixel)
+                + Math.floorDiv(blockZ + blocksPerPixel, 2 * blocksPerPixel), 2
+        );
+        return 4 + 2 * parity + (height & 1);
+    }
+
     private static final PositionBasedFakeSampler SAMPLER = new PositionBasedFakeSampler();
 
     @ParameterizedTest

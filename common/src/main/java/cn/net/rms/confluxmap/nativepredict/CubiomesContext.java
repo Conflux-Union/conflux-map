@@ -148,10 +148,10 @@ public final class CubiomesContext implements AutoCloseable {
     }
 
     /**
-     * Coarse-lattice overview: identical geometry to {@link #overviewHeights}, but terrain-noise
-     * octaves shorter than the sampling stride are skipped (stride {@code <} 8 keeps full detail).
-     * Reserved for the LOD2-4 anchor sweeps; waterline-band and exact-residual queries must use
-     * the full-detail entry.
+     * Coarse-lattice overview reserved for the LOD2-4 anchor sweeps. Pre-1.18 worlds skip
+     * depth-noise octaves shorter than half the sampling stride, bound to this entry and
+     * never to the window geometry; 1.18+ matches {@link #overviewHeights}. Waterline-band
+     * and exact-residual queries must use the full-detail entry.
      */
     public int overviewHeightsCoarse(
         final int blockX,
