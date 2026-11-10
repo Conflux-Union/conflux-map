@@ -781,6 +781,54 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     return CFX_OK;
 }
 
+/*
+ * Gate for the exact-columns GPU attempt inside cfxSurfaceColumns: an anchor batch at or
+ * above this count hands its whole grid to the fork's float point kernel in one dispatch.
+ * The default matches the overview heights gate (dispatch overhead against the ~150us
+ * per-anchor CPU solve); env CFX_GPU_COLUMN_MIN_ANCHORS overrides it once at first use (the
+ * CUBIOMES_GPU precedent) and 0 disables the attempt entirely - the serving switch for
+ * composed A/B measurement, not a product setting. Malformed values keep the default.
+ */
+#define CFX_GPU_COLUMN_MIN_ANCHORS 256
+
+static int cfxGpuColumnMinAnchors(void)
+{
+    static int cached;
+    static int parsed;
+    if (!parsed)
+    {
+        parsed = 1;
+        cached = CFX_GPU_COLUMN_MIN_ANCHORS;
+        const char *env = getenv("CFX_GPU_COLUMN_MIN_ANCHORS");
+        if (env != NULL && *env != '\0')
+        {
+            /* Strict non-negative decimal, hand-parsed: strtol would drag a
+             * glibc-2.38-only symbol into the committed library. */
+            long value = 0;
+            int any = 0, bad = 0;
+            const char *p;
+            for (p = env; *p != '\0'; p++)
+            {
+                if (*p < '0' || *p > '9')
+                {
+                    bad = 1;
+                    break;
+                }
+                value = value * 10 + (*p - '0');
+                if (value > INT_MAX)
+                {
+                    bad = 1;
+                    break;
+                }
+                any = 1;
+            }
+            if (any && !bad)
+                cached = (int) value;
+        }
+    }
+    return cached;
+}
+
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxSurfaceColumns(
     JNIEnv *env, jclass clazz, jlong handle,
     jint blockX, jint blockZ, jint w, jint h, jint stride,
@@ -829,6 +877,63 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     const int64_t denseColumns = (int64_t) (maxCellX - minCellX + 1)
         * (int64_t) (maxCellZ - minCellZ + 1);
     const int64_t sparseColumns = (int64_t) cells * 4;
+    /*
+     * GPU attempt for the exact-columns point seam, inside the version/dimension guards the
+     * CPU path already applies (MC 1.18+ Overworld only - the kernel refuses the rest the
+     * same way, so the gate just keeps refused shapes off the runtime). Both request shapes
+     * marshal to the same anchor arrays: the dense rect's lattice coordinates expand into
+     * exactly the (x, z) lists the per-point loop visits, in the same j*w+i order, and the
+     * kernel fills the same four planes - sentinels and the fluid flag post-pass included -
+     * so a served batch returns the layout the CPU loops would have written. The seam has no
+     * Java-side repair (a false return drops the caller's tile), so a whole-or-nothing
+     * refusal must only ever fall through to those CPU loops untouched. The float kernel
+     * approximates the CPU reference within the sparse seam's drift budget; the fp64 twin
+     * stays the exact reference, and swapping the entry (~3x kernel cost) is the escalation
+     * if a budget breach ever demands it. No mutex is held across the dispatch, and the
+     * stage counters count attempts/serves the way the sparse entries do.
+     */
+    const int columnGate = cfxGpuColumnMinAnchors();
+    const int gpuEligible = columnGate > 0 && ctx->mc >= MC_1_18 && cells >= columnGate;
+    ctx->stageCalls += gpuEligible;
+#ifdef CUBIOMES_ENABLE_GPU
+    int gpuServed = 0;
+    if (gpuEligible)
+    {
+        int *anchors = malloc(sizeof(int) * (size_t) cells * 2);
+        if (anchors != NULL)
+        {
+            int j, i;
+            for (j = 0; j < h; j++)
+            {
+                const int sampleZ = (int) ((int64_t) blockZ + (int64_t) j * stride);
+                for (i = 0; i < w; i++)
+                {
+                    const int index = j * w + i;
+                    anchors[index] = (int) ((int64_t) blockX + (int64_t) i * stride);
+                    anchors[cells + index] = sampleZ;
+                }
+            }
+            gpuServed = gpuCfxSurfaceColumnsPointsFloat(
+                solidY, fluidY, surfaceY, flags, &ctx->g.bn,
+                anchors, anchors + cells, cells
+            ) == 0;
+            free(anchors);
+        }
+        ctx->stageGpuCalls += gpuServed;
+    }
+    if (gpuServed)
+    {
+        (*env)->SetIntArrayRegion(env, outSolidY, 0, cells, solidY);
+        (*env)->SetIntArrayRegion(env, outFluidY, 0, cells, fluidY);
+        (*env)->SetIntArrayRegion(env, outSurfaceY, 0, cells, surfaceY);
+        (*env)->SetIntArrayRegion(env, outFlags, 0, cells, flags);
+        free(solidY);
+        free(fluidY);
+        free(surfaceY);
+        free(flags);
+        return CFX_OK;
+    }
+#endif
     int err = 0;
     if (denseColumns > sparseColumns)
     {

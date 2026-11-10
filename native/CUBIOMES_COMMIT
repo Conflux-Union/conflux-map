@@ -1,13 +1,13 @@
 upstream: https://github.com/Cubitect/cubiomes (active line: xpple/cubiomes master)
 fork:     https://github.com/Conflux-Union/cubiomes (this project's fork)
-commit:   d70551e8d4acfead83bccfe747b723c0381ab45c
-commit date: 2026-11-10T01:13:56+08:00
+commit:   ea3178731fbf7922c357b2ca8eaa205f8cef7c8c
+commit date: 2026-11-10T13:44:32+08:00
 pinned via: native/cubiomes git submodule (converted from a vendored copy on 2026-07-17)
 license: MIT (see native/cubiomes/LICENSE)
 
 Merge state: fork master = upstream xpple/master (5815e4f "Add 26.3 support
 (#29)") merged on top of our feature line; the pin sits on the
-feat/gpu-opencl branch (same feature line, seventeen GPU commits on top of
+feat/gpu-opencl branch (same feature line, twenty-one GPU commits on top of
 07f8282). Upstream changes folded in:
 the renderpearl-independent C-side terrain refactor (terrainnoise/carver
 split, uint8_t block columns), loot salt configs, the ctest suite, and
@@ -57,7 +57,23 @@ Fork contents kept on top of upstream master:
     mirrors of the packed tables, drift-budgeted instead of bit-exact -
     the typedef refactor leaves the fp64 build byte-equivalent (the exact
     matrix reproduces identically) and the rect/float-family kernels are
-    untouched. Batched z-stride
+    untouched. 14c2eb3 adds the surface-columns point kernels for the mod's
+    exact-columns stage (gpuCfxSurfaceColumnsPoints plus the drift-budgeted
+    float twin gpuCfxSurfaceColumnsPointsFloat): n anchors solved in one
+    launch and readback with the four output planes carrying the CPU's own
+    fluid post-pass and INT32_MIN sentinel, whole-or-nothing rejection as on
+    the other sparse entries. The port covers the full 1.18+ column chain
+    including the aquifer stack (fluid-state sampling, fluid-level solving
+    and the per-seed aquifer hash seeds as runtime arguments; the four AN_*
+    double-perlin instances append to the packed tables after octMainOff, so
+    every existing pack offset stays stable). ea31787 reworks the col kernels
+    for throughput with three pure memoizations (density carry between the
+    banded search's cells, a per-anchor noodle-corner memo keyed on the noise
+    cell, a ring memo for the aquifer's noise-free surface estimate) without
+    changing any output: measured 11.0-14.8k ns/anchor fp64 and 3.6-4.7k fp32
+    at the 16384-anchor saturation width against 82.9-166.9k / 39.1-77.5k at
+    the 256-anchor per-tile dispatch width, with every parity matrix
+    bit-identical before and after. Batched z-stride
     entries (gpuMapOverworldSurfaceBiomeRows / gpuMapOverworldTerrainHeightRows)
     fold streamed overview-row sets into one dispatch. Default mode is
     env-driven (CUBIOMES_GPU, auto); gpuSetMode() overrides.
@@ -88,7 +104,16 @@ Verification for this pin:
     (exact shape-invariance within the float build, chunk-slice, refusal,
     and metrics pins; kernel-level drift far under the smoke bounds -
     near origin 0.0000% biome mismatch / max |dY| 1, 1M-field 0.0366% /
-    |dY| 5). Known pre-existing failure, not introduced by
+    |dY| 5); re-run green 2026-11-10 at ea31787 adding the surface-columns
+    sections: the fp64 col parity stays bit-exact against
+    mapOverworldSurfaceColumns across near/far/negative/duplicate/reseed/
+    band-clamp/deep-ocean/lava probes and two MC versions, the fp32 col build
+    pins shape invariance, chunk-slice refusal and exact metrics deltas, and
+    the float col drift prints land at 0.0434%/|dY| 1 (near), 0.0217%/5
+    (1M-class) with the cave-mouth and 30M-border probes printing only - the
+    carve-discontinuity and coordinate-quantization classes (border flags
+    0.955%, |dY| 82), the same print-only classification the mod's
+    composed-tile gates use. Known pre-existing failure, not introduced by
     this pin: `./gpu_test --full` misses the near-bucket float height
     budget (max dY 44.0 > 25.0; the calibration comment's observed
     baseline was dY 5) byte-identically on the pre-change base 2ec8385 -
@@ -116,6 +141,33 @@ Verification for this pin:
     predate even the Phase 2 sparse JNI symbols, so those platforms latch
     the sparse capability off and keep the pre-sparse behavior - rebuilds
     pending a zig host).
+  - conflux-map integration (2026-11-10, fp32 surface-columns seam):
+    buildNativesHost rebuilds the committed linux-x86_64 library with the col
+    kernels, and the shim's cfxSurfaceColumns now attempts
+    gpuCfxSurfaceColumnsPointsFloat for 1.18+ Overworld anchor batches at or
+    above CFX_GPU_COLUMN_MIN_ANCHORS (default 256, env-overridable once at
+    first use, 0 disables - the composed A/B measurement switch), expanding
+    both of the entry's request shapes (the lod0 dense-rect call and the
+    lod1 per-anchor loop) into the same anchor arrays in the CPU loops' own
+    j*w+i order. The float kernels serve the drift-budgeted tier, the same
+    product decision as the sparse seam: the fp64 twin stays the exact
+    reference, and swapping the entry for it (~3x kernel cost) is the
+    documented escalation should a budget breach ever demand it. A
+    whole-or-nothing refusal falls back to the shim's byte-untouched CPU
+    loops and never surfaces as false - the exact-columns stage has no
+    per-point Java-side repair, a false return drops the caller's tile.
+    Stage accounting mirrors the sparse seam (attempt/serve deltas on the
+    per-context counters the debug backend annotation reads). The
+    :common:test suite passes against the rebuilt library with the col
+    engagement/drift gates: served probes in the documented cave-mouth
+    region show nonzero fp32 drift against the per-anchor CPU reference
+    (solidY mismatch 4.1% on the rect shape / 2.8% per-point, max |dY| 3),
+    below-gate and env-disabled batches resolve bit-exactly against those
+    same 1x1 solves, and the composed lod0/lod1 gates print the measured
+    rates - categorical flags under 2% at every bucket (worst 1.81% at the
+    30M border), heights at the near bucket |dY| <= 1, and the carve-class
+    buckets (cave-mouth, 1M-class tile on carved terrain, 30M border)
+    reaching |dY| 36-93 printed without a bound.
   - Machine note (2026-11-09): CUBIOMES_GPU_PROFILING=1 degrades to
     unprofiled on this workstation. Deepin's nvidia-libopencl1
     580.119.02 loader accepts CL_QUEUE_PROFILING_ENABLE (it even reads
