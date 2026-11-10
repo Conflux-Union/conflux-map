@@ -123,6 +123,12 @@ package cn.net.rms.confluxmap.gametest;
 //$$             // several seconds after world creation; burn it off on a discard round so the
 //$$             // first matrix round measures prediction, not chunk-loading noise.
 //$$             waitForViewportLoad(context, prediction, textures, -1, null, MAX_UPLOAD_TICKS);
+//$$             // A fast backend drains the discard round before the capture flood has
+//$$             // burned off, and the flood then buries the first matrix round in
+//$$             // re-composition churn - measured 133-tile windows behind a 0.7s GPU
+//$$             // discard round versus 14 behind a 7s CPU one. Settle past the flood
+//$$             // explicitly before the matrix rounds begin.
+//$$             context.waitTicks(150);
 //$$             for (final int lod : lods) {
 //$$                 final PredictionTileService.ViewportLoadResult previous =
 //$$                     prediction.lastViewportLoadForTest();
