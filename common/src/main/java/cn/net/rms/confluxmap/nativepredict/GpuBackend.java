@@ -31,23 +31,30 @@ public final class GpuBackend {
     private GpuBackend() {
     }
 
-    /** One read of the engine's process-global GPU state, for the debug backend snapshot log. */
-    public record GpuStats(int engineMode, String device, long dispatches, long heightDispatches) {
+    /**
+     * One read of the engine's process-global GPU state, for the debug backend snapshot log.
+     * {@code engineDead} is the engine's latched death flag: a dead engine keeps its mode and
+     * device name but serves the CPU loops from then on, so identity decisions must read this
+     * flag instead of inferring liveness from the device name.
+     */
+    public record GpuStats(int engineMode, String device, long dispatches, long heightDispatches,
+                           boolean engineDead) {
     }
 
     /**
-     * Current engine mode, probed OpenCL device name and successful dispatch counts, or
-     * {@code null} when there is no data (library not loaded, or it predates the stats export -
-     * see {@link CubiomesNative#cfxGetGpuStats}). Read-only and cheap; safe from any thread.
+     * Current engine mode, probed OpenCL device name, latched death flag and successful dispatch
+     * counts, or {@code null} when there is no data (library not loaded, or it predates the
+     * stats export - see {@link CubiomesNative#cfxGetGpuStats}). Read-only and cheap; safe from
+     * any thread.
      */
     public static GpuStats stats() {
         try {
-            final long[] out = new long[3];
+            final long[] out = new long[4];
             final String device = CubiomesNative.cfxGetGpuStats(out);
             if (device == null) {
                 return null;
             }
-            return new GpuStats((int) out[0], device, out[1], out[2]);
+            return new GpuStats((int) out[0], device, out[1], out[2], out[3] != 0);
         } catch (final UnsatisfiedLinkError staleLibrary) {
             return null;
         }
@@ -96,6 +103,11 @@ public final class GpuBackend {
         return "unknown(" + engineMode + ")";
     }
 
+    /** Whether one read of {@link GpuStats#engineMode()} says the engine only serves the CPU. */
+    public static boolean modeOff(final int engineMode) {
+        return engineMode == CubiomesNative.GPU_MODE_OFF;
+    }
+
     /** Engine mode for a backend: {@code GPU_MODE_OFF} for CPU, {@code GPU_MODE_AUTO} for GPU. */
     public static int engineMode(final PredictionBackend backend) {
         return backend == PredictionBackend.GPU
@@ -114,15 +126,16 @@ public final class GpuBackend {
 
     /**
      * Whether a wave may admit with a live batch seam: no refusal latched and the resolved
-     * engine mode is not OFF. A missing snapshot means the library predates the batch entries,
-     * so per-tile dispatch is the honest answer there too.
+     * engine mode is not OFF with the engine not latched dead. A missing snapshot means the
+     * library predates the batch entries, so per-tile dispatch is the honest answer there too.
      */
     public static boolean batchDispatchAvailable() {
         return batchDispatchAvailable(stats(), batchRefused);
     }
 
     static boolean batchDispatchAvailable(final GpuStats snapshot, final boolean refused) {
-        return !refused && snapshot != null && snapshot.engineMode() != CubiomesNative.GPU_MODE_OFF;
+        return !refused && snapshot != null && snapshot.engineMode() != CubiomesNative.GPU_MODE_OFF
+            && !snapshot.engineDead();
     }
 
     /**

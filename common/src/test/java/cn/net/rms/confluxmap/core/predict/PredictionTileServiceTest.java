@@ -32,9 +32,11 @@ import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.tile.TileUpdate;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.ChunkViewport;
+import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
+import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -2573,6 +2575,292 @@ class PredictionTileServiceTest {
         assertEquals("(h_lattice=1.2 cells=3.4)", PredictionTileService.formatOverworldStageBreakdown(
             stageVector(LodSampling.OverworldStage.H_LATTICE, 1_200_000L,
                 LodSampling.OverworldStage.CELLS, 3_400_000L)));
+    }
+
+    /**
+     * A view-mode flip drops every mip-cache entry (the exact tile records its composing mode),
+     * but the baseline planes behind it are mode-independent. The refresh must reconstruct those
+     * planes instead of paying the sampling again, and flipping back must serve from the same
+     * entries a second time.
+     */
+    @Test
+    void viewModeReentryServesFromTheBaselineWithoutResampling() throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        sessionGuard.begin(WORLD, DIM);
+        final MapExecutors executors = new MapExecutors(8);
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final WaveHarness harness = newWaveHarness(sessionGuard, executors, uploads);
+        final PredictionTileService service = harness.service();
+        final RecordingWaveSampler sampler = harness.sampler();
+
+        final Set<TileKey> tiles = new HashSet<>();
+        for (int tileX = -1; tileX <= 1; tileX++) {
+            for (int tileZ = -1; tileZ <= 1; tileZ++) {
+                tiles.add(surfaceTile(tileX, tileZ));
+            }
+        }
+        try {
+            // A 3x3 viewport holds every tile the flip must repaint: a view-mode flip only
+            // repaints requested tiles inside the viewport, so the ring preload alone would
+            // leave them unstale.
+            service.setViewport(DIM, 2, -1, 1, -1, 1);
+            for (final TileKey key : tiles) {
+                service.requestTile(key);
+            }
+            awaitIdle(service, 10_000L);
+            uploads.drainUploads(64);
+            final int firstRoundCalls = sampler.perTileCalls.size() + sampler.batchCalls.size();
+            assertTrue(firstRoundCalls > 0, "the opening round must sample through the fake");
+            assertEquals(
+                9, service.baselineCacheSizeForTest(),
+                "every directly sampled tile must publish its baseline planes"
+            );
+
+            service.setViewMode(PredictionViewMode.GENERATED_ONLY);
+            awaitIdle(service, 10_000L);
+            final Set<TileKey> refreshed = uploads.drainUploads(64).stream()
+                .map(TileUpdate::key)
+                .collect(Collectors.toSet());
+            assertEquals(tiles, refreshed, "the mode flip must repaint the whole viewport");
+            assertEquals(
+                firstRoundCalls, sampler.perTileCalls.size() + sampler.batchCalls.size(),
+                "the mode-flip refresh must reconstruct baselines instead of sampling again"
+            );
+
+            service.setViewMode(PredictionViewMode.EVERYWHERE);
+            awaitIdle(service, 10_000L);
+            uploads.drainUploads(64);
+            assertEquals(
+                firstRoundCalls, sampler.perTileCalls.size() + sampler.batchCalls.size(),
+                "flipping back must serve from the same baselines again"
+            );
+        } finally {
+            executors.shutdown(2000L);
+        }
+    }
+
+    /**
+     * The wave-member analogue of {@link #cacheServedMembersStillHoldTheirWaveReservation}: a
+     * view-mode flip drops the eight warm mip entries but keeps their baselines, and the
+     * re-requested tiles must compose as one whole wave of baseline-served members - a
+     * cache-fast finish frees no slot mid-wave.
+     */
+    @Test
+    void baselineServedMembersStillHoldTheirWaveReservation() throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        sessionGuard.begin(WORLD, DIM);
+        final MapExecutors executors = new MapExecutors(8);
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final WaveHarness harness = newWaveHarness(sessionGuard, executors, uploads);
+        final PredictionTileService service = harness.service();
+        final CountDownLatch leaderInBatch = new CountDownLatch(1);
+        final CountDownLatch releaseLeader = new CountDownLatch(1);
+
+        try {
+            stageRing(service, 0);
+            awaitIdle(service, 10_000L);
+            uploads.drainUploads(64);
+            service.admittedWaveSizesForTest.clear();
+            assertEquals(
+                8, service.baselineCacheSizeForTest(),
+                "the fresh ring must publish all eight baselines before the flip"
+            );
+
+            // Flip first (the warm tiles' mip entries record EVERYWHERE, the re-requests compose
+            // under GENERATED_ONLY and miss the mip cache), then hold a fresh wave mid-batch and
+            // re-request the eight warm tiles: their requests pile up while every slot is taken
+            // and must compose as one whole wave of baseline-served members.
+            service.setViewMode(PredictionViewMode.GENERATED_ONLY);
+            blockFirstWaveLeader(harness.sampler(), leaderInBatch, releaseLeader);
+            stageRingAround(service, 3, 0);
+            for (int tileX = -1; tileX <= 1; tileX++) {
+                for (int tileZ = -1; tileZ <= 1; tileZ++) {
+                    if (tileX != 0 || tileZ != 0) {
+                        service.requestTile(surfaceTile(tileX, tileZ));
+                    }
+                }
+            }
+            assertTrue(
+                leaderInBatch.await(10, TimeUnit.SECONDS),
+                "the fresh wave's leader never entered its heights batch"
+            );
+            releaseLeader.countDown();
+            awaitIdle(service, 10_000L);
+
+            assertEquals(
+                List.of(8, 8),
+                service.admittedWaveSizesForTest,
+                "baseline-served members must not free their slots mid-wave; both waves stay whole"
+            );
+            assertEquals(
+                0,
+                service.reservedWaveSlotsForTest(),
+                "the baseline-served wave must release its whole reservation"
+            );
+            final Set<TileKey> expected = paddedRingKeys(0);
+            expected.addAll(ringKeysAround(3, 0));
+            assertAllUploaded(uploads, expected, "every re-requested and fresh tile must upload");
+        } finally {
+            releaseLeader.countDown();
+            executors.shutdown(2000L);
+        }
+    }
+
+    /**
+     * A committed correction outdates the tile's mip entry (a cached plane set must never
+     * outrank newer server state), but the baseline planes behind it are correction-free
+     * sampling output: the recomposition must reconstruct them and re-shade with the live
+     * correction instead of sampling again.
+     */
+    @Test
+    void correctedTileRecomposesFromItsBaselineWithoutResampling(@TempDir final Path tempDir) throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        sessionGuard.begin(WORLD, DIM);
+        final MapExecutors executors = new MapExecutors(4);
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final WaveHarness harness = newWaveHarness(sessionGuard, executors, uploads);
+        final PredictionTileService service = harness.service();
+        final RecordingWaveSampler sampler = harness.sampler();
+        service.bindCorrectionStore(new CorrectionStore(tempDir));
+
+        final TileKey key = surfaceTile(0, 0);
+        try {
+            service.setViewport(DIM, 2, 0, 0, 0, 0);
+            service.requestTile(key);
+            awaitIdle(service, 10_000L);
+            uploads.drainUploads(64);
+            final int freshCalls = sampler.perTileCalls.size() + sampler.batchCalls.size();
+            assertTrue(freshCalls > 0, "the first compose must sample through the fake");
+            assertEquals(1, service.baselineCacheSizeForTest());
+
+            assertTrue(service.applyCorrection(
+                new CorrectionStore.Key(DIM.toString(), 2, 0, 0),
+                1L,
+                new byte[Proto.PATCH_PRESENCE_BYTES],
+                new PatchCodec.Patch(java.util.List.of(new PatchCodec.Sample(
+                    0, 4, 80, SurfaceKind.LAND.ordinal(), 12, 0
+                ))),
+                Proto.PATCH_MODE_RESIDUAL,
+                PredictorVersion.full(),
+                System.currentTimeMillis()
+            ));
+            awaitIdle(service, 10_000L);
+            final TileUpdate corrected = latestUpdate(uploads, key);
+            assertEquals(
+                freshCalls, sampler.perTileCalls.size() + sampler.batchCalls.size(),
+                "the corrected recomposition must rebuild from the baseline, not sample again"
+            );
+            assertEquals(
+                1, service.baselineCacheSizeForTest(),
+                "a hit must not republish or evict its own entry"
+            );
+            assertTrue(
+                java.util.Arrays.stream(corrected.argbPixels()).anyMatch(pixel -> pixel != 0),
+                "the corrected recomposition must still paint predicted pixels"
+            );
+        } finally {
+            executors.shutdown(2000L);
+        }
+    }
+
+    /**
+     * The serving-engine dimension of the baseline key: planes produced under one engine never
+     * serve a session whose engine changed - the recomposition samples again and publishes under
+     * the new identity, and the old entry stays usable when the engine flips back.
+     */
+    @Test
+    void engineChangeRejectsBaselinesFromTheOtherBackend() throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        sessionGuard.begin(WORLD, DIM);
+        final MapExecutors executors = new MapExecutors(4);
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final WaveHarness harness = newWaveHarness(sessionGuard, executors, uploads);
+        final PredictionTileService service = harness.service();
+        final RecordingWaveSampler sampler = harness.sampler();
+
+        try {
+            service.servingEngineForTest = () -> PredictionBaselineCache.ENGINE_GPU;
+            final TileKey key = surfaceTile(0, 0);
+            service.setViewport(DIM, 2, 0, 0, 0, 0);
+            service.requestTile(key);
+            awaitIdle(service, 10_000L);
+            uploads.drainUploads(64);
+            final int gpuCalls = sampler.perTileCalls.size() + sampler.batchCalls.size();
+            assertTrue(gpuCalls > 0);
+
+            // The device is gone: the engine now serves the CPU reference, whose planes sit
+            // inside different drift bounds near waterlines. The GPU-era entry must not serve.
+            // The view-mode flip first drops the mip entry, so the baseline plane is what the
+            // recomposition actually falls back to.
+            service.servingEngineForTest = () -> PredictionBaselineCache.ENGINE_CPU;
+            service.setViewMode(PredictionViewMode.GENERATED_ONLY);
+            service.requestTile(key);
+            awaitIdle(service, 10_000L);
+            uploads.drainUploads(64);
+            final int cpuCalls = sampler.perTileCalls.size() + sampler.batchCalls.size();
+            assertTrue(
+                cpuCalls > gpuCalls,
+                "an engine change must resample rather than serve the other backend's planes"
+            );
+            assertEquals(
+                2, service.baselineCacheSizeForTest(),
+                "both engines' entries coexist in the bounded cache"
+            );
+
+            // Back on the GPU under the original mode: the original entry is still the right
+            // planes for this identity.
+            service.servingEngineForTest = () -> PredictionBaselineCache.ENGINE_GPU;
+            service.setViewMode(PredictionViewMode.EVERYWHERE);
+            service.requestTile(key);
+            awaitIdle(service, 10_000L);
+            uploads.drainUploads(64);
+            assertEquals(
+                cpuCalls, sampler.perTileCalls.size() + sampler.batchCalls.size(),
+                "flipping the engine back must serve the entry published under it"
+            );
+        } finally {
+            service.servingEngineForTest = null;
+            executors.shutdown(2000L);
+        }
+    }
+
+    /**
+     * Pure mapping of one stats snapshot to the baseline-cache engine identity. The death latch
+     * is the regression case: a dead engine keeps its auto mode and probed device name while
+     * serving the CPU loops, so keying on the device name alone would let CPU fallback results
+     * read and write the GPU identity.
+     */
+    @Test
+    void servingEngineMapsDeadAndDevicelessEnginesToTheCpuIdentity() {
+        assertEquals(PredictionBaselineCache.ENGINE_NONE, PredictionTileService.servingEngine(null));
+
+        final int auto = GpuBackend.engineMode(PredictionBackend.GPU);
+        assertEquals(PredictionBaselineCache.ENGINE_GPU, PredictionTileService.servingEngine(
+            new GpuBackend.GpuStats(auto, "review-device", 4, 2, false)));
+
+        assertEquals(PredictionBaselineCache.ENGINE_CPU, PredictionTileService.servingEngine(
+            new GpuBackend.GpuStats(GpuBackend.engineMode(PredictionBackend.CPU), "", 0, 0, false)));
+        assertEquals(PredictionBaselineCache.ENGINE_CPU, PredictionTileService.servingEngine(
+            new GpuBackend.GpuStats(auto, "", 0, 0, false)));
+        assertEquals(PredictionBaselineCache.ENGINE_CPU, PredictionTileService.servingEngine(
+            new GpuBackend.GpuStats(auto, null, 0, 0, false)));
+
+        // Dead engine: mode stays auto and the device name survives the latch, but the engine
+        // serves the CPU reference from now on.
+        assertEquals(PredictionBaselineCache.ENGINE_CPU, PredictionTileService.servingEngine(
+            new GpuBackend.GpuStats(auto, "review-device", 4, 2, true)));
     }
 
     private static long[] stageVector(final LodSampling.OverworldStage first, final long firstNanos,

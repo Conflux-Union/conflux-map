@@ -42,6 +42,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.function.BooleanSupplier;
+import java.util.function.IntSupplier;
 import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 import org.apache.logging.log4j.LogManager;
@@ -175,6 +176,17 @@ public final class PredictionTileService {
     private final Map<TileKey, TileMetadata> metadataTiles = new HashMap<>();
     /** Recent CPU results used to build a coarser tile without resampling. */
     private final PredictionMipCache mipCache = new PredictionMipCache(REUSABLE_TILE_LIMIT);
+    /**
+     * Directly sampled baseline planes, keyed independently of corrections, styling, and view
+     * mode. Sits behind the mip cache: a mip hit serves finished planes, a baseline hit serves
+     * the sampled inputs for a fresh shade instead of paying the sampler again.
+     */
+    private final PredictionBaselineCache baselineCache = new PredictionBaselineCache(REUSABLE_TILE_LIMIT);
+    /**
+     * Test-only override of the effective serving-engine snapshot; null in production. Package-
+     * private so the baseline-identity tests can flip the backend the way a device loss would.
+     */
+    volatile IntSupplier servingEngineForTest;
     private final SyncedMaterialPalette syncedMaterials = new SyncedMaterialPalette();
     /** Parent tiles waiting for one bounded disk-backed lower-LOD reduction. */
     private final LinkedHashMap<TileKey, Long> lowerCoverageQueue = new LinkedHashMap<>();
@@ -335,6 +347,7 @@ public final class PredictionTileService {
 
     public void setCacheLimit(final int limit) {
         mipCache.setLimit(limit);
+        baselineCache.setLimit(limit);
     }
 
     int cacheLimitForTest() {
@@ -765,6 +778,7 @@ public final class PredictionTileService {
             staleRealCoverageTiles.clear();
             metadataTiles.clear();
             mipCache.clear();
+            baselineCache.clear();
             lowerCoverageQueue.clear();
             missingLowerCoverage.clear();
             // A stale record would pin capacity for waves whose members may never matter again;
@@ -797,6 +811,7 @@ public final class PredictionTileService {
             staleRealCoverageTiles.clear();
             metadataTiles.clear();
             mipCache.clear();
+            baselineCache.clear();
             lowerCoverageQueue.clear();
             missingLowerCoverage.clear();
             // Same ledger reset as onSessionChanged: reloadAll purges the queue, so held wave
@@ -872,6 +887,11 @@ public final class PredictionTileService {
         final SessionGuard.Session session = sessionGuard.current();
         ViewportLoadTiming.Summary closedViewportLoad = null;
         synchronized (this) {
+            // Baseline entries resize with the viewport (bounded by the configured limit) so a
+            // small GUI scale or a 4K screen can hold the visible set without LRU thrashing.
+            final int spanX = Math.max(0, maxTileX - minTileX + 1);
+            final int spanZ = Math.max(0, maxTileZ - minTileZ + 1);
+            baselineCache.adaptToViewport(spanX * spanZ);
             final boolean changed = !rect.equals(viewport);
             viewport = rect;
             dirty.keySet().removeIf(key -> {
@@ -1908,6 +1928,12 @@ public final class PredictionTileService {
         if (plan.cached() != null) {
             return plan.cached();
         }
+        if (plan.servedGrid() != null) {
+            return composeSampledTile(
+                plan, plan.servedGrid(), plan.servedDerived(), plan.servedQuadrantMask(),
+                0L, 0L, null, null
+            );
+        }
         final BaselineGrid grid;
         final DerivedGrid derived;
         final QuadrantLayout quadrants = state.quadrantLayout(key.dimension());
@@ -1917,22 +1943,27 @@ public final class PredictionTileService {
         long[] overworldStageSink = null;
         long stageGpuDelta = 0L;
         if (plan.lowerNetherBiome()) {
-            final NativeBaselineSampler nativeSampler = new NativeBaselineSampler(
-                state.mcVersion(), state.seed(), plan.nativeDim(),
-                state.cubiomesFlags(key.dimension())
-            );
+            final BaselineSampler injected = testInjectedSampler(plan);
+            final NativeBaselineSampler nativeSampler = injected == null
+                ? new NativeBaselineSampler(
+                    state.mcVersion(), plan.seed(), plan.nativeDim(),
+                    state.cubiomesFlags(key.dimension())
+                )
+                : null;
             final BaselineSampler sampler;
-            if (timing) {
+            if (injected != null) {
+                sampler = injected;
+            } else if (timing) {
                 counting = new CountingSampler(nativeSampler);
                 sampler = counting;
             } else {
                 sampler = nativeSampler;
             }
-            final long stagesBefore = timing ? nativeSampler.gpuStageStats() : 0L;
+            final long stagesBefore = timing && nativeSampler != null ? nativeSampler.gpuStageStats() : 0L;
             grid = LodSampling.sampleNetherBiomesAtY(
                 sampler, plan.lod(), plan.tileOriginX(), plan.tileOriginZ(), plan.netherY()
             );
-            if (timing) {
+            if (timing && nativeSampler != null) {
                 stageGpuDelta = nativeSampler.gpuStageStats() - stagesBefore;
             }
             if (grid == null) {
@@ -1953,11 +1984,17 @@ public final class PredictionTileService {
                 derived = flat.toDerivedGrid();
                 quadrantMask = flatQuadrantMask(key.dimension());
             } else {
-                final NativeBaselineSampler nativeSampler = new NativeBaselineSampler(
-                    state.mcVersion(), plan.seed(), plan.nativeDim(), state.cubiomesFlags(key.dimension())
-                );
+                final BaselineSampler injected = testInjectedSampler(plan);
+                final NativeBaselineSampler nativeSampler = injected == null
+                    ? new NativeBaselineSampler(
+                        state.mcVersion(), plan.seed(), plan.nativeDim(),
+                        state.cubiomesFlags(key.dimension())
+                    )
+                    : null;
                 final BaselineSampler sampler;
-                if (timing) {
+                if (injected != null) {
+                    sampler = injected;
+                } else if (timing) {
                     counting = new CountingSampler(nativeSampler);
                     sampler = counting;
                 } else {
@@ -1965,7 +2002,8 @@ public final class PredictionTileService {
                 }
                 final boolean overworldBiomeView = BiomeTileKeys.isBiome(key)
                     && key.dimension().equals(DimensionId.OVERWORLD);
-                final long stagesBefore = timing ? nativeSampler.gpuStageStats() : 0L;
+                final long stagesBefore = timing && nativeSampler != null
+                    ? nativeSampler.gpuStageStats() : 0L;
                 if (overworldBiomeView) {
                     // The biome-identity view never reads terrain: biomes come from the
                     // terrain-free sampler path, and the canopy (a terrain-map color pass) is
@@ -1973,7 +2011,7 @@ public final class PredictionTileService {
                     grid = LodSampling.sampleOverworldBiomes(
                         sampler, plan.lod(), plan.tileOriginX(), plan.tileOriginZ()
                     );
-                    if (timing) {
+                    if (timing && nativeSampler != null) {
                         stageGpuDelta = nativeSampler.gpuStageStats() - stagesBefore;
                     }
                     if (grid == null) {
@@ -1995,7 +2033,7 @@ public final class PredictionTileService {
                             sampler, plan.end(), plan.lod(),
                             plan.tileOriginX(), plan.tileOriginZ(), overworldStageNanos
                         );
-                    if (timing) {
+                    if (timing && nativeSampler != null) {
                         stageGpuDelta = nativeSampler.gpuStageStats() - stagesBefore;
                     }
                     if (grid == null) {
@@ -2033,6 +2071,16 @@ public final class PredictionTileService {
             wave.bypassMember(index);
             wave.runMember(index);
             return plan == null ? null : plan.cached();
+        }
+        if (plan.servedGrid() != null) {
+            // Same bypass protocol as a mip-served member: decided before the stages, but it
+            // still attends every barrier and releases its reservation through runMember.
+            wave.bypassMember(index);
+            wave.runMember(index);
+            return composeSampledTile(
+                plan, plan.servedGrid(), plan.servedDerived(), plan.servedQuadrantMask(),
+                0L, 0L, null, null
+            );
         }
         if (!wave.runMember(index)) {
             return null;
@@ -2095,6 +2143,13 @@ public final class PredictionTileService {
         final AppliedLighting appliedLighting = applyLayerLighting(
             key, pixels, blockLight, plan.style()
         );
+        final PredictionMipCache.Tile planar = planarTile(
+            key, grid, derived, blockLight, syncEvaluated, syncChunkSourceRevisions,
+            plan.compositionMode(), plan.directHasServerState(), plan.directValidatedAt(),
+            directCorrections == null
+                ? CorrectionProfile.LEGACY_V1 : directCorrections.correctionProfile()
+        );
+        publishBaseline(plan, grid, planar);
         return new Composition(
             tileUpdate(
                 key, pixels, blockLight, appliedLighting.daylight(), appliedLighting.gamma(),
@@ -2104,16 +2159,92 @@ public final class PredictionTileService {
                 biomeIds(grid, directCorrections, grid),
                 surfaceYs(derived, directCorrections, derived)
             ),
-            planarTile(
-                key, grid, derived, blockLight, syncEvaluated, syncChunkSourceRevisions,
-                plan.compositionMode(), plan.directHasServerState(), plan.directValidatedAt(),
-                directCorrections == null
-                    ? CorrectionProfile.LEGACY_V1 : directCorrections.correctionProfile()
-            ),
+            planar,
             sampledPoints,
             stageGpuDelta,
             stageNanos,
             overworldStageNanos
+        );
+    }
+
+    /**
+     * Publishes the directly sampled planes behind this composition. Only a baseline-eligible
+     * miss publishes: a hit already owns its entry, supersampled grids cannot round-trip their
+     * sub-samples, and a tile whose identity (token, generation, serving engine) changed between
+     * lookup and publication belongs to a state this cache no longer serves - a late composition
+     * must never refill a reloaded session's entries.
+     */
+    private void publishBaseline(
+        final CompositionPlan plan, final BaselineGrid grid, final PredictionMipCache.Tile planar
+    ) {
+        final PredictionBaselineCache.Key key = plan.baselineKey();
+        if (key == null || planar == null || plan.servedBaseline() != null || grid.supersampled()) {
+            return;
+        }
+        final int baselineNetherY = plan.lowerNetherBiome() ? plan.netherY() : 0;
+        if (!key.equals(baselineCacheKey(
+            plan.key(), plan.token(), baselineNetherY, servingEngineSnapshot()
+        ))) {
+            return;
+        }
+        baselineCache.put(key, planar);
+    }
+
+    /** The composition's sampler: the test-injected fake (same seam as the wave factory) wins. */
+    private BaselineSampler testInjectedSampler(final CompositionPlan plan) {
+        final WaveSamplerFactory factory = waveSamplerFactoryForTest;
+        return factory == null
+            ? null
+            : factory.create(
+                state.mcVersion(), plan.seed(), plan.nativeDim(),
+                state.cubiomesFlags(plan.key().dimension())
+            );
+    }
+
+    /**
+     * The effective backend identity this session's planes are being produced under: the engine
+     * mode alone cannot separate results (GPU auto silently serves the exact CPU reference when
+     * no OpenCL device survives), so the probed device and the engine's death latch decide. A
+     * dead engine keeps its mode and device name while serving the CPU loops, so without the
+     * latch check a GPU-death fallback would keep reading and writing the GPU identity. Mixed
+     * or unknown states read as {@link PredictionBaselineCache#ENGINE_NONE}, which still keys
+     * entries consistently - only identity *changes* between lookup and publication reject an
+     * entry.
+     */
+    private int servingEngineSnapshot() {
+        final IntSupplier override = servingEngineForTest;
+        if (override != null) {
+            return override.getAsInt();
+        }
+        return servingEngine(GpuBackend.stats());
+    }
+
+    /**
+     * Pure mapping from one stats snapshot to the baseline-cache engine identity: OFF and a
+     * dead or device-less engine all serve the CPU reference, everything else with a probed
+     * device is the GPU.
+     */
+    static int servingEngine(final GpuBackend.GpuStats stats) {
+        if (stats == null) {
+            return PredictionBaselineCache.ENGINE_NONE;
+        }
+        if (GpuBackend.modeOff(stats.engineMode()) || stats.engineDead()) {
+            return PredictionBaselineCache.ENGINE_CPU;
+        }
+        final String device = stats.device();
+        return device == null || device.isEmpty()
+            ? PredictionBaselineCache.ENGINE_CPU
+            : PredictionBaselineCache.ENGINE_GPU;
+    }
+
+    private PredictionBaselineCache.Key baselineCacheKey(
+        final TileKey key, final long token, final int netherY, final int servingEngine
+    ) {
+        final PredictionState state = this.state;
+        return new PredictionBaselineCache.Key(
+            key, token, reloadGeneration, state.seed(), state.mcVersion(),
+            state.preset(key.dimension()), state.flatBaseline(key.dimension()),
+            state.quadrantLayout(key.dimension()), netherY, servingEngine
         );
     }
 
@@ -2219,7 +2350,7 @@ public final class PredictionTileService {
                 key, pixels, blockLight, style
             );
             return new CompositionPlan(
-                key, compositionMode, style, lowerNetherBiome, netherY, lod, tileOriginX,
+                key, token, compositionMode, style, lowerNetherBiome, netherY, lod, tileOriginX,
                 tileOriginZ, state.seed(), nativeDim, directCorrections, directHasServerState,
                 directValidatedAt,
                 new Composition(
@@ -2236,12 +2367,40 @@ public final class PredictionTileService {
                     0L,
                     null,
                     null
-                )
+                ),
+                null, null, null, null, null
             );
         }
+        // Third cache plane, behind the mip tiles: directly sampled baselines. Mode- and
+        // correction-independent, so it serves exactly where the mip planes cannot - a mode
+        // flip, an expired correction window, or a mip eviction would otherwise re-pay the
+        // sampler for inputs nothing but the sampler can produce. Superflat grids carry their
+        // own fixed texture origin and never sample, so they neither read nor publish entries.
+        final int baselineNetherY = lowerNetherBiome ? netherY : 0;
+        final PredictionBaselineCache.Key baselineKey = isSuperflat(key.dimension())
+            ? null
+            : baselineCacheKey(key, token, baselineNetherY, servingEngineSnapshot());
+        final PredictionBaselineCache.Planes baseline = baselineKey == null
+            ? null
+            : baselineCache.get(baselineKey);
+        final BaselineGrid servedGrid;
+        final DerivedGrid servedDerived;
+        final QuadrantLayout.Mask servedQuadrantMask;
+        if (baseline != null) {
+            servedGrid = new BaselineGrid(lod, tileOriginX, tileOriginZ);
+            servedDerived = new DerivedGrid();
+            baseline.reconstruct(servedGrid, servedDerived);
+            servedQuadrantMask = reapplyCachedLayering(key, servedGrid, servedDerived);
+        } else {
+            servedGrid = null;
+            servedDerived = null;
+            servedQuadrantMask = null;
+        }
         return new CompositionPlan(
-            key, compositionMode, style, lowerNetherBiome, netherY, lod, tileOriginX, tileOriginZ,
-            state.seed(), nativeDim, directCorrections, directHasServerState, directValidatedAt, null
+            key, token, compositionMode, style, lowerNetherBiome, netherY, lod, tileOriginX,
+            tileOriginZ, state.seed(), nativeDim, directCorrections, directHasServerState,
+            directValidatedAt, null, servedGrid, servedDerived, servedQuadrantMask,
+            baseline, baselineKey
         );
     }
 
@@ -2863,6 +3022,11 @@ public final class PredictionTileService {
         return keys;
     }
 
+    /** Test-support only: how many baseline plane sets the reuse cache currently holds. */
+    synchronized int baselineCacheSizeForTest() {
+        return baselineCache.size();
+    }
+
     /** Test-support only: a snapshot of currently-queued (not yet in-flight) predicted tile keys. */
     public synchronized Set<TileKey> pendingKeysForTest() {
         return new HashSet<>(dirty.keySet());
@@ -3005,10 +3169,14 @@ public final class PredictionTileService {
     /**
      * Everything the sampling branches and the fresh tail need from the pre-sampling section:
      * identity and styling snapshots, correction references, and - on a cache hit - the already
-     * complete {@link #cached()} composition.
+     * complete {@link #cached()} composition. A baseline hit instead fills the {@code served*}
+     * grids (reconstructed planes plus the re-applied quadrant layering) and leaves {@code
+     * cached()} null, so both composition shapes run the same fresh tail; {@code baselineKey}
+     * stays set on every baseline-eligible tile (hit or miss) and drives publication.
      */
     private record CompositionPlan(
         TileKey key,
+        long token,
         PredictionViewMode compositionMode,
         MapColorStyle style,
         boolean lowerNetherBiome,
@@ -3021,7 +3189,12 @@ public final class PredictionTileService {
         CorrectionTile directCorrections,
         boolean directHasServerState,
         long directValidatedAt,
-        Composition cached
+        Composition cached,
+        BaselineGrid servedGrid,
+        DerivedGrid servedDerived,
+        QuadrantLayout.Mask servedQuadrantMask,
+        PredictionBaselineCache.Planes servedBaseline,
+        PredictionBaselineCache.Key baselineKey
     ) {
         boolean end() {
             return PredictionDimensions.isEnd(key.dimension());

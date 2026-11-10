@@ -28,14 +28,18 @@ class GpuBackendTest {
     }
 
     @Test
-    void batchGateRejectsOffModeMissingSnapshotAndRefusal() {
+    void batchGateRejectsOffModeMissingSnapshotRefusalAndDeath() {
         final GpuBackend.GpuStats auto =
-            new GpuBackend.GpuStats(CubiomesNative.GPU_MODE_AUTO, "device", 1, 1);
+            new GpuBackend.GpuStats(CubiomesNative.GPU_MODE_AUTO, "device", 1, 1, false);
         final GpuBackend.GpuStats off =
-            new GpuBackend.GpuStats(CubiomesNative.GPU_MODE_OFF, "", 0, 0);
+            new GpuBackend.GpuStats(CubiomesNative.GPU_MODE_OFF, "", 0, 0, false);
+        final GpuBackend.GpuStats dead =
+            new GpuBackend.GpuStats(CubiomesNative.GPU_MODE_AUTO, "device", 1, 1, true);
         assertTrue(GpuBackend.batchDispatchAvailable(auto, false), "a live auto engine must admit batches");
         assertFalse(GpuBackend.batchDispatchAvailable(off, false), "CPU mode must admit waves without the seam");
         assertFalse(GpuBackend.batchDispatchAvailable(null, false), "no engine snapshot must gate batches off");
         assertFalse(GpuBackend.batchDispatchAvailable(auto, true), "a latched refusal must gate batches off");
+        assertFalse(GpuBackend.batchDispatchAvailable(dead, false),
+            "a dead engine serves the CPU loops and must not admit batches");
     }
 }
