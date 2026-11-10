@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.nativepredict;
 
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Owner of the GPU execution mode. The engine defaults to env-var driven behavior ({@code
@@ -157,6 +158,43 @@ public final class GpuBackend {
         synchronized (LOCK) {
             libraryReady = true;
             CubiomesNative.cfxSetGpuMode(engineMode(configured));
+        }
+    }
+
+    /** One warmup thread per process; a second call is a no-op. */
+    private static final AtomicBoolean WARMUP_STARTED = new AtomicBoolean();
+
+    /**
+     * Starts the one background OpenCL warmup, so the program JIT (minutes on a cold driver
+     * cache) overlaps the game's startup instead of stalling the first prediction dispatch:
+     * dispatches that arrive while the compile runs serve the CPU reference, and the engine
+     * switches over from the next dispatch once the build lands. Only the Fabric client calls
+     * this - the server companions never dispatch prediction work. Eligible only when the user
+     * chose the GPU backend and the native library is loaded; the gate lives in {@link
+     * #warmupEligible} for tests.
+     */
+    public static void warmupAsync() {
+        if (!warmupEligible(configured, libraryReady)) {
+            return;
+        }
+        if (!WARMUP_STARTED.compareAndSet(false, true)) {
+            return;
+        }
+        final Thread warmup = new Thread(GpuBackend::runWarmup, "confluxmap-gpu-warmup");
+        warmup.setDaemon(true);
+        warmup.start();
+    }
+
+    /** Pure gate decision: the GPU backend on a loaded library is the only warmup candidate. */
+    static boolean warmupEligible(final PredictionBackend backend, final boolean ready) {
+        return ready && backend == PredictionBackend.GPU;
+    }
+
+    private static void runWarmup() {
+        try {
+            CubiomesNative.cfxGpuWarmup();
+        } catch (final UnsatisfiedLinkError staleLibrary) {
+            // Older library without the export: the engine keeps its lazy first-dispatch build.
         }
     }
 }

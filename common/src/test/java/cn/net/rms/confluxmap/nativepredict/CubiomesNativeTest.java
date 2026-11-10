@@ -221,6 +221,17 @@ class CubiomesNativeTest {
     }
 
     @Test
+    void gpuWarmupIsIdempotentAndReportsConsistentAvailability() {
+        // The warmup export must be callable before any dispatch and settled after one
+        // call: the second reads the latched engine state (a real GPU machine reports
+        // both program bits, a GPU-less CI reports 0) without rebuilding anything.
+        final int first = CubiomesNative.cfxGpuWarmup();
+        final int second = CubiomesNative.cfxGpuWarmup();
+        assertTrue(first == -1 || first >= 0, "warmup reports -1 or non-negative status bits");
+        assertEquals(first, second, "a settled engine must answer a second warmup identically");
+    }
+
+    @Test
     void netherBiomeSamplingUsesTheRequestedHeight() {
         try (CubiomesContext ctx = CubiomesContext.create(mc21(), SEED, NETHER, 0)) {
             assertNotNull(ctx);

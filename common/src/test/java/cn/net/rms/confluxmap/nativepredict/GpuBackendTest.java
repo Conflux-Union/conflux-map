@@ -28,6 +28,16 @@ class GpuBackendTest {
     }
 
     @Test
+    void warmupEligibilityRequiresGpuBackendAndLoadedLibrary() {
+        assertTrue(GpuBackend.warmupEligible(PredictionBackend.GPU, true),
+            "the GPU backend on a loaded library must start the warmup");
+        assertFalse(GpuBackend.warmupEligible(PredictionBackend.CPU, true),
+            "a CPU backend must not warm the engine");
+        assertFalse(GpuBackend.warmupEligible(PredictionBackend.GPU, false),
+            "without the native library there is nothing to warm");
+    }
+
+    @Test
     void batchGateRejectsOffModeMissingSnapshotRefusalAndDeath() {
         final GpuBackend.GpuStats auto =
             new GpuBackend.GpuStats(CubiomesNative.GPU_MODE_AUTO, "device", 1, 1, false);

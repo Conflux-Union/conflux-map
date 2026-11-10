@@ -24,6 +24,8 @@
  *   5  CFX_ERR_GENERATION    - cubiomes reported a generation failure
  *   6  CFX_ERR_WRONG_DIM     - handle's dimension doesn't support this query
  *   7  CFX_ERR_FEATURE_PARTIAL - requested feature coverage is unavailable
+ *   9  CFX_ERR_GPU_BUSY      - engine programs still compiling (transient;
+ *                              8 is anvilscan.c's CFX_SCAN_MALFORMED)
  */
 
 /* cpu_set_t/sched_setaffinity are _GNU_SOURCE extensions in glibc; the feature
@@ -122,6 +124,7 @@ static uint64_t cfxGetBatchMarshalNanos(void)
 #define CFX_ERR_GENERATION  5
 #define CFX_ERR_WRONG_DIM   6
 #define CFX_ERR_FEATURE_PARTIAL 7
+#define CFX_ERR_GPU_BUSY    9
 
 /* Largest w*h (or region count) accepted by any batch query. */
 #define CFX_MAX_CELLS (1 << 20)
@@ -619,6 +622,18 @@ JNIEXPORT void JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     gpuSetMode((int) mode);
 #else
     (void) mode; /* GPU engine not compiled in: nothing to switch. */
+#endif
+}
+
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxGpuWarmup(
+    JNIEnv *env, jclass clazz
+) {
+    (void) env;
+    (void) clazz;
+#ifdef CUBIOMES_ENABLE_GPU
+    return (jint) gpuWarmup();
+#else
+    return -1; /* engine not compiled in: nothing to warm */
 #endif
 }
 
@@ -2571,6 +2586,11 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
      * path (the single entries serve CPU there), same as a dead engine. */
     return -CFX_ERR_GENERATION;
 #else
+    /* Programs still compiling (warmup): the transient state must report
+     * positively - per-tile fallback where the single entries serve the
+     * CPU reference, never the refusal that latches batching off. */
+    if (gpuBuildBusy())
+        return CFX_ERR_GPU_BUSY;
     int *in = malloc(sizeof(int) * (size_t) n * 5);
     int *nativeCells = malloc(sizeof(int) * (size_t) n);
     int *detailPack = malloc(sizeof(int) * (size_t) n);
@@ -2825,6 +2845,9 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
 #ifndef CUBIOMES_ENABLE_GPU
     return -CFX_ERR_GENERATION;
 #else
+    /* Same transient-busy contract as the heights batch above. */
+    if (gpuBuildBusy())
+        return CFX_ERR_GPU_BUSY;
     int *in = malloc(sizeof(int) * (size_t) n * 5);
     int *nativeCells = malloc(sizeof(int) * (size_t) n);
     if (in == NULL || nativeCells == NULL)

@@ -213,6 +213,11 @@ public final class ConfluxMapClient implements ClientModInitializer {
         // library for CPU labels (Windows efficiency classes, Linux CPUID hybrid core types);
         // without it the pool falls back to sysfs grouping or a uniform CPU.
         NativeLib.init(confluxRoot);
+        // The GPU engine's OpenCL JIT (minutes on a cold driver cache) starts compiling on a
+        // background thread from client start, overlapping menu time; prediction dispatches
+        // that arrive first serve the CPU reference until the build lands. The config and the
+        // backend choice above are already loaded, so a CPU backend skips this entirely.
+        GpuBackend.warmupAsync();
         cpuTopology = CpuTopologyDetector.defaults().detect();
         executors = new MapExecutors(
             WorkerThreadPolicy.resolve(config.workerThreadMode, config.workerThreadCount, cpuTopology)

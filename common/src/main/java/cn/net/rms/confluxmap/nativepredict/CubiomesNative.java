@@ -19,6 +19,7 @@ package cn.net.rms.confluxmap.nativepredict;
  *   <li>6 - wrong dimension for this query (e.g. {@link #cfxEndHeights} on an Overworld handle)
  *   <li>7 - requested terrain feature is only partially supported for this biome
  *   <li>8 - malformed chunk NBT (only from {@link #cfxScanChunkNbt})
+ *   <li>9 - engine programs still compiling (transient; only from the batch methods)
  * </ul>
  *
  * <p>Nothing in this class loads the native library itself; that is {@link NativeLib}'s job.
@@ -46,6 +47,16 @@ final class CubiomesNative {
      * this export throws {@link UnsatisfiedLinkError}.
      */
     static native void cfxSetGpuMode(int mode);
+
+    /**
+     * Compiles the engine's OpenCL programs now instead of on the first dispatch, so a cold
+     * driver JIT (minutes for this kernel size) overlaps the game's startup instead of stalling
+     * the first prediction tile. Dispatches that arrive while the compile runs keep serving the
+     * CPU reference. Returns {@code -1} when the engine mode is off, else bit 1 = climate
+     * runtime available, bit 2 = cfx program available. Idempotent per process. A library
+     * predating this export throws {@link UnsatisfiedLinkError}.
+     */
+    static native int cfxGpuWarmup();
 
     /**
      * Debug snapshot of the GPU engine's process-global state. Fills {@code out} with
