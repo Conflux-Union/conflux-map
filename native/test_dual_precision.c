@@ -100,7 +100,7 @@ void eval_comprehensive_accuracy(JNIEnv *env, CfxContext *ctx, int stride, int64
     free(truth_fluid);
 }
 
-int main(void) {
+int main(int argc, char **argv) {
     struct JNINativeInterface_ iface;
     memset(&iface, 0, sizeof(iface));
     iface.GetArrayLength = dummy_GetArrayLength;
@@ -122,6 +122,10 @@ int main(void) {
     applySeed(&pCtx.g, pCtx.dim, seeds[0]);
     initSurfaceNoise(&pCtx.sn, pCtx.dim, seeds[0]);
     test_position_purity(p_env, &pCtx);
+
+    if (argc > 1 && strcmp(argv[1], "--purity-only") == 0) {
+        return 0;
+    }
 
     for (int s = 0; s < 3; s++) {
         printf(">>> Evaluating Seed: %llu <<<\n", (unsigned long long)seeds[s]);
