@@ -503,6 +503,8 @@ jobs:
             ${{ runner.os }}-gradle-
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
+      - name: Check native legacy prediction oracle & matrix parity
+        run: ./gradlew -Pversion="$BUILD_VERSION" testNativeLegacy
       - name: Check api module
         run: ./gradlew -Pversion="$BUILD_VERSION" :api:check
       - name: Stop Gradle daemon

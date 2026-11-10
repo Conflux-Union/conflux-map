@@ -167,6 +167,23 @@ public interface BaselineSampler {
     }
 
     /**
+     * Coarse-lattice overview for the LOD2-4 anchor sweeps: same geometry as {@link
+     * #overviewHeights}, but implementations may skip terrain detail finer than the sampling
+     * stride. The default keeps full detail; waterline-band and exact-residual queries always
+     * use {@link #overviewHeights}.
+     */
+    default boolean overviewHeightsCoarse(
+        final int blockX,
+        final int blockZ,
+        final int w,
+        final int h,
+        final int stride,
+        final int[] outTerrainY
+    ) {
+        return overviewHeights(blockX, blockZ, w, h, stride, outTerrainY);
+    }
+
+    /**
      * Whether {@link LodSampling} may reconstruct this sampler's fields from sparse lattices
      * instead of querying every position: overview heights bilinearly between every-second-pixel
      * anchors (waterline zones still solve exactly), and the LOD3-4 sub-biome sweep copied from

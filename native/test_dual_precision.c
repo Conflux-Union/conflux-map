@@ -28,19 +28,19 @@ void test_position_purity(JNIEnv *env, CfxContext *ctx) {
     const int wA = 512, hA = 512;
     int *bufA = malloc(wA * hA * sizeof(int));
     CfxNoiseDetail detailA = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 1);
-    CFX_CHECK(cfxOverviewHeightsImpl(env, ctx, 0, 0, wA, hA, 1, (jintArray)bufA, &detailA) == CFX_OK);
+    CFX_CHECK(cfxOverviewHeightsImpl(env, ctx, 0, 0, wA, hA, 1, (jintArray)bufA, &detailA, 0) == CFX_OK);
 
     // Shape B: standard production tile (-1, -1, 258, 258, stride 1)
     const int oxB = -1, ozB = -1, wB = 258, hB = 258;
     int *bufB = malloc(wB * hB * sizeof(int));
     CfxNoiseDetail detailB = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 1);
-    CFX_CHECK(cfxOverviewHeightsImpl(env, ctx, oxB, ozB, wB, hB, 1, (jintArray)bufB, &detailB) == CFX_OK);
+    CFX_CHECK(cfxOverviewHeightsImpl(env, ctx, oxB, ozB, wB, hB, 1, (jintArray)bufB, &detailB, 0) == CFX_OK);
 
     // Shape C: off-phase tile (+2, +3, 258, 258, stride 1)
     const int oxC = 2, ozC = 3, wC = 258, hC = 258;
     int *bufC = malloc(wC * hC * sizeof(int));
     CfxNoiseDetail detailC = cfxNoiseDetailForStride(&ctx->g.bn.terrain, 1);
-    CFX_CHECK(cfxOverviewHeightsImpl(env, ctx, oxC, ozC, wC, hC, 1, (jintArray)bufC, &detailC) == CFX_OK);
+    CFX_CHECK(cfxOverviewHeightsImpl(env, ctx, oxC, ozC, wC, hC, 1, (jintArray)bufC, &detailC, 0) == CFX_OK);
 
     int mismatch_BA = 0;
     for (int z = 0; z < 256; z++) {
@@ -77,7 +77,7 @@ void eval_comprehensive_accuracy(JNIEnv *env, CfxContext *ctx, int stride, int64
     int *truth_fluid = malloc(total * sizeof(int));
 
     CfxNoiseDetail detail = cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
-    cfxOverviewHeightsImpl(env, ctx, ox, oz, count, count, stride, (jintArray)pred, &detail);
+    cfxOverviewHeightsImpl(env, ctx, ox, oz, count, count, stride, (jintArray)pred, &detail, 0);
     mapOverworldSurfaceHeightBlocks(truth_solid, truth_fluid, &ctx->g.bn, (int)ox, (int)oz, count, count, stride);
 
     int diff_within_2 = 0;

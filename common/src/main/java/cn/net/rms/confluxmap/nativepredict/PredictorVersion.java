@@ -16,6 +16,13 @@ public final class PredictorVersion {
 
     /**
      * Bumped whenever baseline sampling or derivation (LOD expansion, canopy, kind rules) changes.
+     * 25: pre-1.18 overview heights solve the depth noise once per world-aligned quart corner
+     * (vanilla itself evaluates it per quart column) and bilinearly interpolate the
+     * biome-independent base per pixel, skipping depth-noise octaves shorter than half the
+     * sampling stride on coarse windows; scale-4 biome generation runs densely once per window
+     * and the overview-sized biome windows are memoized across the overview and surface passes,
+     * so pre-1.18 predicted pixels change by small measured amounts while 1.18+ output stays
+     * unchanged (24 is taken by the CPU macro-grid acceleration).
      * 24: 1.18+ adaptive macro-grid terrain sampling and symmetric waterline reconstruction;
      * baseline cache with zero-allocation guarded RLE compression and viewport-aware dynamic capacity.
      * Visual snapshot tests confirm zero discernible difference to human vision while providing
@@ -48,7 +55,7 @@ public final class PredictorVersion {
      * 18: dappled forest and sulfur caves gained real BiomeTable entries instead of the neutral
      * land fallback, changing predicted pixels for 26.2+ worlds.
      */
-    public static final int BASELINE_ALGO = 24;
+    public static final int BASELINE_ALGO = 25;
 
     private PredictorVersion() {
     }

@@ -152,6 +152,21 @@ final class CubiomesNative {
         int[] outTerrainY
     );
 
+    /**
+     * Coarse-lattice overview for the LOD2-4 anchor sweeps. On pre-1.18 worlds this entry may
+     * skip depth-noise octaves shorter than half the sampling stride (the plain entry never
+     * truncates); 1.18+ behavior matches {@link #cfxOverviewHeights}.
+     */
+    static native int cfxOverviewHeightsCoarse(
+        long handle,
+        int blockX,
+        int blockZ,
+        int w,
+        int h,
+        int stride,
+        int[] outTerrainY
+    );
+
     /** Overworld surface biomes using caller-supplied solid terrain heights. */
     static native int cfxSurfaceBiomes(
         long handle,

@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <math.h>
 #include <string.h>
+#include <stddef.h>
 #include <assert.h>
 #include <time.h>
 #include <jni.h>
@@ -21,8 +22,10 @@
     } \
 } while (0)
 
-// Static assertion ensuring generator snapshot structs remain binary isomorphic
-_Static_assert(sizeof(CfxContext) == sizeof(MasterCfxContext), "Context size mismatch between opt and master");
+// The master snapshot overlays the live context: the shared prefix (through `dim`)
+// must keep its layout, and new fields may only be appended after it.
+_Static_assert(offsetof(CfxContext, dim) == offsetof(MasterCfxContext, dim), "Context prefix layout mismatch between opt and master");
+_Static_assert(sizeof(MasterCfxContext) <= sizeof(CfxContext), "Master snapshot no longer overlays the live context");
 _Static_assert(sizeof(CfxNoiseDetail) == sizeof(MasterCfxNoiseDetail), "NoiseDetail size mismatch");
 
 static jsize JNICALL dummy_GetArrayLength(JNIEnv *env, jarray array) { return 10000000; }
@@ -104,7 +107,7 @@ static void run_case(
     // 1. Optimized implementation solve
     CfxNoiseDetail detail_opt = cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
     double t0_opt = get_time_ms();
-    CFX_CHECK(cfxOverviewHeightsImpl(env, ctx, ox, oz, w, h, stride, (jintArray)pred_opt, &detail_opt) == CFX_OK);
+    CFX_CHECK(cfxOverviewHeightsImpl(env, ctx, ox, oz, w, h, stride, (jintArray)pred_opt, &detail_opt, 0) == CFX_OK);
     res->time_opt_ms = get_time_ms() - t0_opt;
 
     // 2. Authentic master baseline solve (zero file IO)

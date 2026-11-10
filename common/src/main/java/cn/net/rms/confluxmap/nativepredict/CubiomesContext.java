@@ -147,6 +147,27 @@ public final class CubiomesContext implements AutoCloseable {
         );
     }
 
+    /**
+     * Coarse-lattice overview reserved for the LOD2-4 anchor sweeps. Pre-1.18 worlds skip
+     * depth-noise octaves shorter than half the sampling stride, bound to this entry and
+     * never to the window geometry; 1.18+ matches {@link #overviewHeights}. Waterline-band
+     * and exact-residual queries must use the full-detail entry.
+     */
+    public int overviewHeightsCoarse(
+        final int blockX,
+        final int blockZ,
+        final int w,
+        final int h,
+        final int stride,
+        final int[] outTerrainY
+    ) {
+        requireOpen();
+        requireCapacity(outTerrainY, w, h);
+        return CubiomesNative.cfxOverviewHeightsCoarse(
+            handle, blockX, blockZ, w, h, stride, outTerrainY
+        );
+    }
+
     /** Overworld surface biomes resolved from an already-sampled solid terrain grid. */
     public int surfaceBiomes(
         final int blockX,

@@ -64,7 +64,7 @@ int main(void) {
         CfxNoiseDetail detail = cfxNoiseDetailForStride(&ctx.g.bn.terrain, stride);
 
         // Warmup
-        cfxOverviewHeightsImpl(p_env, &ctx, 0, 0, count_1d, count_1d, stride, (jintArray)heights, &detail);
+        cfxOverviewHeightsImpl(p_env, &ctx, 0, 0, count_1d, count_1d, stride, (jintArray)heights, &detail, 0);
 
         double total_time = 0.0;
         uint64_t final_chk = 0;
@@ -73,7 +73,7 @@ int main(void) {
         for (int iter = 0; iter < iters; iter++) {
             memset(heights, 0x5a, cells * sizeof(int)); // Poison memory to detect unwritten slots
             double t0 = get_time_sec();
-            cfxOverviewHeightsImpl(p_env, &ctx, 0, 0, count_1d, count_1d, stride, (jintArray)heights, &detail);
+            cfxOverviewHeightsImpl(p_env, &ctx, 0, 0, count_1d, count_1d, stride, (jintArray)heights, &detail, 0);
             double t1 = get_time_sec();
             total_time += (t1 - t0);
 

@@ -828,7 +828,7 @@ public final class LodSampling {
         final int anchorW = Math.floorDiv(maxPixelX, 2) + (maxPixelX & 1) - anchorMinKx + 1;
         final int anchorH = Math.floorDiv(maxPixelZ, 2) + (maxPixelZ & 1) - anchorMinKz + 1;
         final int[] anchors = new int[anchorW * anchorH];
-        if (!sampler.overviewHeights(
+        if (!sampler.overviewHeightsCoarse(
             tileOriginX + 2 * anchorMinKx * blocksPerPixel,
             tileOriginZ + 2 * anchorMinKz * blocksPerPixel,
             anchorW, anchorH, 2 * blocksPerPixel, anchors
