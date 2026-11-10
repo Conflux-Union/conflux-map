@@ -35,8 +35,9 @@ import org.junit.jupiter.api.Test;
  * wrapper's served brackets; the height bound asserts where measured to hold (the near
  * bucket) and the carved scenes - cave-mouth, 30M-border, and the 1M-class tile whose window
  * sits on carved terrain - print their measured height distributions for the ledger. The
- * rect entries stay bit-exact on both sides of the switch, so composed drift attributes to
- * this seam alone. Probes for served drift sit in the fork's documented cave-mouth region,
+ * rect entries run the same fp32 kernels as this seam, so composed drift no
+ * longer attributes to the col seam alone; the drift gates bound the whole
+ * composition. Probes for served drift sit in the fork's documented cave-mouth region,
  * whose carving makes fp32 columns drift visibly. Dispatch engagement is attributed per call
  * through {@link NativeBaselineSampler#gpuStageStats()} deltas, the same mechanism the sparse
  * suites use.

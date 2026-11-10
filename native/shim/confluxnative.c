@@ -890,10 +890,9 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
      * so a served batch returns the layout the CPU loops would have written. The seam has no
      * Java-side repair (a false return drops the caller's tile), so a whole-or-nothing
      * refusal must only ever fall through to those CPU loops untouched. The float kernel
-     * approximates the CPU reference within the sparse seam's drift budget; the fp64 twin
-     * stays the exact reference, and swapping the entry (~3x kernel cost) is the escalation
-     * if a budget breach ever demands it. No mutex is held across the dispatch, and the
-     * stage counters count attempts/serves the way the sparse entries do.
+     * approximates the CPU reference within the sparse seam's drift budget. No mutex is
+     * held across the dispatch, and the stage counters count attempts/serves the way the
+     * sparse entries do.
      */
     const int columnGate = cfxGpuColumnMinAnchors();
     const int gpuEligible = columnGate > 0 && ctx->mc >= MC_1_18 && cells >= columnGate;
@@ -1182,9 +1181,8 @@ static double cfxModernTerrainNoise(
 #define CFX_OVERVIEW_ITERATIONS 2
 
 /*
- * GPU dispatch thresholds for the two hot stages (bit-exact double kernels
- * for the rect entries, their float sparse twins for the packed sparse seam -
- * see gpuCfxOverviewHeights/gpuCfxSurfaceBiomes and the SparseFloat entries).
+ * GPU dispatch thresholds for the two hot stages (the fp32 kernels behind
+ * gpuCfxOverviewHeights/gpuCfxSurfaceBiomes and their sparse entries).
  * Below these the kernel launch overhead outweighs the CPU loops, so the
  * lattice-refine 2x2 cells and other tiny queries stay CPU-resident.
  */
@@ -1344,7 +1342,7 @@ static jint cfxOverviewHeightsImpl(
          * Shape data and the GPU-attempt gate shared by the accounting, the
          * GPU fast path and the CPU loops below. A call counts as a tracked
          * stage when its shape is one the GPU path would attempt; whether
-         * the attempt then succeeds decides the gpu counter (bit-exact
+         * the attempt then succeeds decides the gpu counter (the fp32
          * kernels - see gpuCfxOverviewHeights). Any unsupported shape or
          * engine problem falls through to the CPU loops; CUBIOMES_GPU=off
          * never reaches the runtime at all.

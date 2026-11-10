@@ -130,10 +130,12 @@ link-time OpenCL dependency, and a machine without a loader or GPU device
 latches the engine dead and silently serves the CPU path. Linux targets
 (same glibc 2.17 baseline as before) additionally link `-ldl -lpthread`;
 macOS resolves both through libSystem and Windows through kernel32, so
-neither wants the POSIX libs. The JNI overview and surface-biome paths use
-the bit-exact fp64 cfx kernels, including sparse refinement, so CPU fallback
-and cropped server windows preserve the residual baseline. Devices without
-fp64 support use the CPU reference. The engine mode is overridable at
+neither wants the POSIX libs. Every GPU kernel runs single precision: the
+overview/surface-biome cfx kernels (rect, batch, and sparse refinement
+included) re-run the shim's analytic chains in fp32, so their outputs
+approximate the CPU reference within the drift budgets the fork's
+`gpu_test` harness gates, while CPU fallback and cropped server windows
+keep the exact CPU values. The engine mode is overridable at
 runtime via `CubiomesNative.cfxSetGpuMode` (library default: env
 `CUBIOMES_GPU`, auto when unset). The web predictor is deliberately compiled
 without the gate: WebAssembly has no dlopen, so its biomenoise hooks

@@ -41,6 +41,76 @@ final class SparseDriftGates {
     }
 
     /**
+     * Transport-parity gate for one {@link BaselineGrid} pair produced by two dispatch shapes
+     * of the same requests (packed chunk vs per-point repair, full tile vs window). Both sides
+     * run fp32 since the precision unification, and the height/biome kernel entries round
+     * independently, so the former bit-equality contract becomes tight bounds: height planes
+     * within max |dY| &lt;= 2 and categorical planes under a 2% mismatch rate, with measured
+     * counts printed. A broken transport (wrong coordinates, dropped points) still fails
+     * loudly - its errors are index-scale, not rounding-scale.
+     */
+    static void assertGridsTransportParity(
+        final BaselineGrid expected,
+        final BaselineGrid actual,
+        final String where
+    ) {
+        assertTightHeightPlane(expected.terrainY, actual.terrainY, BaselineGrid.NO_SURFACE, "terrainY", where);
+        assertCategoricalPlane(expected.biomeId, actual.biomeId, "biomeId", where, false);
+        assertTightHeightPlane(expected.fluidY, actual.fluidY, BaselineGrid.NO_FLUID, "fluidY", where);
+        assertTightHeightPlane(
+            expected.baseSurfaceY, actual.baseSurfaceY, BaselineGrid.NO_SURFACE, "baseSurfaceY", where);
+        assertCategoricalPlane(expected.surfaceFlags, actual.surfaceFlags, "surfaceFlags", where, false);
+    }
+
+    /**
+     * Height plane within max |dY| &lt;= 2 over same-status pairs (fp32 rounding across kernel
+     * entries); a sentinel-status flip (e.g. an aquifer threshold crossed by a 1-block drift)
+     * counts as a mismatch under the rate bound instead of an index-scale |dY|.
+     */
+    private static void assertTightHeightPlane(
+        final int[] expected,
+        final int[] actual,
+        final int sentinel,
+        final String plane,
+        final String where
+    ) {
+        assertEquals(expected.length, actual.length, plane + " " + where + " length");
+        int maxAbsDy = 0;
+        long mismatches = 0;
+        for (int i = 0; i < expected.length; i++) {
+            final int a = expected[i];
+            final int b = actual[i];
+            if (a == b) {
+                continue;
+            }
+            mismatches++;
+            if ((a == sentinel) != (b == sentinel)) {
+                continue; // status flip: the rate bound covers it, no meaningful |dY|
+            }
+            if (a == sentinel) {
+                continue; // both sentinel but unequal: impossible for one sentinel value
+            }
+            final int dy = Math.abs(a - b);
+            if (dy > maxAbsDy) {
+                maxAbsDy = dy;
+            }
+        }
+        final double rate = 100.0 * mismatches / expected.length;
+        System.out.printf(
+            "%s %s transport parity: mismatch %d/%d (%.4f%%), max |dY| %d%n",
+            plane, where, mismatches, expected.length, rate, maxAbsDy
+        );
+        assertTrue(
+            maxAbsDy <= 2,
+            plane + " " + where + ": max |dY| " + maxAbsDy + " > 2 transport-parity bound"
+        );
+        assertTrue(
+            rate < 2.0,
+            plane + " " + where + ": mismatch rate " + rate + "% >= 2.0% transport-parity bound"
+        );
+    }
+
+    /**
      * Categorical-plane drift gate (biome ids, surface flags): the mismatch rate must stay
      * under the 2% smoke bound.
      */

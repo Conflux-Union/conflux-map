@@ -59,7 +59,7 @@ class GpuBatchMetricsTest {
             McVersions.toCubiomes("1.21.4").orElseThrow(), SEED, PredictionDimensions.OVERWORLD, 0
         );
         // The batch entries are refused wholesale without a live engine, so a CPU-fallback
-        // machine (no fp64 OpenCL device, mode off) never moves the metrics - skip the same
+        // machine (no OpenCL device, mode off) never moves the metrics - skip the same
         // way a missing library skips.
         final long before = sampler.gpuStageStats();
         assertTrue(sampler.overviewHeightsCoarse(0, 0, 130, 130, 4, new int[130 * 130]),
