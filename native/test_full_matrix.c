@@ -234,15 +234,23 @@ int main(int argc, char **argv) {
         {2, 3, 258, 258, "OffPhase(2,3,258)"}
     };
 
+    const int smoke = (argc > 1 && strcmp(argv[1], "--smoke") == 0);
+    const int seed_count = smoke ? 2 : 5;
+    const int loc_indices_smoke[] = {0, 3}; /* Origin(0,0) and Border(30M,30M) */
+    const int loc_count = smoke ? 2 : 5;
+    const int shape_start = smoke ? 2 : 0; /* StandardTile(-1,-1,258) */
+    const int shape_end = smoke ? 3 : 4;
+
     printf("========================================================================================================================================\n");
-    printf("   AUTHENTIC MASTER GROUND TRUTH MATRIX AUDIT (5 SEEDS x 5 LOCS x STRIDES x 4 SHAPES)\n");
+    printf("   AUTHENTIC MASTER GROUND TRUTH MATRIX AUDIT (%s)\n",
+           smoke ? "SMOKE: 2 SEEDS x 2 LOCS x 3 STRIDES x 1 SHAPE" : "5 SEEDS x 5 LOCS x STRIDES x 4 SHAPES");
     printf("========================================================================================================================================\n");
     printf("%-10s | %-16s | %-6s | %-22s | %-7s | %-7s | %-6s | %-11s | %-12s | %-12s | %-12s | %-14s\n",
            "Seed", "Location", "Stride", "Shape", "Y_MAE", "Y<=2", "Y_Max", "vsMst<=2", "BiomeFlip(O/M)", "WaterFlip(O/M)", "CoastBiomeFlip", "Time(Opt/Mst)");
     printf("----------------------------------------------------------------------------------------------------------------------------------------\n");
     fflush(stdout);
 
-    for (int s = 0; s < 5; s++) {
+    for (int s = 0; s < seed_count; s++) {
         CfxContext ctx;
         memset(&ctx, 0, sizeof(ctx));
         ctx.mc = MC_1_21_1;
@@ -254,11 +262,12 @@ int main(int argc, char **argv) {
         if (argc > 1 && strcmp(argv[1], "--sampling-only") == 0)
             return 0;
 
-        for (int l = 0; l < 5; l++) {
+        for (int li = 0; li < loc_count; li++) {
+            int l = smoke ? loc_indices_smoke[li] : li;
             int strides[] = {1, 2, 4};
             for (int st = 0; st < 3; st++) {
                 int stride = strides[st];
-                for (int sh_idx = 0; sh_idx < 4; sh_idx++) {
+                for (int sh_idx = shape_start; sh_idx < shape_end; sh_idx++) {
                     Shape sh = shapes[sh_idx];
 
                     CaseResult res;

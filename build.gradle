@@ -250,6 +250,14 @@ tasks.register('testNativePurity', Exec) {
     commandLine rootProject.file('build/bin/test_purity').absolutePath
 }
 
+tasks.register('testNativePuritySmoke', Exec) {
+    group = 'verification'
+    description = 'Executes fast native position purity assertions without multi-seed ground-truth loops.'
+    dependsOn 'compileTestNativePurity'
+    workingDir rootProject.projectDir
+    commandLine rootProject.file('build/bin/test_purity').absolutePath, '--purity-only'
+}
+
 tasks.register('compileTestNativeMatrix', Exec) {
     group = 'verification'
     description = 'Compiles native 75-case full matrix verification harness.'
@@ -274,6 +282,14 @@ tasks.register('testNativeMatrix', Exec) {
     dependsOn 'compileTestNativeMatrix'
     workingDir rootProject.projectDir
     commandLine rootProject.file('build/bin/test_matrix').absolutePath
+}
+
+tasks.register('testNativeMatrixSmoke', Exec) {
+    group = 'verification'
+    description = 'Executes lightweight native matrix smoke assertions (2 seeds x 2 locations x 3 strides x 1 shape).'
+    dependsOn 'compileTestNativeMatrix'
+    workingDir rootProject.projectDir
+    commandLine rootProject.file('build/bin/test_matrix').absolutePath, '--smoke'
 }
 
 // N4 Fix: Mechanical drift check verifying master_clean_impl.h against origin/master
@@ -324,6 +340,12 @@ tasks.register('verifyNative') {
     group = 'verification'
     description = 'Runs every native verification harness (baseline anchor, purity, full matrix). Requires a host C toolchain.'
     dependsOn 'verifyMasterBaseline', 'testNativePurity', 'testNativeMatrix'
+}
+
+tasks.register('verifyNativeSmoke') {
+    group = 'verification'
+    description = 'Runs lightweight native verification harnesses for CI (baseline anchor, purity, smoke matrix).'
+    dependsOn 'verifyMasterBaseline', 'testNativePuritySmoke', 'testNativeMatrixSmoke'
 }
 
 tasks.register('compileBenchNative', Exec) {

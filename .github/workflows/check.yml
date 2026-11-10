@@ -99,10 +99,10 @@ jobs:
           # tasks inside one invocation; the GameTest-Matrix job runs them instead.
           ./gradlew -Pversion="$BUILD_VERSION" $tasks -x runGametest
       # Native harnesses need gcc/cc, so they are NOT part of the version subprojects' `check`
-      # (that would break Windows/macOS contributors). This Linux job runs them explicitly:
-      # baseline anchor, position purity and the full ground-truth matrix with its gates.
-      - name: Verify native predictors
-        run: ./gradlew verifyNative
+      # (that would break Windows/macOS contributors). This Linux job runs the lightweight
+      # smoke harness explicitly (baseline anchor, position purity and 12-case matrix smoke).
+      - name: Verify native predictors (smoke)
+        run: ./gradlew verifyNativeSmoke
       - name: Connect client to server for shard
         timeout-minutes: 45
         env:

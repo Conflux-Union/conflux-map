@@ -97,8 +97,8 @@ CI's Linux job runs `verifyNative` on every pull request; run it locally before 
 under `native/`.
 
 `buildNativesAll` is the sole authority that cross-compiles every production target into `native/prebuilt/`
-(`linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `macos-x86_64`, `macos-aarch64`) and updates
-`native/prebuilt/BUILD_INFO.md` using [zig cc](https://ziglang.org/) as a batteries-included cross C toolchain.
+(`linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `macos-x86_64`, `macos-aarch64`)
+using [zig cc](https://ziglang.org/) as a batteries-included cross C toolchain.
 It is maintainer-only tooling for cutting a full release of the native library
 and is expected to fail loudly ("zig required") on machines without `zig` on
 `PATH` - that is not a build break, just a signal to either install zig or
