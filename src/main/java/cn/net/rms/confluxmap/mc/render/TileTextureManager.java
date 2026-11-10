@@ -288,7 +288,8 @@ public final class TileTextureManager {
      * {@code uvOut} with the {@code [u0, v0, u1, v1]} quadrant of that parent covering {@code key}.
      * Read-only on a miss: a missing parent is not requested, because the caller only wants it as a
      * stand-in while {@code key} itself loads. Returns false (leaving {@code uvOut} untouched) when
-     * no coarser tile exists - at {@link TileMath#MAX_LOD}, or before that parent has uploaded.
+     * no coarser tile exists - at {@link TileMath#MAX_LOD}, before that parent has uploaded, or
+     * when a predicted parent's composition has gone stale (see {@link #bindFallbackChild}).
      */
     public boolean bindFallbackParent(final TileKey key, final float[] uvOut) {
         if (key.lod() >= TileMath.MAX_LOD) {
@@ -300,11 +301,31 @@ public final class TileTextureManager {
             TileMath.parentTile(key.tileX()),
             TileMath.parentTile(key.tileZ())
         );
-        if (!bindIfResident(parent)) {
+        if (!bindFallbackIfFresh(parent)) {
             return false;
         }
         TileMath.parentUv(key.tileX(), key.tileZ(), uvOut);
         return true;
+    }
+
+    /**
+     * Binds a resident finer tile for the children fallback, read-only like the parent probe.
+     * A predicted tile additionally passes {@link PredictionTileService#compositionCurrent}:
+     * only the viewport's own LOD recomposes, so a tile left stale behind a zoom still claims
+     * terrain the real layer has since filled in, and drawing it across LODs would paint
+     * fabricated terrain over resident real tiles. A refused stand-in leaves the gap showing
+     * the background until the tile's LOD is viewed again.
+     */
+    public boolean bindFallbackChild(final TileKey key) {
+        return bindFallbackIfFresh(key);
+    }
+
+    /** Residency plus the predicted-composition validity every cross-LOD probe is gated on. */
+    private boolean bindFallbackIfFresh(final TileKey key) {
+        if (PredictedTileKeys.isPredicted(key) && !predictionTiles.compositionCurrent(key)) {
+            return false;
+        }
+        return bindIfResident(key);
     }
 
     /**
@@ -314,7 +335,7 @@ public final class TileTextureManager {
      * so a fallback texture that keeps covering the screen stays at the fresh end of the LRU
      * exactly like a directly drawn one.
      */
-    public boolean bindIfResident(final TileKey key) {
+    private boolean bindIfResident(final TileKey key) {
         final TileTexture entry = textures.get(key);
         if (entry == null) {
             return false;

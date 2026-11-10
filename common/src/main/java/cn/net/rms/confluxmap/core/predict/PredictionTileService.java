@@ -1052,6 +1052,20 @@ public final class PredictionTileService {
         pump();
     }
 
+    /**
+     * Whether the composition last uploaded for {@code key} still matches the state it was
+     * composed under. A predicted tile's pixels are transparent exactly where real data won at
+     * compose time; once real coverage (or the view mode) changes under it, that mask overstates
+     * prediction until a recompose lands - and only the current viewport's LOD recomposes. A
+     * cross-LOD consumer drawing a stale tile would paint fabricated terrain over newer real
+     * tiles, so {@code TileTextureManager}'s fallback probes consult this before binding.
+     */
+    public boolean compositionCurrent(final TileKey key) {
+        synchronized (this) {
+            return !staleRealCoverageTiles.contains(key) && !staleViewModeTiles.contains(key);
+        }
+    }
+
     private void markBiomeDirtyIfRequested(final TileKey key, final long token) {
         synchronized (this) {
             if (!requestedTiles.contains(key)) {
