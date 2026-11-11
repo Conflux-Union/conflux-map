@@ -9,13 +9,20 @@ package cn.net.rms.confluxmap.nativepredict;
  */
 public final class PredictorVersion {
     /** First 12 hex characters of the pinned cubiomes commit (see {@code native/CUBIOMES_COMMIT}). */
-    public static final String CUBIOMES_COMMIT_12 = "095b6010dff0";
+    public static final String CUBIOMES_COMMIT_12 = "954000e106d1";
 
     /** Must match {@code CFX_ABI} in {@code native/shim/confluxnative.c}. */
     public static final int CFX_ABI = 17;
 
     /**
      * Bumped whenever baseline sampling or derivation (LOD expansion, canopy, kind rules) changes.
+     * 27: 1.18+ exact terrain columns start the surface search at an iterated slopedCheese fixed
+     * point (two noise rounds, column parameters shared with the cell solver) instead of the
+     * noise-free crossing, and clear a 3-cell band instead of 16; the noodle selector-first
+     * sampling and the noodle lower-bound shortcut are value-identical. A measured 0.009% of
+     * columns (0.0003% water-land flips, concentrated on steep coasts) now reads a lower solid
+     * segment instead of the first one, against the 1% drift budget for this seam. Pre-1.18
+     * output stays bit-identical.
      * 26: merged PR #154/#158 CPU sampling optimizations with the GPU FP32 backend; fused
      * LodSampling changes prediction output.
      * 25: pre-1.18 overview heights solve the depth noise once per world-aligned quart corner
@@ -55,7 +62,7 @@ public final class PredictorVersion {
      * 18: dappled forest and sulfur caves gained real BiomeTable entries instead of the neutral
      * land fallback, changing predicted pixels for 26.2+ worlds.
      */
-    public static final int BASELINE_ALGO = 26;
+    public static final int BASELINE_ALGO = 27;
 
     private PredictorVersion() {
     }
