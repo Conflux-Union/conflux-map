@@ -20,10 +20,61 @@ class ColumnStoreTest {
         final RegionColumns region = store.region(0, 0);
         final int flushedVersion = region.version();
 
-        store.put(snapshot(0, 0), SampleSource.REAL_LIVE);
+        final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
+        Arrays.fill(surfaceY, (short) 42);
+        store.put(snapshot(0, 0, surfaceY), SampleSource.REAL_LIVE);
 
         assertFalse(store.evictIfUnchanged(region, flushedVersion));
         assertSame(region, store.region(0, 0));
+    }
+
+    @Test
+    void identicalReputIsRejectedAsANoOpStore() {
+        final ColumnStore store = new ColumnStore();
+        assertTrue(store.put(snapshot(0, 0), SampleSource.REAL_LIVE));
+
+        assertFalse(
+            store.put(snapshot(0, 0), SampleSource.REAL_LIVE),
+            "a recapture with byte-identical content must not register as a store change"
+        );
+    }
+
+    @Test
+    void identicalReputDoesNotBlockRegionEviction() {
+        final ColumnStore store = new ColumnStore();
+        store.put(snapshot(0, 0), SampleSource.REAL_LIVE);
+        final RegionColumns region = store.region(0, 0);
+        final int flushedVersion = region.version();
+
+        store.put(snapshot(0, 0), SampleSource.REAL_LIVE);
+
+        assertTrue(
+            store.evictIfUnchanged(region, flushedVersion),
+            "an unchanged region stays evictable: identical recaptures are no-ops"
+        );
+    }
+
+    @Test
+    void reputAfterAContentChangeIsAcceptedAgain() {
+        final ColumnStore store = new ColumnStore();
+        assertTrue(store.put(snapshot(0, 0), SampleSource.REAL_LIVE));
+        assertFalse(store.put(snapshot(0, 0), SampleSource.REAL_LIVE));
+
+        final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
+        Arrays.fill(surfaceY, (short) 42);
+        assertTrue(store.put(snapshot(0, 0, surfaceY), SampleSource.REAL_LIVE));
+    }
+
+    @Test
+    void sourceUpgradeWithIdenticalContentStillCounts() {
+        final ColumnStore store = new ColumnStore();
+        assertTrue(store.put(snapshot(0, 0), SampleSource.IMPORTED));
+
+        assertTrue(
+            store.put(snapshot(0, 0), SampleSource.REAL_LIVE),
+            "an imported-to-live upgrade is observable through the chunk source even when content matches"
+        );
+        assertSame(SampleSource.REAL_LIVE, store.region(0, 0).chunkSource(0, 0));
     }
 
     @Test

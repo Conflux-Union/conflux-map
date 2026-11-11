@@ -182,12 +182,14 @@ class McaBackfillServiceTest {
         assertEquals(scansAfterFirst, scanner.scanCount.get(), "cooldown holds during the window");
 
         clock.addAndGet(10_000L);
-        final long expectedRevision = scanner.mtime.get();
-        awaitByPushing(() -> {
-            final RegionColumns region = mapWorlds.current().store(MapLayer.SURFACE).region(0, 0);
-            return region != null && region.chunkSourceRevision(0, 0) == expectedRevision;
-        });
+        final int versionBeforeRescan = mapWorlds.current()
+            .store(MapLayer.SURFACE).region(0, 0).version();
+        awaitByPushing(() -> scanner.scanCount.get() > scansAfterFirst);
         assertTrue(scanner.scanCount.get() > scansAfterFirst, "expired REAL_SCAN is rescanned");
+
+        assertEquals(versionBeforeRescan, mapWorlds.current()
+            .store(MapLayer.SURFACE).region(0, 0).version(),
+            "a rescan whose content is unchanged must not churn the stored region");
     }
 
     @Test

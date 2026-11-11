@@ -56,6 +56,11 @@ public final class RegionColumns {
         }
         final int baseX = chunkLocalX * 16;
         final int baseZ = chunkLocalZ * 16;
+        if (existing == source && chunkContentMatches(baseX, baseZ, snapshot)) {
+            // Block updates below the captured surface re-mark chunks dirty forever; a
+            // byte-identical recapture would bump the version and invalidate tiles for nothing.
+            return false;
+        }
         for (int z = 0; z < 16; z++) {
             final int rowFrom = z * 16;
             final int rowTo = (baseZ + z) * SIZE + baseX;
@@ -74,6 +79,27 @@ public final class RegionColumns {
         chunkUpdateSeconds[chunkIndex] = (int) (System.currentTimeMillis() / 1000L);
         chunkSourceRevision[chunkIndex] = snapshot.sourceRevision;
         version++;
+        return true;
+    }
+
+    /** Caller must hold the monitor: whether the chunk block already stores byte-identical content. */
+    private boolean chunkContentMatches(final int baseX, final int baseZ, final ChunkSnapshot snapshot) {
+        for (int z = 0; z < 16; z++) {
+            final int from = z * 16;
+            final int to = (baseZ + z) * SIZE + baseX;
+            if (!java.util.Arrays.equals(surfaceY, to, to + 16, snapshot.surfaceY, from, from + 16)
+                || !java.util.Arrays.equals(biomeId, to, to + 16, snapshot.biomeId, from, from + 16)
+                || !java.util.Arrays.equals(fluidDepth, to, to + 16, snapshot.fluidDepth, from, from + 16)
+                || !java.util.Arrays.equals(baseArgb, to, to + 16, snapshot.baseArgb, from, from + 16)
+                || !java.util.Arrays.equals(xaeroBaseArgb, to, to + 16, snapshot.xaeroBaseArgb, from, from + 16)
+                || !java.util.Arrays.equals(tintArgb, to, to + 16, snapshot.tintArgb, from, from + 16)
+                || !java.util.Arrays.equals(overlayArgb, to, to + 16, snapshot.overlayArgb, from, from + 16)
+                || !java.util.Arrays.equals(xaeroOverlayArgb, to, to + 16, snapshot.xaeroOverlayArgb, from, from + 16)
+                || !java.util.Arrays.equals(kind, to, to + 16, snapshot.kind, from, from + 16)
+                || !java.util.Arrays.equals(light, to, to + 16, snapshot.light, from, from + 16)) {
+                return false;
+            }
+        }
         return true;
     }
 
