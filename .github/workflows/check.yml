@@ -84,10 +84,15 @@ jobs:
             ${{ runner.os }}-gradle-
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
-      - name: Install Vulkan software ICD
+      # Vulkan: software rendering for the connection-smoke clients. PoCL: an
+      # OpenCL CPU device so the GPU prediction engine executes real kernels
+      # instead of silently falling back to CPU. Build-Paper stays without
+      # OpenCL on purpose - a loader-less headless server is the production
+      # shape the CPU fallback must survive.
+      - name: Install software Vulkan and OpenCL drivers
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers pocl-opencl-icd
       - name: Check shard
         id: check
         run: |
@@ -410,6 +415,12 @@ jobs:
             ${{ runner.os }}-gradle-
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
+      # The GPU prediction engine needs a live OpenCL device to exercise its
+      # kernel paths; PoCL provides a CPU one so CI coverage is real.
+      - name: Install PoCL OpenCL CPU driver
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pocl-opencl-icd
       - name: Run gametests for shard
         run: |
           # Gametest servers all bind the default port, so the shard's versions must run

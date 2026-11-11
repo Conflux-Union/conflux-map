@@ -8,6 +8,7 @@ import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.TileMath;
+import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -390,6 +391,12 @@ public final class ConfluxConfig {
     /** Master toggle for the seed-predicted fullscreen-map underlay. */
     public boolean predictionEnabled = true;
     /**
+     * Engine for the predicted underlay: GPU uses the OpenCL executor when the machine has a
+     * working device and silently serves the CPU reference otherwise; CPU never touches the
+     * GPU. Both backends produce the same baseline, so residual patches remain compatible.
+     */
+    public PredictionBackend predictionBackend = PredictionBackend.GPU;
+    /**
      * Client-side opt-out for the companion handshake / correction sync. When false the client
      * skips HELLO_C2S and never sends MAP_VIEW_REQ; the predicted underlay still works in
      * singleplayer. S5's request planner reads this flag; S3 only adds it so the config schema
@@ -531,6 +538,7 @@ public final class ConfluxConfig {
         c.waypointListDefaultDimension = waypointListDefaultDimension;
         c.waypointLabelScalePercent = waypointLabelScalePercent;
         c.predictionEnabled = predictionEnabled;
+        c.predictionBackend = predictionBackend;
         c.predictionNetworkSync = predictionNetworkSync;
         c.predictionViewMode = predictionViewMode;
         c.predictionShowStructures = predictionShowStructures;
@@ -691,6 +699,9 @@ public final class ConfluxConfig {
         }
         if (radarDisplayMode == null) {
             radarDisplayMode = RadarDisplayMode.PORTRAITS;
+        }
+        if (predictionBackend == null) {
+            predictionBackend = PredictionBackend.GPU;
         }
         if (sharedWaypointCrossDimensionVisibleIds == null) {
             sharedWaypointCrossDimensionVisibleIds = new LinkedHashSet<>();

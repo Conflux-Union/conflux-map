@@ -1,0 +1,55 @@
+package cn.net.rms.confluxmap.nativepredict;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.Test;
+
+/**
+ * Pins the backend-to-engine-mode mapping and that configuration is safe before the library
+ * exists (the mode push itself is exercised end to end by the OFF-mode golden test in
+ * {@link CubiomesNativeTest}). The wave-batch gate is pinned as a pure decision over a stats
+ * snapshot, so no native state and no latch ordering across tests is involved.
+ */
+class GpuBackendTest {
+    @Test
+    void engineModeMapsCpuToOffAndGpuToAuto() {
+        assertEquals(CubiomesNative.GPU_MODE_OFF, GpuBackend.engineMode(PredictionBackend.CPU));
+        assertEquals(CubiomesNative.GPU_MODE_AUTO, GpuBackend.engineMode(PredictionBackend.GPU));
+    }
+
+    @Test
+    void configureAcceptsBothBackendsWithoutALoadedLibrary() {
+        // No native assumption here: pre-load configuration only stores the choice and is
+        // replayed by NativeLib's success hook.
+        GpuBackend.configure(PredictionBackend.CPU);
+        GpuBackend.configure(PredictionBackend.GPU);
+    }
+
+    @Test
+    void warmupEligibilityRequiresGpuBackendAndLoadedLibrary() {
+        assertTrue(GpuBackend.warmupEligible(PredictionBackend.GPU, true),
+            "the GPU backend on a loaded library must start the warmup");
+        assertFalse(GpuBackend.warmupEligible(PredictionBackend.CPU, true),
+            "a CPU backend must not warm the engine");
+        assertFalse(GpuBackend.warmupEligible(PredictionBackend.GPU, false),
+            "without the native library there is nothing to warm");
+    }
+
+    @Test
+    void batchGateRejectsOffModeMissingSnapshotRefusalAndDeath() {
+        final GpuBackend.GpuStats auto =
+            new GpuBackend.GpuStats(CubiomesNative.GPU_MODE_AUTO, "device", 1, 1, false);
+        final GpuBackend.GpuStats off =
+            new GpuBackend.GpuStats(CubiomesNative.GPU_MODE_OFF, "", 0, 0, false);
+        final GpuBackend.GpuStats dead =
+            new GpuBackend.GpuStats(CubiomesNative.GPU_MODE_AUTO, "device", 1, 1, true);
+        assertTrue(GpuBackend.batchDispatchAvailable(auto, false), "a live auto engine must admit batches");
+        assertFalse(GpuBackend.batchDispatchAvailable(off, false), "CPU mode must admit waves without the seam");
+        assertFalse(GpuBackend.batchDispatchAvailable(null, false), "no engine snapshot must gate batches off");
+        assertFalse(GpuBackend.batchDispatchAvailable(auto, true), "a latched refusal must gate batches off");
+        assertFalse(GpuBackend.batchDispatchAvailable(dead, false),
+            "a dead engine serves the CPU loops and must not admit batches");
+    }
+}

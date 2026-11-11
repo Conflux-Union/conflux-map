@@ -25,6 +25,8 @@ class LodSamplingTest {
     void adjacentBiomeRefinementsShareOneBatchWithoutChangingPixelInputs(final int lod) {
         final int blocksPerPixel = 1 << lod;
         final int[] surfaceCalls = {0};
+        final int[] sparseCalls = {0};
+        final String[] firstCallAt = {""};
         final BaselineSampler sampler = new BaselineSampler() {
             @Override
             public boolean interpolatableOverviewHeights() {
@@ -86,6 +88,26 @@ class LodSamplingTest {
                 }
                 return true;
             }
+
+            @Override
+            public boolean surfaceBiomesSparse(
+                final int[] cellX, final int[] cellZ, final int edge,
+                final int stride, final int[] terrainYPacked,
+                final int n, final int[] outBiomeIdsPacked
+            ) {
+                sparseCalls[0] += n;
+                final int points = edge * edge;
+                for (int c = 0; c < n; c++) {
+                    for (int p = 0; p < points; p++) {
+                        outBiomeIdsPacked[c * points + p] = refinementBiome(
+                            cellX[c] + (p % edge) * stride,
+                            cellZ[c] + (p / edge) * stride,
+                            terrainYPacked[c * points + p], blocksPerPixel
+                        );
+                    }
+                }
+                return true;
+            }
         };
         final int originX = -8192;
         final int originZ = 4096;
@@ -101,8 +123,12 @@ class LodSamplingTest {
                 );
             }
         }
-        assertEquals(130, surfaceCalls[0],
-            "one anchor batch plus one refinement batch per two-pixel row");
+        // The anchor sweep stays one plain rect query; every refining cell beyond it is
+        // collected and dispatched through the bounded sparse chunk transport, and the
+        // per-point entry only runs when a chunk fails (it did not here).
+        assertEquals(1, surfaceCalls[0],
+            "one anchor rect query plus chunked refinements, first call at " + firstCallAt[0]);
+        assertTrue(sparseCalls[0] > 0, "refining cells share sparse chunk dispatches");
     }
 
     private static int refinementBiome(

@@ -13,9 +13,20 @@ final class PredictionBaselineCache {
     static final int DEFAULT_MIN_TILES = 32;
     static final int MAX_TILES = 256;
 
+    /** Effective serving identities a cache entry can be keyed under; {@code 0} is "no data". */
+    static final int ENGINE_NONE = 0;
+    static final int ENGINE_CPU = 1;
+    static final int ENGINE_GPU = 2;
+
+    /**
+     * The {@code servingEngine} dimension keeps CPU-reference and FP32-GPU planes apart: the two
+     * backends agree only within the recalibrated drift bounds near waterlines, so a hit must
+     * reconstruct planes the requesting session's own engine produced, never the other one's.
+     */
     record Key(
         TileKey tile, long token, long generation, long seed, int version,
-        WorldPreset preset, FlatBaseline flat, QuadrantLayout quadrants, int netherY
+        WorldPreset preset, FlatBaseline flat, QuadrantLayout quadrants, int netherY,
+        int servingEngine
     ) {
     }
 

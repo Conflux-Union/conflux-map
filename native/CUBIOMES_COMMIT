@@ -1,12 +1,14 @@
 upstream: https://github.com/Cubitect/cubiomes (active line: xpple/cubiomes master)
 fork:     https://github.com/Conflux-Union/cubiomes (this project's fork)
-commit:   07f8282995189c3e9ea9197acb236452434ada70
-commit date: 2026-10-29T11:25:17+08:00
+commit:   095b6010dff0d1c694434b15c183524d7b01d61c
+commit date: 2026-11-10T18:49:17+08:00
 pinned via: native/cubiomes git submodule (converted from a vendored copy on 2026-07-17)
 license: MIT (see native/cubiomes/LICENSE)
 
 Merge state: fork master = upstream xpple/master (5815e4f "Add 26.3 support
-(#29)") merged on top of our feature line. Upstream changes folded in:
+(#29)") merged on top of our feature line; the pin sits on the
+feat/gpu-opencl branch (same feature line, twenty-one GPU commits on top of
+07f8282). Upstream changes folded in:
 the renderpearl-independent C-side terrain refactor (terrainnoise/carver
 split, uint8_t block columns), loot salt configs, the ctest suite, and
 MC_26_3 (btree263 biome tree, abandoned camps).
@@ -26,6 +28,63 @@ Fork contents kept on top of upstream master:
     density cells on demand from the top and start the surface search a
     fixed band below the noise-free density-zero crossing; pre-1.18
     generators keep their original path.
+  - feat/gpu-opencl (02b70a1..6cdd027, sixteen commits) "OpenCL GPU executor
+    for 1.18+ Overworld surface biomes and terrain overview heights":
+    gpu.c/gpu.h/gpu_cl_kernels.h + opencl_host.c/h behind the compile-time
+    gate CUBIOMES_ENABLE_GPU, which turns mapOverworldSurfaceBiome /
+    mapOverworldTerrainHeight into transparent try-GPU-then-CPU dispatches.
+    The host dlopens the platform OpenCL loader (no link-time dependency);
+    absence degrades silently to the CPU path. GPU outputs are a float
+    approximation of the double CPU reference, gated by the drift-budget
+    harness (make gpu-test in the submodule: per-distance-bucket biome-flip
+    and height/climate budgets plus exact query-shape-invariance and
+    mode-handling checks). Later line commits add the bit-exact fp64 cfx
+    kernels for the mod's product hot path (3e8bdb2), double-buffered
+    output slabs (89121c4), readback draining on partial batch failure
+    (e59baef), and the two bit-exact cfx batch entries with per-block
+    failure masks (bb463bf heights / 024c124 biomes); 2ec8385 adds the
+    process-global batch metrics (counters, histograms, host walls) with
+    the CUBIOMES_GPU_PROFILING=1 event-timer opt-in and its marker-canary
+    capability probe; 6cdd027 adds the bit-exact fp64 sparse-point kernels
+    and entries (gpuCfxOverviewHeightsSparse / gpuCfxSurfaceBiomesSparse)
+    that serve one refinement chunk in a single kernel launch and readback
+    with whole-or-nothing rejection, make FP_CONTRACT OFF actually reach
+    both built programs, and pin the per-chunk launch/read counts in the
+    metrics harness; d70551e adds the fp32 sparse twins
+    (gpuCfxOverviewHeightsSparseFloat / gpuCfxSurfaceBiomesSparseFloat):
+    the same cfx kernel source compiled a second time in single precision
+    (cfx_real typedef + -cl-single-precision-constant) against float
+    mirrors of the packed tables, drift-budgeted instead of bit-exact -
+    the typedef refactor leaves the fp64 build byte-equivalent (the exact
+    matrix reproduces identically) and the rect/float-family kernels are
+    untouched. 14c2eb3 adds the surface-columns point kernels for the mod's
+    exact-columns stage (gpuCfxSurfaceColumnsPoints plus the drift-budgeted
+    float twin gpuCfxSurfaceColumnsPointsFloat): n anchors solved in one
+    launch and readback with the four output planes carrying the CPU's own
+    fluid post-pass and INT32_MIN sentinel, whole-or-nothing rejection as on
+    the other sparse entries. The port covers the full 1.18+ column chain
+    including the aquifer stack (fluid-state sampling, fluid-level solving
+    and the per-seed aquifer hash seeds as runtime arguments; the four AN_*
+    double-perlin instances append to the packed tables after octMainOff, so
+    every existing pack offset stays stable). ea31787 reworks the col kernels
+    for throughput with three pure memoizations (density carry between the
+    banded search's cells, a per-anchor noodle-corner memo keyed on the noise
+    cell, a ring memo for the aquifer's noise-free surface estimate) without
+    changing any output: measured 11.0-14.8k ns/anchor fp64 and 3.6-4.7k fp32
+    at the 16384-anchor saturation width against 82.9-166.9k / 39.1-77.5k at
+    the 256-anchor per-tile dispatch width, with every parity matrix
+    bit-identical before and after. Batched z-stride
+    entries (gpuMapOverworldSurfaceBiomeRows / gpuMapOverworldTerrainHeightRows)
+    fold streamed overview-row sets into one dispatch. Default mode is
+    env-driven (CUBIOMES_GPU, auto); gpuSetMode() overrides. 095b6010 parks
+    the whole surface-columns path behind `#if 0` guards after the composed
+    A/B measurement found the seam net-wall negative in the product's
+    serving shape (opening wall +6.2%, first tile +76%): the col kernels
+    leave GPU_CL_SRC_CFX (so cfx program JIT no longer pays their
+    cold-start cost) and GPU_INST_COUNT returns to 27 with the AN_* pack
+    block disabled. The kernels, entries, and drift-tier notes above stay
+    in the tree as the restoration recipe: flip the parked guards in both
+    repos and rebuild.
   - Nether fossils: upstream 32f6624 now ships its own terrain-validated
     fossil model, so the fork keeps only what upstream lacks - the
     getFeaturePos routing in getStructurePos (upstream leaves fossils
@@ -36,16 +95,107 @@ Fork contents kept on top of upstream master:
     pins the same ordinals.
 
 Verification for this pin:
-  - upstream ctest suite (test_biomes/structures/loot/pieces/carvers),
-    the fork's feature_tests harness, and C smoke of MC_26_3 biome
-    sampling, nether-fossil locate+viability, and abandoned-camp locate
-    were run at the f75f0a3 merge base (2026-09-18); 07f8282 adds only
-    the lazy-column commit above and changes no biome or structure
-    lookup.
-  - conflux-map :common:test (1395 tests incl. the native oracle suite
-    against this pin's prebuilt linux-x86_64 library) and the
-    :common:benchmark visual corpus (rendered 1.21.4 tiles vs the
-    pre-change baseline) pass, 2026-10-29.
+  - The CPU side is unchanged from the 07f8282 pin (whose verification
+    stands: upstream ctest suite, the fork's feature_tests harness, C
+    smoke of MC_26_3 biome sampling / nether-fossil locate+viability /
+    abandoned-camp locate, and conflux-map :common:test with the native
+    oracle suite plus the :common:benchmark visual corpus, 2026-10-29);
+    feat/gpu-opencl touches only the gated GPU module and the
+    #ifdef-guarded hook call sites in biomenoise.c, and the GPU drift
+    harness (`make gpu-test`, default parity matrix) is green against the
+    CPU reference under the per-bucket budgets. Re-run green 2026-11-09 at
+    6cdd027 (clean rebuild, no new compiler warnings), covering the sparse
+    parity/refusal/metrics cases plus the existing rect, slab, mode, and
+    engine-metrics cases; re-run green 2026-11-10 at d70551e with the fp64
+    matrix reproducing the 6cdd027 run digit-for-digit (the typedef
+    refactor is byte-equivalent) and the new fp32 sparse cases green
+    (exact shape-invariance within the float build, chunk-slice, refusal,
+    and metrics pins; kernel-level drift far under the smoke bounds -
+    near origin 0.0000% biome mismatch / max |dY| 1, 1M-field 0.0366% /
+    |dY| 5); re-run green 2026-11-10 at ea31787 adding the surface-columns
+    sections: the fp64 col parity stays bit-exact against
+    mapOverworldSurfaceColumns across near/far/negative/duplicate/reseed/
+    band-clamp/deep-ocean/lava probes and two MC versions, the fp32 col build
+    pins shape invariance, chunk-slice refusal and exact metrics deltas, and
+    the float col drift prints land at 0.0434%/|dY| 1 (near), 0.0217%/5
+    (1M-class) with the cave-mouth and 30M-border probes printing only - the
+    carve-discontinuity and coordinate-quantization classes (border flags
+    0.955%, |dY| 82), the same print-only classification the mod's
+    composed-tile gates use. Re-run green 2026-11-10 at 095b6010 parking the
+    col path: clean rebuild with zero compiler warnings, the default matrix
+    reproduces the pre-col run shape minus the col sections (BUDGET OK:
+    1239534 points unchanged), the rebuilt linux-x86_64 library carries no
+    col kernel source or gate strings, and :common:test passes 1666 tests
+    (0 failures, 5 skipped - the disabled col engagement class). Known
+    pre-existing failure, not introduced by
+    this pin: `./gpu_test --full` misses the near-bucket float height
+    budget (max dY 44.0 > 25.0; the calibration comment's observed
+    baseline was dY 5) byte-identically on the pre-change base 2ec8385 -
+    a drift shift from the NVIDIA 580.119.02 driver on this workstation,
+    with zero exact-contract failures anywhere in the matrix. Rebudgeting
+    the float buckets is a separate scope decision.
+  - conflux-map integration (2026-11-10, exact sparse baseline): the JNI
+    sparse refinement entries use the fp64 kernels above the existing
+    gates (CFX_GPU_HEIGHT_MIN_CELLS / CFX_GPU_BIOME_MIN_CELLS), with CPU
+    fallback below the gates or when the device refuses. Residual patches
+    omit unchanged samples, so CPU/GPU and full-tile/cropped-window
+    sampling must produce identical baselines. NativeSparseGpuEngagementTest
+    and NativeSparseBatchParityTest assert exact equality across those
+    paths on the RTX 4060. buildNativesAll rebuilt all five release
+    targets against this pin and shim ABI 17, including the null OpenCL
+    runtime guard; only linux-x86_64 was functionally exercised.
+  - conflux-map integration (2026-11-10, fp32 surface-columns seam - PARKED
+    the same day, kept as the restoration recipe):
+    buildNativesHost rebuilds the committed linux-x86_64 library with the col
+    kernels, and the shim's cfxSurfaceColumns now attempts
+    gpuCfxSurfaceColumnsPointsFloat for 1.18+ Overworld anchor batches at or
+    above CFX_GPU_COLUMN_MIN_ANCHORS (default 256, env-overridable once at
+    first use, 0 disables - the composed A/B measurement switch), expanding
+    both of the entry's request shapes (the lod0 dense-rect call and the
+    lod1 per-anchor loop) into the same anchor arrays in the CPU loops' own
+    j*w+i order. The float kernels serve the drift-budgeted tier, the same
+    product decision as the sparse seam: the fp64 twin stays the exact
+    reference, and swapping the entry for it (~3x kernel cost) is the
+    documented escalation should a budget breach ever demand it. A
+    whole-or-nothing refusal falls back to the shim's byte-untouched CPU
+    loops and never surfaces as false - the exact-columns stage has no
+    per-point Java-side repair, a false return drops the caller's tile.
+    Stage accounting mirrors the sparse seam (attempt/serve deltas on the
+    per-context counters the debug backend annotation reads). The
+    :common:test suite passes against the rebuilt library with the col
+    engagement/drift gates: served probes in the documented cave-mouth
+    region show nonzero fp32 drift against the per-anchor CPU reference
+    (solidY mismatch 4.1% on the rect shape / 2.8% per-point, max |dY| 3),
+    below-gate and env-disabled batches resolve bit-exactly against those
+    same 1x1 solves, and the composed lod0/lod1 gates print the measured
+    rates - categorical flags under 2% at every bucket (worst 1.81% at the
+    30M border), heights at the near bucket |dY| <= 1, and the carve-class
+    buckets (cave-mouth, 1M-class tile on carved terrain, 30M border)
+    reaching |dY| 36-93 printed without a bound. The composed A/B
+    measurement then returned a net-wall negative verdict on the seam
+    (opening wall +6.2%, first tile +76%, no compensating niche under the
+    product's 8-way CPU parallelism, shared in-order queue, and tile-sized
+    batches), so the col path is commented out in both repos as of 095b6010:
+    `#if 0` guards disable the shim's GPU attempt block, its
+    cfxGpuColumnMinAnchors gate, and the CFX_GPU_COLUMN_MIN_ANCHORS define,
+    while the fork's parked guards take the col kernels out of
+    GPU_CL_SRC_CFX (removing their first-use JIT cost), restore
+    GPU_INST_COUNT to 27, and drop the col entries and sections from the
+    compiled artifacts; NativeColumnGpuEngagementTest is class-level
+    @Disabled because the shim no longer attempts. The drift tiers and the
+    fp64 escalation notes above stay as the restoration recipe: flip the
+    parked guards in both repos, rebuild the native library, then the env
+    gate drives serving again.
+  - Machine note (2026-11-09): CUBIOMES_GPU_PROFILING=1 degrades to
+    unprofiled on this workstation. Deepin's nvidia-libopencl1
+    580.119.02 loader accepts CL_QUEUE_PROFILING_ENABLE (it even reads
+    back set through clCreateCommandQueue) yet answers every
+    clGetEventProfilingInfo with CL_PROFILING_INFO_NOT_AVAILABLE (-7) for
+    completed commands, so gpuClInit probes the queue with a marker
+    command and clears the flag; the engine counters and host walls are
+    unaffected, only the four event timers stay zero. Installing
+    ocl-icd-libopencl1 (available in the repos, untested here) is the
+    likely way to restore the event timers.
 
 Files compiled from this commit by buildNativesHost/buildNativesAll
 (selected subset):
@@ -53,6 +203,7 @@ Files compiled from this commit by buildNativesHost/buildNativesAll
   terrainnoise.c/h, finders.c/h, terrain_features.c/h, util.c/h, rng.h,
   features/end_city.c/h, features/fortress.c/h,
   features/abandoned_camp.c/h, features/stronghold.c/h,
+  gpu.c/h, gpu_cl_kernels.h, opencl_host.c/h,
   tables/btree18.h, tables/btree192.h, tables/btree19.h,
   tables/btree20.h, tables/btree21wd.h, tables/btree215.h,
   tables/btree262.h, tables/btree263.h

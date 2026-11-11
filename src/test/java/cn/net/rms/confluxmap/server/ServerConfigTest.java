@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.net.MapSyncCapability;
@@ -231,6 +232,7 @@ class ServerConfigTest {
         original.webMap.enabled = false;
         original.webMap.port = 9123;
         original.webMap.sharePlayers = true;
+        original.predictionBackend = PredictionBackend.CPU;
 
         assertTrue(io.saveAtomically(original));
         final ServerConfig loaded = io.load();
@@ -260,6 +262,16 @@ class ServerConfigTest {
         assertEquals(original.webMap.enabled, loaded.webMap.enabled);
         assertEquals(original.webMap.port, loaded.webMap.port);
         assertEquals(original.webMap.sharePlayers, loaded.webMap.sharePlayers);
+        assertEquals(PredictionBackend.CPU, loaded.predictionBackend);
+    }
+
+    @Test
+    void predictionBackendDefaultsToGpuAndNormalizesNull(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("server.json");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "{\"schemaVersion\":1,\"predictionBackend\":null}", StandardCharsets.UTF_8);
+        final ServerConfig loaded = new ServerConfigIo(file, LOGGER).load();
+        assertEquals(PredictionBackend.GPU, loaded.predictionBackend);
     }
 
     @Test

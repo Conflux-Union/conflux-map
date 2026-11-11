@@ -32,22 +32,39 @@ class PredictionBaselineCacheTest {
             QuadrantLayout.Style.NOISE, null, QuadrantLayout.Style.NOISE, null
         );
 
-        final PredictionBaselineCache.Key baseKey = fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat1, q1, 127);
+        final PredictionBaselineCache.Key baseKey = fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat1, q1, 127,
+            PredictionBaselineCache.ENGINE_GPU);
         cache.put(baseKey, tile());
 
         assertNotNull(cache.get(baseKey));
         // QuadrantLayout value equality: equal new instance must hit
-        assertNotNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat1, q1Clone, 127)));
+        assertNotNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat1, q1Clone, 127,
+            PredictionBaselineCache.ENGINE_GPU)));
 
         // Distinct dimension checks
-        assertNull(cache.get(fullKey(0, 2, 0, 28, WorldPreset.DEFAULT, flat1, q1, 127)), "seed mismatch");
-        assertNull(cache.get(fullKey(0, 1, 1, 28, WorldPreset.DEFAULT, flat1, q1, 127)), "generation mismatch");
-        assertNull(cache.get(fullKey(0, 1, 0, 29, WorldPreset.DEFAULT, flat1, q1, 127)), "version mismatch");
-        assertNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.FLAT, flat1, q1, 127)), "preset mismatch");
-        assertNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat2, q1, 127)), "flat mismatch");
-        assertNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat1, q2, 127)), "quadrant mismatch");
-        assertNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat1, q1, 63)), "netherY mismatch");
-        assertNull(cache.get(fullKey(1, 1, 0, 28, WorldPreset.DEFAULT, flat1, q1, 127)), "tile coord mismatch");
+        assertNull(cache.get(fullKey(0, 2, 0, 28, WorldPreset.DEFAULT, flat1, q1, 127,
+            PredictionBaselineCache.ENGINE_GPU)), "seed mismatch");
+        assertNull(cache.get(fullKey(0, 1, 1, 28, WorldPreset.DEFAULT, flat1, q1, 127,
+            PredictionBaselineCache.ENGINE_GPU)), "generation mismatch");
+        assertNull(cache.get(fullKey(0, 1, 0, 29, WorldPreset.DEFAULT, flat1, q1, 127,
+            PredictionBaselineCache.ENGINE_GPU)), "version mismatch");
+        assertNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.FLAT, flat1, q1, 127,
+            PredictionBaselineCache.ENGINE_GPU)), "preset mismatch");
+        assertNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat2, q1, 127,
+            PredictionBaselineCache.ENGINE_GPU)), "flat mismatch");
+        assertNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat1, q2, 127,
+            PredictionBaselineCache.ENGINE_GPU)), "quadrant mismatch");
+        assertNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat1, q1, 63,
+            PredictionBaselineCache.ENGINE_GPU)), "netherY mismatch");
+        assertNull(cache.get(fullKey(1, 1, 0, 28, WorldPreset.DEFAULT, flat1, q1, 127,
+            PredictionBaselineCache.ENGINE_GPU)), "tile coord mismatch");
+        // The serving-engine dimension keeps CPU-reference and GPU planes apart: the two
+        // backends only agree within the recalibrated waterline drift bounds, so an entry
+        // published under one engine must never serve the other.
+        assertNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat1, q1, 127,
+            PredictionBaselineCache.ENGINE_CPU)), "serving engine mismatch");
+        assertNull(cache.get(fullKey(0, 1, 0, 28, WorldPreset.DEFAULT, flat1, q1, 127,
+            PredictionBaselineCache.ENGINE_NONE)), "unknown engine mismatch");
 
         cache.clear();
         assertEquals(0, cache.size());
@@ -56,12 +73,12 @@ class PredictionBaselineCacheTest {
     private static PredictionBaselineCache.Key fullKey(
         final int x, final long seed, final long generation, final int version,
         final WorldPreset preset, final FlatBaseline flat, final QuadrantLayout quadrants,
-        final int netherY
+        final int netherY, final int servingEngine
     ) {
         return new PredictionBaselineCache.Key(
             new TileKey(WorldIdentity.singleplayer("baseline-cache"), DimensionId.OVERWORLD,
                 "surface!pred", 0, x, 0),
-            1L, generation, seed, version, preset, flat, quadrants, netherY
+            1L, generation, seed, version, preset, flat, quadrants, netherY, servingEngine
         );
     }
 
@@ -176,7 +193,8 @@ class PredictionBaselineCacheTest {
         return new PredictionBaselineCache.Key(
             new TileKey(WorldIdentity.singleplayer("baseline-cache"), DimensionId.OVERWORLD,
                 "surface!pred", 0, x, 0),
-            1L, generation, seed, 28, preset, null, null, netherY
+            1L, generation, seed, 28, preset, null, null, netherY,
+            PredictionBaselineCache.ENGINE_CPU
         );
     }
 

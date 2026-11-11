@@ -186,6 +186,155 @@ public final class CubiomesContext implements AutoCloseable {
         );
     }
 
+    /**
+     * Exact overview heights at n independent block positions - see
+     * {@link CubiomesNative#cfxOverviewHeightsSparse} for the flat-array contract and the
+     * all-or-nothing status.
+     */
+    public int overviewHeightsSparse(
+        final int[] blockX,
+        final int[] blockZ,
+        final int n,
+        final int[] outTerrainY
+    ) {
+        requireOpen();
+        requireCapacity(blockX, n);
+        requireCapacity(blockZ, n);
+        requireCapacity(outTerrainY, n);
+        return CubiomesNative.cfxOverviewHeightsSparse(handle, blockX, blockZ, n, outTerrainY);
+    }
+
+    /**
+     * Height-aware surface biomes for n uniformly-shaped cells - see
+     * {@link CubiomesNative#cfxSurfaceBiomesSparse} for the flat-array contract and the
+     * all-or-nothing status.
+     */
+    public int surfaceBiomesSparse(
+        final int[] cellX,
+        final int[] cellZ,
+        final int edge,
+        final int stride,
+        final int[] terrainYPacked,
+        final int n,
+        final int[] outBiomeIdsPacked
+    ) {
+        requireOpen();
+        final long points = (long) n * edge * edge;
+        if (points < 0 || points > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("flat cell storage overflow: " + points);
+        }
+        requireCapacity(cellX, n);
+        requireCapacity(cellZ, n);
+        requireCapacity(terrainYPacked, (int) points);
+        requireCapacity(outBiomeIdsPacked, (int) points);
+        return CubiomesNative.cfxSurfaceBiomesSparse(
+            handle, cellX, cellZ, edge, stride, terrainYPacked, n, outBiomeIdsPacked
+        );
+    }
+
+    /**
+     * Native handle for the engine-level batch dispatch entries: a wave leader passes its
+     * own context's generator state to the static batch calls (see
+     * {@link #overviewHeightsCoarseBatch}). The context stays thread-confined - resolve it
+     * and call this on the owning thread only.
+     */
+    public long handleForBatch() {
+        requireOpen();
+        return handle;
+    }
+
+    /**
+     * Batched coarse-lattice overview over parallel per-tile arrays - see
+     * {@link CubiomesNative#cfxOverviewHeightsCoarseBatch} for the flat-array contract,
+     * the per-tile failure bitmap, and the 0/nonzero return split.
+     */
+    public int overviewHeightsCoarseBatch(
+        final int[] blockX,
+        final int[] blockZ,
+        final int[] w,
+        final int[] h,
+        final int[] stride,
+        final int n,
+        final int[] outTerrainY,
+        final int[] failMask
+    ) {
+        requireOpen();
+        requireBatchShape(blockX, blockZ, w, h, stride, n);
+        requireCapacity(outTerrainY, flatCells(w, h, n));
+        requireCapacity(failMask, 1);
+        return CubiomesNative.cfxOverviewHeightsCoarseBatch(
+            handleForBatch(), blockX, blockZ, w, h, stride, n, outTerrainY, failMask
+        );
+    }
+
+    /**
+     * Batched surface biomes from flat caller-filled terrain planes - see
+     * {@link CubiomesNative#cfxSurfaceBiomesBatch} for the flat-array contract; {@code sha}
+     * must be this handle's voronoi sha.
+     */
+    public int surfaceBiomesBatch(
+        final long sha,
+        final int[] blockX,
+        final int[] blockZ,
+        final int[] w,
+        final int[] h,
+        final int[] stride,
+        final int[] terrainY,
+        final int n,
+        final int[] outBiomeIds,
+        final int[] failMask
+    ) {
+        requireOpen();
+        requireBatchShape(blockX, blockZ, w, h, stride, n);
+        final int flat = flatCells(w, h, n);
+        requireCapacity(terrainY, flat);
+        requireCapacity(outBiomeIds, flat);
+        requireCapacity(failMask, 1);
+        return CubiomesNative.cfxSurfaceBiomesBatch(
+            handleForBatch(), sha, blockX, blockZ, w, h, stride, terrainY, n, outBiomeIds, failMask
+        );
+    }
+
+    /**
+     * The context's stored voronoi sha ({@code Generator.sha}) - the value {@link
+     * #surfaceBiomesBatch} validates its {@code sha} argument against. Read-only; the shim
+     * returns the stored value without recomputing anything.
+     */
+    public long voronoiSha() {
+        requireOpen();
+        return CubiomesNative.cfxVoronoiSHA(handle);
+    }
+
+    private static void requireBatchShape(
+        final int[] blockX,
+        final int[] blockZ,
+        final int[] w,
+        final int[] h,
+        final int[] stride,
+        final int n
+    ) {
+        if (n <= 0) {
+            throw new IllegalArgumentException("batch size must be positive: " + n);
+        }
+        requireCapacity(blockX, n);
+        requireCapacity(blockZ, n);
+        requireCapacity(w, n);
+        requireCapacity(h, n);
+        requireCapacity(stride, n);
+    }
+
+    /** Combined flat storage the batch's per-tile {@code w*h} planes occupy. */
+    private static int flatCells(final int[] w, final int[] h, final int n) {
+        long total = 0;
+        for (int i = 0; i < n; i++) {
+            total += (long) w[i] * (long) h[i];
+        }
+        if (total < 0 || total > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("flat batch storage overflow: " + total);
+        }
+        return (int) total;
+    }
+
     /** Strided Overworld height grid at 1:4 native scale. */
     public int heightsStrided(
         final int x4, final int z4, final int w, final int h, final int stride, final int[] outY, final int[] outIds
@@ -318,6 +467,16 @@ public final class CubiomesContext implements AutoCloseable {
     public boolean structureViable(final int structType, final int blockX, final int blockZ) {
         requireOpen();
         return CubiomesNative.cfxStructureViable(handle, structType, blockX, blockZ) != 0;
+    }
+
+    /**
+     * Packed stage accounting for this context's sampling so far - see {@link
+     * CubiomesNative#cfxStageStats}. Read before and after a tile's sampling and diff the two
+     * packed values; the context is thread-confined, so no other tile interleaves.
+     */
+    public long stageStats() {
+        requireOpen();
+        return CubiomesNative.cfxStageStats(handle);
     }
 
     @Override

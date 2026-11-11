@@ -9,13 +9,15 @@ package cn.net.rms.confluxmap.nativepredict;
  */
 public final class PredictorVersion {
     /** First 12 hex characters of the pinned cubiomes commit (see {@code native/CUBIOMES_COMMIT}). */
-    public static final String CUBIOMES_COMMIT_12 = "07f828299518";
+    public static final String CUBIOMES_COMMIT_12 = "095b6010dff0";
 
     /** Must match {@code CFX_ABI} in {@code native/shim/confluxnative.c}. */
-    public static final int CFX_ABI = 16;
+    public static final int CFX_ABI = 17;
 
     /**
      * Bumped whenever baseline sampling or derivation (LOD expansion, canopy, kind rules) changes.
+     * 26: merged PR #154/#158 CPU sampling optimizations with the GPU FP32 backend; fused
+     * LodSampling changes prediction output.
      * 25: pre-1.18 overview heights solve the depth noise once per world-aligned quart corner
      * (vanilla itself evaluates it per quart column) and bilinearly interpolate the
      * biome-independent base per pixel, skipping depth-noise octaves shorter than half the
@@ -25,8 +27,6 @@ public final class PredictorVersion {
      * unchanged (24 is taken by the CPU macro-grid acceleration).
      * 24: 1.18+ adaptive macro-grid terrain sampling and symmetric waterline reconstruction;
      * baseline cache with zero-allocation guarded RLE compression and viewport-aware dynamic capacity.
-     * Visual snapshot tests confirm zero discernible difference to human vision while providing
-     * up to 5x single-core speedup and 40% memory reduction.
      * 23: the coarse LODs dropped the 2x2 biome sub-sample sweep; LOD3-4 Overworld biomes are
      * now answered by the LOD2 per-pixel anchor-lattice cell sweep at the coarse stride (the
      * LOD2-4 overview lattice itself is unchanged, and Nether roof and End were never
@@ -55,7 +55,7 @@ public final class PredictorVersion {
      * 18: dappled forest and sulfur caves gained real BiomeTable entries instead of the neutral
      * land fallback, changing predicted pixels for 26.2+ worlds.
      */
-    public static final int BASELINE_ALGO = 25;
+    public static final int BASELINE_ALGO = 26;
 
     private PredictorVersion() {
     }

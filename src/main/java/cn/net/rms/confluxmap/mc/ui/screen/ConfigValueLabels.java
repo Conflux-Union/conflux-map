@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
+import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import java.util.function.Function;
 import net.minecraft.text.Text;
 
@@ -164,6 +165,10 @@ final class ConfigValueLabels {
         final ConfluxConfig.MapQuality[] qualities = ConfluxConfig.MapQuality.values();
         final int clamped = Math.max(0, Math.min(qualities.length - 1, index));
         return Texts.translatable(mapQualityKey(qualities[clamped])).getString();
+    }
+
+    static String predictionBackendKey(final PredictionBackend backend) {
+        return "confluxmap.config.prediction.backend." + backend.name().toLowerCase(java.util.Locale.ROOT);
     }
 
     static String predictionViewModeKey(final PredictionViewMode mode) {

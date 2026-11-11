@@ -1,14 +1,11 @@
 #ifndef ADAPTIVE_MACRO_H
 #define ADAPTIVE_MACRO_H
 
-// ==============================================================================
-// Strict Position-Pure Spatial-Adaptive Macro Grid
-// 1. World 16-block macro cells (step 4 macro grid) corners evaluated globally;
-// 2. Strict half-open world coordinate partitioning: each world macro point (x4, z4)
-//    uniquely belongs to its enclosing cell, guaranteeing identical decisions
-//    regardless of tile slicing origins or boundary padding (0 mismatch);
-// 3. 5-point cross detection + 8x8 sub-quadrant fallback refinement;
-// 4. Memory safety: strict bounds-clamped indices with zero row overflow (ASan clean).
+// World 16-block macro grid (step-4 macro lattice) with strict half-open world
+// coordinate partitioning: each world macro point (x4, z4) belongs to exactly one
+// enclosing cell, so the subdivision decisions are identical regardless of tile
+// slicing origins or boundary padding. Refinement is 5-point cross detection plus
+// 8x8 sub-quadrant fallback.
 //
 // MIRROR: the browser predictor re-implements this exact algorithm in
 // native/web/confluxpredict.c (cfxWebEvaluateAdaptiveMacroGrid + friends) because the two
@@ -16,7 +13,6 @@
 // subdivision gate, the 5-point topology, the waterline band or the interpolation rounding
 // MUST be applied to both copies in the same commit, or the in-game map and the web preview
 // silently diverge.
-// ==============================================================================
 
 // Strictly symmetric linear interpolation with unbiased rounding.
 // Guarantees algebraic invariant under endpoint exchange:

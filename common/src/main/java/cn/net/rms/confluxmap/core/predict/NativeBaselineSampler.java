@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.nativepredict.CubiomesContext;
 import cn.net.rms.confluxmap.nativepredict.CubiomesContexts;
+import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 
@@ -10,9 +11,12 @@ import cn.net.rms.confluxmap.nativepredict.NativeLib;
  * for one fixed (mcVersion, seed, dim, flags) tuple (see {@link CubiomesContexts} for the per-thread
  * caching/epoch-invalidation contract - this class does no caching of its own, it's cheap
  * enough to construct fresh per tile compose). Never throws on native failure; every method
- * returns false, matching {@link BaselineSampler}'s contract.
+ * returns false, matching {@link BaselineSampler}'s contract. Also the production {@link
+ * WaveComposer.BatchDispatch}: the wave leader resolves its own thread's context here (the
+ * calling thread's cached context <em>is</em> the leader's generator state) and the voronoi sha
+ * the biome batch validates is read from that context, never derived in Java.
  */
-public final class NativeBaselineSampler implements BaselineSampler {
+public final class NativeBaselineSampler implements BaselineSampler, WaveComposer.BatchDispatch {
     private static final int CLIMATE_MODEL_MIN = McVersions.toCubiomes("1.18").orElseThrow();
 
     private final int mcVersion;
@@ -20,12 +24,49 @@ public final class NativeBaselineSampler implements BaselineSampler {
     private final int dim;
     private final int flags;
 
+    /**
+     * Latches the sparse refinement entries off for the whole process once the loaded library
+     * proves to predate them ({@link UnsatisfiedLinkError} on the first packed call). These are
+     * optional new symbols on a library whose older exports keep working, so only this
+     * capability drops - never {@link NativeLib#disableForSession}, which would kill the GPU
+     * kernels the same library still serves. Every later call takes the interface's default
+     * per-point loops.
+     */
+    private static volatile boolean sparseNativeAvailable = true;
+
+    /** Whether the sparse native entries are usable on the loaded library; test-visible latch state. */
+    static boolean sparseNativeAvailable() {
+        return sparseNativeAvailable;
+    }
+
+    /** Test seam for the latch: simulate a stale library and restore the default afterwards. */
+    static void setSparseNativeAvailable(final boolean available) {
+        sparseNativeAvailable = available;
+    }
+
     /** {@code flags} are cubiomes {@code setupGenerator} flags - see {@link WorldPreset#cubiomesFlags()}. */
     public NativeBaselineSampler(final int mcVersion, final long seed, final int dim, final int flags) {
         this.mcVersion = mcVersion;
         this.seed = seed;
         this.dim = dim;
         this.flags = flags;
+    }
+
+    /**
+     * Debug-only stage accounting of this sampler's (thread-cached) context - see {@link
+     * CubiomesNative#cfxStageStats}. Take one packed value before and one after a tile's
+     * sampling; the difference attributes that tile's overview/biome stages to GPU or CPU.
+     * Returns {@code 0} (no data) when the native library is unavailable or predates this
+     * export, so a stale library degrades to a {@code none} backend annotation instead of
+     * failing a debug path.
+     */
+    public long gpuStageStats() {
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);
+            return ctx == null ? 0L : ctx.stageStats();
+        } catch (final UnsatisfiedLinkError staleLibrary) {
+            return 0L;
+        }
     }
 
     @Override
@@ -217,6 +258,38 @@ public final class NativeBaselineSampler implements BaselineSampler {
         }
     }
 
+    /**
+     * One packed JNI call per bounded chunk of the waterline band, resolved on the calling
+     * thread's cached context. A {@code null} context (unsupported identity) and a latched or
+     * newly-missing sparse capability leave the request list to the interface's default
+     * per-point loop; a nonzero status from a working entry returns false so the caller
+     * repairs through {@link #overviewHeights} - all-or-nothing per chunk.
+     */
+    @Override
+    public boolean overviewHeightsSparse(
+        final int[] blockX,
+        final int[] blockZ,
+        final int n,
+        final int[] outTerrainY
+    ) {
+        if (!sparseNativeAvailable) {
+            return BaselineSampler.super.overviewHeightsSparse(blockX, blockZ, n, outTerrainY);
+        }
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);
+            if (ctx == null) {
+                return BaselineSampler.super.overviewHeightsSparse(blockX, blockZ, n, outTerrainY);
+            }
+            return ctx.overviewHeightsSparse(blockX, blockZ, n, outTerrainY) == 0;
+        } catch (final UnsatisfiedLinkError staleLibrary) {
+            sparseNativeAvailable = false;
+            return false;
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return false;
+        }
+    }
+
     @Override
     public boolean surfaceBiomes(
         final int blockX,
@@ -236,6 +309,172 @@ public final class NativeBaselineSampler implements BaselineSampler {
             NativeLib.disableForSession(fault);
             return false;
         }
+    }
+
+    /**
+     * One packed JNI call per bounded chunk of the cell refinement sweep - same capability
+     * split as {@link #overviewHeightsSparse}: unavailable context or missing sparse symbol
+     * takes the interface's default per-cell loop, a working entry's nonzero status returns
+     * false for the caller to repair through {@link #surfaceBiomes}.
+     */
+    @Override
+    public boolean surfaceBiomesSparse(
+        final int[] cellX,
+        final int[] cellZ,
+        final int edge,
+        final int stride,
+        final int[] terrainYPacked,
+        final int n,
+        final int[] outBiomeIdsPacked
+    ) {
+        if (!sparseNativeAvailable) {
+            return BaselineSampler.super.surfaceBiomesSparse(
+                cellX, cellZ, edge, stride, terrainYPacked, n, outBiomeIdsPacked
+            );
+        }
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);
+            if (ctx == null) {
+                return BaselineSampler.super.surfaceBiomesSparse(
+                    cellX, cellZ, edge, stride, terrainYPacked, n, outBiomeIdsPacked
+                );
+            }
+            return ctx.surfaceBiomesSparse(
+                cellX, cellZ, edge, stride, terrainYPacked, n, outBiomeIdsPacked
+            ) == 0;
+        } catch (final UnsatisfiedLinkError staleLibrary) {
+            sparseNativeAvailable = false;
+            return false;
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return false;
+        }
+    }
+
+    /**
+     * Batched coarse-lattice overview heights for a wave of tiles, resolved on the calling
+     * thread's cached context - see {@link CubiomesNative#cfxOverviewHeightsCoarseBatch} for
+     * the flat-array contract and the per-tile failure bitmap. Returns 0 when the batch was
+     * attempted (repair the {@code failMask} set bits through {@link #overviewHeightsCoarse});
+     * nonzero when the caller must dispatch its tiles individually, which is also what an
+     * unavailable context or a latched fault returns. A refusal latches wave batching off for
+     * the rest of the process via {@link GpuBackend#noteBatchRefused}.
+     */
+    @Override
+    public int overviewHeightsCoarseBatch(
+        final int[] blockX,
+        final int[] blockZ,
+        final int[] w,
+        final int[] h,
+        final int[] stride,
+        final int n,
+        final int[] outTerrainY,
+        final int[] failMask
+    ) {
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);
+            if (ctx == null) {
+                return 1;
+            }
+            final int status = ctx.overviewHeightsCoarseBatch(
+                blockX, blockZ, w, h, stride, n, outTerrainY, failMask
+            );
+            if (status < 0) {
+                GpuBackend.noteBatchRefused();
+            }
+            return status;
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return 1;
+        }
+    }
+
+    /**
+     * Batched surface biomes from flat caller-filled terrain planes, resolved on the calling
+     * thread's cached context - see {@link CubiomesNative#cfxSurfaceBiomesBatch} for the
+     * flat-array contract. {@code sha} is cubiomes' voronoi sha for the seed (cubiomes'
+     * {@code getVoronoiSHA}); a probe from a different generator refuses the batch. Returns 0
+     * when the batch was attempted (repair the {@code failMask} set bits through
+     * {@link #surfaceBiomes}); nonzero when the caller must dispatch its tiles individually.
+     */
+    public int surfaceBiomesBatch(
+        final long sha,
+        final int[] blockX,
+        final int[] blockZ,
+        final int[] w,
+        final int[] h,
+        final int[] stride,
+        final int[] terrainY,
+        final int n,
+        final int[] outBiomeIds,
+        final int[] failMask
+    ) {
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);
+            return ctx == null
+                ? 1
+                : ctx.surfaceBiomesBatch(
+                    sha, blockX, blockZ, w, h, stride, terrainY, n, outBiomeIds, failMask
+                );
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return 1;
+        }
+    }
+
+    /**
+     * Wave-seam dispatch: same batch as {@link #surfaceBiomesBatch(long, int[], int[], int[],
+     * int[], int[], int[], int, int[], int[])}, but the voronoi sha comes from the resolved
+     * context instead of the caller - the wave leader owns the generator, so the probe cannot
+     * disagree with it. A library predating the sha accessor refuses the batch (per-tile
+     * fallback) without latching the native library dead. A refusal latches wave batching off
+     * for the rest of the process via {@link GpuBackend#noteBatchRefused}.
+     */
+    @Override
+    public int surfaceBiomesBatch(
+        final int[] blockX,
+        final int[] blockZ,
+        final int[] w,
+        final int[] h,
+        final int[] stride,
+        final int[] terrainY,
+        final int n,
+        final int[] outBiomeIds,
+        final int[] failMask
+    ) {
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);
+            if (ctx == null) {
+                return 1;
+            }
+            final long sha;
+            try {
+                sha = ctx.voronoiSha();
+            } catch (final UnsatisfiedLinkError staleLibrary) {
+                return 1;
+            }
+            final int status = ctx.surfaceBiomesBatch(
+                sha, blockX, blockZ, w, h, stride, terrainY, n, outBiomeIds, failMask
+            );
+            if (status < 0) {
+                GpuBackend.noteBatchRefused();
+            }
+            return status;
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return 1;
+        }
+    }
+
+    /**
+     * The calling thread's context serves exactly this sampler's fixed identity whenever it
+     * resolves at all ({@link CubiomesContexts} is a keyed lookup), so the real check happens
+     * through the resolution inside the batch entries; this comparison pins the wave
+     * coordinator's pre-dispatch re-validation contract at the seam.
+     */
+    @Override
+    public boolean batchContextMatches(final long waveSeed, final int waveMcVersion) {
+        return waveSeed == seed && waveMcVersion == mcVersion;
     }
 
     @Override

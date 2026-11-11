@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.UUID;
 import cn.net.rms.confluxmap.core.portal.PortalKind;
+import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import org.junit.jupiter.api.Test;
 
 final class ConfluxConfigTest {
@@ -57,6 +58,19 @@ final class ConfluxConfigTest {
         copy.controlStyle = null;
         copy.normalize();
         assertEquals(ConfluxConfig.ControlStyle.AUTO, copy.controlStyle);
+    }
+
+    @Test
+    void predictionBackendDefaultsToGpuSurvivesCopyAndNormalizesNull() {
+        final ConfluxConfig config = new ConfluxConfig();
+        assertEquals(PredictionBackend.GPU, config.predictionBackend);
+
+        config.predictionBackend = null;
+        config.normalize();
+        assertEquals(PredictionBackend.GPU, config.predictionBackend);
+
+        config.predictionBackend = PredictionBackend.CPU;
+        assertEquals(PredictionBackend.CPU, config.copy().predictionBackend);
     }
 
     @Test

@@ -17,10 +17,12 @@ import cn.net.rms.confluxmap.core.util.TileMath;
 import com.mojang.blaze3d.platform.GlStateManager;
 //#endif
 import com.mojang.blaze3d.systems.RenderSystem;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 
@@ -94,6 +96,11 @@ public final class TileTextureManager {
     }
 
     private void upload(final TileUpdate update) {
+        // Debug-gated e2e accounting: the completion report closes the prediction viewport
+        // window's "displayed" half, so it must fire only when the texture actually uploaded.
+        final boolean timed = PredictedTileKeys.isPredicted(update.key())
+            && PredictionTileService.debugTimingEnabled();
+        final long uploadStartNanos = timed ? System.nanoTime() : 0L;
         TileTexture entry = textures.get(update.key());
         final boolean fresh = entry == null;
         if (fresh) {
@@ -167,6 +174,9 @@ public final class TileTextureManager {
         }
         entry.texture.upload();
         configureSampling(entry.texture);
+        if (timed) {
+            predictionTiles.onPredictedUploaded(update.key(), System.nanoTime() - uploadStartNanos);
+        }
     }
 
     /**
@@ -377,5 +387,10 @@ public final class TileTextureManager {
         if (released > 0) {
             ConfluxMapMod.LOGGER.info("TileTextureManager: released {} predicted tile textures", released);
         }
+    }
+
+    /** Test-support only: snapshot of the keys with a resident GPU texture (monitor-guarded). */
+    public synchronized Set<TileKey> residentTexturesForTest() {
+        return new HashSet<>(textures.keySet());
     }
 }

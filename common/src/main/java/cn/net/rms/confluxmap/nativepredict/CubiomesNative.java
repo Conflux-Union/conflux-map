@@ -19,6 +19,7 @@ package cn.net.rms.confluxmap.nativepredict;
  *   <li>6 - wrong dimension for this query (e.g. {@link #cfxEndHeights} on an Overworld handle)
  *   <li>7 - requested terrain feature is only partially supported for this biome
  *   <li>8 - malformed chunk NBT (only from {@link #cfxScanChunkNbt})
+ *   <li>9 - engine programs still compiling (transient; only from the batch methods)
  * </ul>
  *
  * <p>Nothing in this class loads the native library itself; that is {@link NativeLib}'s job.
@@ -31,6 +32,67 @@ final class CubiomesNative {
 
     /** Returns the shim's {@code CFX_ABI} constant, so Java can detect a stale/mismatched native build. */
     static native int cfxAbi();
+
+    /** GPU engine execution modes for {@link #cfxSetGpuMode}; mirror {@code GPU_MODE_*} in {@code native/cubiomes/gpu.h}. */
+    static final int GPU_MODE_OFF = 0;
+    /** Same value as the engine's own default (env {@code CUBIOMES_GPU} or auto when unset). */
+    static final int GPU_MODE_AUTO = 1;
+    static final int GPU_MODE_FORCE = 2;
+
+    /**
+     * Overrides the GPU execution mode of the 1.18+ Overworld surface dispatch. The engine
+     * defaults to env-var driven behavior ({@code CUBIOMES_GPU}, auto when unset) and this
+     * class never calls the setter itself, so a library that Java leaves alone behaves exactly
+     * like the stock engine. Invalid values are ignored by the engine. A library predating
+     * this export throws {@link UnsatisfiedLinkError}.
+     */
+    static native void cfxSetGpuMode(int mode);
+
+    /**
+     * Compiles the engine's OpenCL programs now instead of on the first dispatch, so a cold
+     * driver JIT (minutes for this kernel size) overlaps the game's startup instead of stalling
+     * the first prediction tile. Dispatches that arrive while the compile runs keep serving the
+     * CPU reference - except under {@code CUBIOMES_GPU=force}, which waits the build out and
+     * never serves the CPU for the transient window. Returns {@code -1} when the engine mode is
+     * off, else bit 1 = climate runtime available, bit 2 = cfx program available. Idempotent per
+     * process. A library predating this export throws {@link UnsatisfiedLinkError}.
+     */
+    static native int cfxGpuWarmup();
+
+    /**
+     * Debug snapshot of the GPU engine's process-global state. Fills {@code out} with
+     * {@code [engineMode, successfulSurfaceBiomeDispatches, successfulHeightDispatches]}
+     * ({@code GPU_MODE_*} values; counts are the engine's own {@code gpuDispatchCount()}/
+     * {@code gpuHeightDispatchCount()}) and returns the probed OpenCL device name (empty before
+     * first use or when no device is available). With the GPU engine not compiled into the
+     * library, reports the off mode and zero counts with an empty device name. A library
+     * predating this export throws {@link UnsatisfiedLinkError}; callers must treat that and a
+     * {@code null} return as "no data".
+     */
+    static native String cfxGetGpuStats(long[] out);
+
+    /**
+     * Snapshot of the GPU engine's batch metrics into {@code metrics}, a fixed
+     * 68-slot array whose layout mirrors the {@code GPU_METRICS_*} constants in
+     * {@code native/cubiomes/gpu.h} (profiling flag, batch counters, host
+     * walls, event timers, member/point histograms). Silently produces nothing
+     * when the array is shorter. With the GPU engine not compiled into the
+     * library, every slot reads zero. A library predating this export throws
+     * {@link UnsatisfiedLinkError}; callers must treat that as "no data".
+     */
+    static native void cfxGetGpuMetrics(long[] metrics);
+
+    /**
+     * Packed per-context stage accounting for the debug backend annotation:
+     * {@code (gpuServedStages << 32) | trackedStageCalls}. A tracked stage is one
+     * {@code cfxOverviewHeights(/Coarse)} or {@code cfxSurfaceBiomes} call whose shape the GPU
+     * path would attempt (the same min-cell gates that decide the dispatch); {@code
+     * gpuServedStages} counts those where the GPU actually completed the call. Counters live on
+     * the context (one per thread via {@link CubiomesContexts}) and only make sense as deltas
+     * taken around one tile's sampling. A {@code 0} handle or a library predating this export
+     * (which throws {@link UnsatisfiedLinkError}) leaves the caller with no data.
+     */
+    static native long cfxStageStats(long handle);
 
     /**
      * Windows-only CPU topology query used for worker-pool sizing; no other platform
@@ -178,6 +240,93 @@ final class CubiomesNative {
         int[] terrainY,
         int[] outBiomeIds
     );
+
+    /**
+     * Sparse overview refinement: resolves {@code n} independent columns, where point i is the
+     * same column {@link #cfxOverviewHeights}(blockX[i], blockZ[i], 1, 1, 4, ...) produces.
+     * All-or-nothing: any per-point failure returns that status and leaves {@code outTerrainY}
+     * untouched, so the caller repairs through the single entry.
+     */
+    static native int cfxOverviewHeightsSparse(
+        long handle,
+        int[] blockX,
+        int[] blockZ,
+        int n,
+        int[] outTerrainY
+    );
+
+    /**
+     * Sparse surface-biome refinement for uniformly-shaped cells: cell i covers an edge x edge
+     * point grid spaced {@code stride} blocks apart with heights {@code terrainYPacked[i*edge*edge
+     * ..]}, resolving the same values {@link #cfxSurfaceBiomes}(cellX[i], cellZ[i], edge, edge,
+     * stride, heights_i, out_i) produces. All-or-nothing like {@link #cfxOverviewHeightsSparse}.
+     */
+    static native int cfxSurfaceBiomesSparse(
+        long handle,
+        int[] cellX,
+        int[] cellZ,
+        int edge,
+        int stride,
+        int[] terrainYPacked,
+        int n,
+        int[] outBiomeIdsPacked
+    );
+
+    /**
+     * Batched coarse-lattice overview heights for a wave of tiles: the parallel
+     * {@code blockX}/{@code blockZ}/{@code w}/{@code h}/{@code stride} arrays describe
+     * {@code n} tiles, {@code outTerrainY} is caller-sized flat storage holding each tile's
+     * {@code w*h} plane at its running-sum offset, and {@code failMask} is a length-1 array
+     * receiving the per-tile failure bitmap (bit {@code i} = tile {@code i} left untouched
+     * for the caller to repair through {@link #cfxOverviewHeightsCoarse}). Returns 0 when
+     * the batch was attempted (check {@code failMask}); nonzero when the caller must
+     * dispatch its tiles individually. Tiles past the engine's per-dispatch point cap are
+     * chunked internally and the bitmap merged; {@code n} is capped at the engine's
+     * 32-block batch limit.
+     */
+    static native int cfxOverviewHeightsCoarseBatch(
+        long handle,
+        int[] blockX,
+        int[] blockZ,
+        int[] w,
+        int[] h,
+        int[] stride,
+        int n,
+        int[] outTerrainY,
+        int[] failMask
+    );
+
+    /**
+     * Batched Overworld surface biomes: same flat-array contract as
+     * {@link #cfxOverviewHeightsCoarseBatch}, with {@code terrainY} the caller-filled flat
+     * input holding each tile's raw {@code w*h} height plane at the same running-sum
+     * offsets (the shim clamps at 62 like the single entry). {@code sha} must be the
+     * handle's own voronoi sha - the batch shares one packed engine state, so a probe from
+     * a different generator refuses instead of borrowing it.
+     */
+    static native int cfxSurfaceBiomesBatch(
+        long handle,
+        long sha,
+        int[] blockX,
+        int[] blockZ,
+        int[] w,
+        int[] h,
+        int[] stride,
+        int[] terrainY,
+        int n,
+        int[] outBiomeIds,
+        int[] failMask
+    );
+
+    /**
+     * Reads the context's stored voronoi sha ({@code Generator.sha}, the value cubiomes'
+     * {@code getVoronoiSHA} derives at setup) without recomputing it: the probe {@link
+     * #cfxSurfaceBiomesBatch} validates its {@code sha} argument against, so a wave leader
+     * reads it from its own context instead of re-deriving it in Java. A {@code 0} handle
+     * returns 0; a library predating this export throws {@link UnsatisfiedLinkError} and
+     * callers degrade to per-tile dispatch.
+     */
+    static native long cfxVoronoiSHA(long handle);
 
     /** Strided 1:4 Overworld heights; adjacent output cells are {@code stride} native cells apart. */
     static native int cfxHeightsStrided(long handle, int x4, int z4, int w, int h, int stride, int[] outY, int[] outIds);

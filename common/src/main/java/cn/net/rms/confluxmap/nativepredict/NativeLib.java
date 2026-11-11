@@ -80,6 +80,9 @@ public final class NativeLib {
                 return false;
             }
             available = true;
+            // A backend choice made before this load (config reads happen first in every
+            // entrypoint) is still pending; push it into the engine now that calls are safe.
+            GpuBackend.onLibraryReady();
             return true;
         } catch (final IOException | UnsatisfiedLinkError | SecurityException e) {
             LOGGER.warn("native: could not load prediction library, prediction disabled ({})", e.toString());

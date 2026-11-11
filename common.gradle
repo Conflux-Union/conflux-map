@@ -170,6 +170,14 @@ loom {
                 if (project.hasProperty('xaeroOracle') && mcVersion == 12111) {
                     vmArg "-Dconfluxmap.xaero.oracle=true"
                 }
+                if (project.hasProperty('e2eLods')) {
+                    // Local measurement runs only: -Pe2eLods="0,1,2,3,4" loops the e2e
+                    // prediction test over one cold fullscreen viewport per LOD.
+                    vmArg "-Dconfluxmap.e2e.lods=${project.property('e2eLods')}"
+                }
+                if (project.hasProperty('e2eBackend')) {
+                    vmArg "-Dconfluxmap.e2e.backend=${project.property('e2eBackend')}"
+                }
                 runDir "build/client-gametest"
             }
         }

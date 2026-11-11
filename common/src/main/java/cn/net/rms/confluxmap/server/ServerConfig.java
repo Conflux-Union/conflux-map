@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
+import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointService;
 import cn.net.rms.confluxmap.server.web.WebMapConfig;
 
@@ -101,8 +102,19 @@ public final class ServerConfig {
     /** Loopback-only HTTP map by default; remote exposure still requires an explicit safe setup. */
     public WebMapConfig webMap = new WebMapConfig();
 
+    /**
+     * Engine for the companion's own prediction baseline (patch generation and seed-derived
+     * features). GPU uses the OpenCL executor when the host has a working device and serves
+     * the exact CPU reference otherwise. Both backends produce the same residual baseline.
+     * Integrated servers use the client's backend because the native engine is process-global.
+     */
+    public PredictionBackend predictionBackend = PredictionBackend.GPU;
+
     /** Clamp out-of-range values loaded from a hand-edited file. */
     public void normalize() {
+        if (predictionBackend == null) {
+            predictionBackend = PredictionBackend.GPU;
+        }
         restrictionMessage = restrictionMessage == null ? "" : restrictionMessage.strip();
         int messageEnd = 0;
         int messageBytes = 0;

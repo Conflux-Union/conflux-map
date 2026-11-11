@@ -194,6 +194,44 @@ class CubiomesNativeTest {
     }
 
     @Test
+    void gpuModeSetterServesBatchedSurfaceRowsFromTheCpuReferenceWhenOff() {
+        // Frozen from the OFF-mode strided query below (CPU reference, cubiomes
+        // 1a3386c, this seed) - it pins both the cfxSetGpuMode seam and the shim's
+        // batched-row narrowing, which OFF must serve from the exact CPU path even
+        // on machines with a working GPU engine.
+        final int[] offGolden = {
+            4, 4, 7, 1, 1, 132, 132, 132, 7, 132, 132, 132, 1, 1, 177, 177,
+            4, 4, 1, 185, 129, 7, 132, 132, 7, 132, 132, 132, 132, 1, 1, 4,
+            7, 1, 185, 185, 185, 129, 129, 7, 132, 132, 132, 132, 132, 35, 35, 4,
+            4, 185, 185, 185, 185, 129, 129, 129, 7, 7, 129, 35, 35, 36, 36, 1,
+        };
+        try (CubiomesContext ctx = CubiomesContext.create(mc21(), SEED, OVERWORLD, 0)) {
+            final int[] out = new int[4 * 16];
+            try {
+                CubiomesNative.cfxSetGpuMode(CubiomesNative.GPU_MODE_OFF);
+                assertEquals(0, ctx.biomesStrided(4, -1024, 512, 16, 4, 16, out));
+                assertArrayEquals(offGolden, out,
+                    "GPU_MODE_OFF must serve the batched surface rows from the CPU reference");
+            } finally {
+                // The engine mode is process-global: always hand the library default
+                // back so other tests keep the env-var-driven behavior.
+                CubiomesNative.cfxSetGpuMode(CubiomesNative.GPU_MODE_AUTO);
+            }
+        }
+    }
+
+    @Test
+    void gpuWarmupIsIdempotentAndReportsConsistentAvailability() {
+        // The warmup export must be callable before any dispatch and settled after one
+        // call: the second reads the latched engine state (a real GPU machine reports
+        // both program bits, a GPU-less CI reports 0) without rebuilding anything.
+        final int first = CubiomesNative.cfxGpuWarmup();
+        final int second = CubiomesNative.cfxGpuWarmup();
+        assertTrue(first == -1 || first >= 0, "warmup reports -1 or non-negative status bits");
+        assertEquals(first, second, "a settled engine must answer a second warmup identically");
+    }
+
+    @Test
     void netherBiomeSamplingUsesTheRequestedHeight() {
         try (CubiomesContext ctx = CubiomesContext.create(mc21(), SEED, NETHER, 0)) {
             assertNotNull(ctx);
