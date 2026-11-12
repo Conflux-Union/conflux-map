@@ -2,7 +2,9 @@ package cn.net.rms.confluxmap.mc.ui.world;
 
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.util.Argb;
+import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.util.math.MathHelper;
 
@@ -63,6 +65,8 @@ final class WaypointLabelStyle {
      */
     record Panel(
         String name,
+        /** Half-height gray "(temporary)" suffix; empty for non-temporary waypoints. */
+        String nameSuffix,
         String distanceText,
         float fullWidth,
         float reveal,
@@ -75,13 +79,21 @@ final class WaypointLabelStyle {
             final float easedProgress
         ) {
             final String name = waypoint.name();
+            final String nameSuffix = waypoint.type() == Waypoint.Type.TEMPORARY && waypoint.local()
+                ? WaypointMarkerRenderer.temporaryTag()
+                : "";
             final String distanceText = Math.round(distance3d) + " m";
             final int nameWidth = textRenderer.getWidth(name);
+            // The suffix draws at half scale after a one-pixel gap.
+            final float suffixWidth = nameSuffix.isEmpty()
+                ? 0f
+                : textRenderer.getWidth(nameSuffix) / 2f + 1f;
             final int distanceWidth = textRenderer.getWidth(distanceText);
             return new Panel(
                 name,
+                nameSuffix,
                 distanceText,
-                Math.max(nameWidth, distanceWidth) + LABEL_PANEL_PADDING * 2f,
+                Math.max(nameWidth + suffixWidth, distanceWidth) + LABEL_PANEL_PADDING * 2f,
                 MathHelper.clamp(easedProgress / LABEL_TEXT_REVEAL_START, 0f, 1f),
                 MathHelper.clamp(
                     (easedProgress - LABEL_TEXT_REVEAL_START) / (1f - LABEL_TEXT_REVEAL_START),

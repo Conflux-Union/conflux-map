@@ -20,6 +20,26 @@ class WaypointIoTest {
     private static final Logger LOGGER = LogManager.getLogger("WaypointIoTest");
 
     @Test
+    void temporaryWaypointsNeverReachDisk(@TempDir final Path tempDir) throws IOException {
+        final Path file = tempDir.resolve("waypoints.json");
+        final Waypoint home = Waypoint.create(
+            "Home", DimensionId.OVERWORLD, 1.0, 64.0, 2.0,
+            0xFF336699, "", Waypoint.Type.NORMAL
+        );
+        final Waypoint stop = Waypoint.create(
+            "Stop", DimensionId.OVERWORLD, 3.0, 64.0, 4.0,
+            0xFF336699, "", Waypoint.Type.TEMPORARY
+        );
+
+        WaypointIo.save(file, List.of(home, stop), LOGGER);
+        final WaypointStore.State loaded = WaypointIo.loadState(file, LOGGER);
+
+        assertEquals(1, loaded.waypoints().size());
+        assertEquals("Home", loaded.waypoints().get(0).name);
+        assertFalse(Files.readString(file).contains("TEMPORARY"));
+    }
+
+    @Test
     void roundTripPreservesEmptyCustomSets(@TempDir final Path tempDir) throws IOException {
         final Path file = tempDir.resolve("waypoints.json");
         final Waypoint waypoint = Waypoint.create(
