@@ -18,7 +18,12 @@ import java.util.UUID;
  * {@link #crossDimensionY} overrides it.
  */
 public final class Waypoint {
-    public enum Type { NORMAL, DEATH }
+    /**
+     * {@code TEMPORARY} waypoints are memory-only: {@link WaypointStore.State},
+     * the sole persistence boundary, drops them, so they vanish on restart and
+     * never reach disk readers such as the cross-world sibling scan.
+     */
+    public enum Type { NORMAL, DEATH, TEMPORARY }
 
     public final UUID id;
     public String name;

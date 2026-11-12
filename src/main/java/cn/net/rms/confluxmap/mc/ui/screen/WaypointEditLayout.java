@@ -70,6 +70,14 @@ final class WaypointEditLayout {
     static final int CROSS_DIMENSION_Y_WIDTH = 40;
     static final int OPTION_GAP = 6;
 
+    /**
+     * The local set row splits into cycler plus temporary toggle because a new
+     * row would not clear the 240px GUI floor; the screen trims long set names
+     * to the narrower cycler.
+     */
+    static final int TEMPORARY_WIDTH = 68;
+    static final int SET_SELECTOR_WIDTH = FORM_WIDTH - OPTION_GAP - TEMPORARY_WIDTH;
+
     private static final int LABELED_ROW_HEIGHT = LABEL_HEIGHT + LABEL_CONTROL_GAP + FIELD_HEIGHT;
 
     private WaypointEditLayout() {

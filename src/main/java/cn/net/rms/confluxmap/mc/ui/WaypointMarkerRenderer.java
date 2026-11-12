@@ -2,7 +2,9 @@ package cn.net.rms.confluxmap.mc.ui;
 
 import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.compat.Regs;
+import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.core.util.Argb;
+import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
@@ -28,6 +30,12 @@ public final class WaypointMarkerRenderer {
     private static final int HEIGHT_BADGE_FILL = 0xFFFFFFFF;
     /** 50% white overlay used to brighten a hovered marker's fill color (fullscreen map only). */
     private static final int HOVER_TINT = 0x80FFFFFF;
+
+    /** Corner "T" badge marking local temporary waypoints, mirroring the height badge's two-tone style. */
+    public static final int TEMPORARY_BADGE_OUTLINE = 0xFF101010;
+    public static final int TEMPORARY_BADGE_TEXT = 0xFFFFFFFF;
+    public static final float TEMPORARY_BADGE_SIZE = 6f;
+    public static final String TEMPORARY_BADGE_LETTER = "T";
 
     private WaypointMarkerRenderer() {
     }
@@ -68,6 +76,7 @@ public final class WaypointMarkerRenderer {
                 Math.max(1f, plateSize - 2f)
             );
             drawHeightBadge(matrices, verticalRelation, x, y, halfSize, alpha);
+            drawTemporaryBadge(draw, textRenderer, waypoint, x, y, halfSize, alpha);
             return;
         }
 
@@ -87,6 +96,7 @@ public final class WaypointMarkerRenderer {
         );
         matrices.pop();
         drawHeightBadge(matrices, verticalRelation, x, y, halfSize, alpha);
+        drawTemporaryBadge(draw, textRenderer, waypoint, x, y, halfSize, alpha);
     }
 
     public static String markerText(final String name, final String markerLabel) {
@@ -176,6 +186,48 @@ public final class WaypointMarkerRenderer {
         final float innerTipY = relation == WaypointVerticalRelation.ABOVE ? centerY - 1.2f : centerY + 1.2f;
         final float innerBaseY = relation == WaypointVerticalRelation.ABOVE ? centerY + 1f : centerY - 1f;
         GuiShapes.fillTriangle(matrices, centerX, innerTipY, centerX - 1.2f, innerBaseY, centerX + 1.2f, innerBaseY, fill);
+    }
+
+    /**
+     * Dark plate with a half-height white "T" on the marker's top-right corner -
+     * the height badge's mirrored twin.
+     */
+    public static void drawTemporaryBadge(
+        final GuiDraw draw,
+        final TextRenderer textRenderer,
+        final WaypointRenderEntry waypoint,
+        final float x,
+        final float y,
+        final float halfSize,
+        final float alpha
+    ) {
+        if (waypoint.type() != Waypoint.Type.TEMPORARY || !waypoint.local()) {
+            return;
+        }
+        final MatrixStack matrices = draw.matrices();
+        final float half = TEMPORARY_BADGE_SIZE / 2f;
+        GuiShapes.fillRect(
+            matrices, x + halfSize - half, y - halfSize - half,
+            TEMPORARY_BADGE_SIZE, TEMPORARY_BADGE_SIZE,
+            withAlpha(TEMPORARY_BADGE_OUTLINE, alpha)
+        );
+        final int textWidth = textRenderer.getWidth(TEMPORARY_BADGE_LETTER);
+        matrices.push();
+        matrices.translate(x + halfSize, y - halfSize, 0);
+        matrices.scale(0.5f, 0.5f, 1f);
+        draw.drawTextWithShadow(
+            textRenderer,
+            TEMPORARY_BADGE_LETTER,
+            -textWidth / 2f,
+            -textRenderer.fontHeight / 2f,
+            withAlpha(TEMPORARY_BADGE_TEXT, alpha)
+        );
+        matrices.pop();
+    }
+
+    /** Localized "(temporary)" suffix shared by the list rows and the in-world labels. */
+    public static String temporaryTag() {
+        return Texts.translatable("confluxmap.waypoint.temporary.tag").getString();
     }
 
     private static int withAlpha(final int argb, final float alpha) {
