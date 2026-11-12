@@ -266,6 +266,7 @@ public final class WaypointItemHudRenderer {
                     draw.drawItemIcon(client, stack, 0f, 0f, iconLocalSize);
                 }
             }
+            WaypointMarkerRenderer.drawTemporaryBadge(draw, textRenderer, waypoint, 0f, 0f, innerHalf, plateAlpha);
 
             if (panel.textReveal() > 0.01f) {
                 final float textX = panel.textX(innerHalf + gap);
@@ -277,6 +278,25 @@ public final class WaypointItemHudRenderer {
                     WaypointLabelStyle.LABEL_NAME_TEXT_Y,
                     WaypointLabelStyle.withAlpha(WaypointLabelStyle.LABEL_NAME_COLOR, textAlpha)
                 );
+                if (!panel.nameSuffix().isEmpty()) {
+                    // Plain locals: the mapping engine misses chained accessor args (see WaypointListScreen).
+                    final String panelName = panel.name();
+                    final int panelNameWidth = textRenderer.getWidth(panelName);
+                    draw.pushTransform();
+                    draw.translate(
+                        textX + panelNameWidth + 1f,
+                        WaypointLabelStyle.LABEL_NAME_TEXT_Y
+                    );
+                    draw.scale(0.5f, 0.5f);
+                    draw.drawTextWithShadow(
+                        textRenderer,
+                        panel.nameSuffix(),
+                        0f,
+                        0f,
+                        WaypointLabelStyle.withAlpha(WaypointLabelStyle.LABEL_DISTANCE_COLOR, textAlpha)
+                    );
+                    draw.popTransform();
+                }
                 draw.drawTextWithShadow(
                     textRenderer,
                     panel.distanceText(),

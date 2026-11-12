@@ -59,6 +59,11 @@ public final class SharedWaypointValidator {
         if (name == null || dimensionId == null || type == null) {
             return Optional.empty();
         }
+        // Shared waypoints are permanent by definition; TEMPORARY is a
+        // client-local lifecycle that every other client would misrender.
+        if (type == Waypoint.Type.TEMPORARY) {
+            return Optional.empty();
+        }
         final String normalizedName = name.strip();
         if (!validName(normalizedName)) {
             return Optional.empty();

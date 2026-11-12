@@ -246,6 +246,11 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
         }
         final UUID operationId = UUID.randomUUID();
         final SharedWaypointLocationKey location = SharedWaypointLocationKey.from(waypoint);
+        // A shared waypoint is permanent; publishing forgets the local TEMPORARY
+        // lifecycle (the wire codec rejects it).
+        final Waypoint.Type publishedType = waypoint.type == Waypoint.Type.TEMPORARY
+            ? Waypoint.Type.NORMAL
+            : waypoint.type;
         return sendMutation(
             operationId,
             new PendingOperation(
@@ -260,7 +265,7 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
                 waypoint.y,
                 waypoint.z,
                 waypoint.colorArgb,
-                waypoint.type,
+                publishedType,
                 waypoint.iconItemId,
                 waypoint.markerLabel
             )

@@ -77,6 +77,11 @@ public final class WaypointStore {
                     if (waypoint == null) {
                         continue;
                     }
+                    // The persistence boundary: temporary waypoints stay in the live
+                    // store (list/dataSnapshot) and never reach disk or a store rebuild.
+                    if (waypoint.type == Waypoint.Type.TEMPORARY) {
+                        continue;
+                    }
                     final Waypoint copy = waypoint.copy();
                     waypointCopies.add(copy);
                     if (!copy.group.isEmpty()) {

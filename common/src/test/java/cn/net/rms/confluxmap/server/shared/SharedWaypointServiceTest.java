@@ -416,6 +416,20 @@ class SharedWaypointServiceTest {
     }
 
     @Test
+    void temporaryTypeIsRejectedBecauseSharedWaypointsArePermanent() {
+        final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
+        final SharedWaypointService.MutationResult result = fixture.service.create(
+            PLAYER,
+            new SharedWaypointService.CreateRequest(
+                uuid(150), 0, "Pin", DimensionId.OVERWORLD,
+                0, 64, 0, 0xFFFFFFFF, Waypoint.Type.TEMPORARY, "", ""
+            )
+        );
+        assertEquals(SharedWaypointService.MutationError.INVALID_REQUEST, result.error());
+        assertEquals(0L, result.snapshot().revision());
+    }
+
+    @Test
     void validatesNameDimensionCoordinatesHeightAndOpaqueColor() {
         final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
         final List<SharedWaypointService.CreateRequest> invalid = List.of(

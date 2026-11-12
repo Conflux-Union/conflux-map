@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.core.waypoint;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
@@ -205,6 +206,43 @@ class WaypointStoreTest {
     }
 
     @Test
+    void temporaryWaypointsStayInMemoryButNeverEnterThePersistenceSnapshot() {
+        final Waypoint home = waypoint("Home", "", 1.0);
+        final WaypointStore store = new WaypointStore(WORLD, List.of(home));
+        final Waypoint stop = waypoint("Stop", "", 2.0);
+        stop.type = Waypoint.Type.TEMPORARY;
+        store.add(stop);
+
+        assertEquals(List.of("Home", "Stop"), names(store));
+        assertEquals(List.of("Home"), stateNames(store));
+    }
+
+    @Test
+    void convertingBetweenNormalAndTemporaryMovesTheWaypointAcrossThePersistenceBoundary() {
+        final Waypoint home = waypoint("Home", "", 1.0);
+        final WaypointStore store = new WaypointStore(WORLD, List.of(home));
+
+        final Waypoint toTemporary = store.list().get(0);
+        toTemporary.type = Waypoint.Type.TEMPORARY;
+        store.update(toTemporary);
+        assertTrue(store.state().waypoints().isEmpty());
+
+        final Waypoint toNormal = store.list().get(0);
+        toNormal.type = Waypoint.Type.NORMAL;
+        store.update(toNormal);
+        assertEquals(List.of("Home"), stateNames(store));
+    }
+
+    @Test
+    void temporaryWaypointsInAnInitialListNeverMaterialize() {
+        final Waypoint stop = waypoint("Stop", "Bases", 1.0);
+        stop.type = Waypoint.Type.TEMPORARY;
+        final WaypointStore store = new WaypointStore(WORLD, List.of(stop));
+
+        assertTrue(store.list().isEmpty());
+    }
+
+    @Test
     void dataViewSnapshotContainsImmutableValuesOnly() {
         final Waypoint waypoint = waypoint("Home", "Bases", 10.0);
         final WaypointStore store = new WaypointStore(WORLD, List.of(waypoint));
@@ -231,5 +269,9 @@ class WaypointStoreTest {
 
     private static List<String> names(final WaypointStore store) {
         return store.list().stream().map(waypoint -> waypoint.name).toList();
+    }
+
+    private static List<String> stateNames(final WaypointStore store) {
+        return store.state().waypoints().stream().map(waypoint -> waypoint.name).toList();
     }
 }
