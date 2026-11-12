@@ -159,8 +159,49 @@ public final class WaypointMarkerRenderer {
         return SHARED_OUTLINE;
     }
 
-    /** Two-tone geometry stays readable over every user-selected waypoint color. */
-    private static void drawHeightBadge(
+    /** Geometry output for {@link #emitHeightBadge}, so any submission channel can host the badge. */
+    public interface HeightBadgeConsumer {
+        void rect(float x, float y, float width, float height, int color);
+
+        void triangle(float x0, float y0, float x1, float y1, float x2, float y2, int color);
+    }
+
+    /**
+     * Emits the height badge centered on {@code (centerX, centerY)}: a square for LEVEL,
+     * an outline-plus-fill triangle pointing along the relation otherwise. Shared by the
+     * map markers and both in-world label flavors; NONE emits nothing.
+     */
+    public static void emitHeightBadge(
+        final WaypointVerticalRelation relation,
+        final float centerX,
+        final float centerY,
+        final float alpha,
+        final HeightBadgeConsumer out
+    ) {
+        if (relation == WaypointVerticalRelation.NONE) {
+            return;
+        }
+        final int outline = withAlpha(HEIGHT_BADGE_OUTLINE, alpha);
+        final int fill = withAlpha(HEIGHT_BADGE_FILL, alpha);
+        if (relation == WaypointVerticalRelation.LEVEL) {
+            out.rect(centerX - 2.5f, centerY - 2.5f, 5f, 5f, outline);
+            out.rect(centerX - 1.5f, centerY - 1.5f, 3f, 3f, fill);
+            return;
+        }
+        final boolean above = relation == WaypointVerticalRelation.ABOVE;
+        final float tipY = above ? centerY - 2.5f : centerY + 2.5f;
+        final float baseY = above ? centerY + 2f : centerY - 2f;
+        out.triangle(centerX, tipY, centerX - 2.5f, baseY, centerX + 2.5f, baseY, outline);
+        final float innerTipY = above ? centerY - 1.2f : centerY + 1.2f;
+        final float innerBaseY = above ? centerY + 1f : centerY - 1f;
+        out.triangle(centerX, innerTipY, centerX - 1.2f, innerBaseY, centerX + 1.2f, innerBaseY, fill);
+    }
+
+    /**
+     * The badge drawn straight onto a GUI matrix stack - the map markers and the item-icon
+     * HUD label flavor use this; {@code (x, y)} is the icon center.
+     */
+    public static void drawHeightBadge(
         final MatrixStack matrices,
         final WaypointVerticalRelation relation,
         final float x,
@@ -168,24 +209,20 @@ public final class WaypointMarkerRenderer {
         final float halfSize,
         final float alpha
     ) {
-        if (relation == WaypointVerticalRelation.NONE) {
-            return;
-        }
-        final float centerX = x - halfSize;
-        final float centerY = y - halfSize;
-        final int outline = withAlpha(HEIGHT_BADGE_OUTLINE, alpha);
-        final int fill = withAlpha(HEIGHT_BADGE_FILL, alpha);
-        if (relation == WaypointVerticalRelation.LEVEL) {
-            GuiShapes.fillRect(matrices, centerX - 2.5f, centerY - 2.5f, 5f, 5f, outline);
-            GuiShapes.fillRect(matrices, centerX - 1.5f, centerY - 1.5f, 3f, 3f, fill);
-            return;
-        }
-        final float tipY = relation == WaypointVerticalRelation.ABOVE ? centerY - 2.5f : centerY + 2.5f;
-        final float baseY = relation == WaypointVerticalRelation.ABOVE ? centerY + 2f : centerY - 2f;
-        GuiShapes.fillTriangle(matrices, centerX, tipY, centerX - 2.5f, baseY, centerX + 2.5f, baseY, outline);
-        final float innerTipY = relation == WaypointVerticalRelation.ABOVE ? centerY - 1.2f : centerY + 1.2f;
-        final float innerBaseY = relation == WaypointVerticalRelation.ABOVE ? centerY + 1f : centerY - 1f;
-        GuiShapes.fillTriangle(matrices, centerX, innerTipY, centerX - 1.2f, innerBaseY, centerX + 1.2f, innerBaseY, fill);
+        emitHeightBadge(relation, x - halfSize, y - halfSize, alpha, new HeightBadgeConsumer() {
+            @Override
+            public void rect(final float rx, final float ry, final float w, final float h, final int color) {
+                GuiShapes.fillRect(matrices, rx, ry, w, h, color);
+            }
+
+            @Override
+            public void triangle(
+                final float x0, final float y0, final float x1, final float y1,
+                final float x2, final float y2, final int color
+            ) {
+                GuiShapes.fillTriangle(matrices, x0, y0, x1, y1, x2, y2, color);
+            }
+        });
     }
 
     /**

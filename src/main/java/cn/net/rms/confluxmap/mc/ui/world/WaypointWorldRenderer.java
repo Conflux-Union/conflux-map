@@ -10,6 +10,7 @@ import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
 import cn.net.rms.confluxmap.mc.render.WorldMatrices;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import java.util.ArrayList;
@@ -208,6 +209,9 @@ public final class WaypointWorldRenderer {
                     final float progress = updateLabelAnimation(waypoint.id(), targeted, animationDeltaSeconds);
                     final UUID playerId = serverPlayerRadar.isHighlighted(waypoint.id())
                         ? waypoint.id() : null;
+                    // Player Y, not camera Y: the 2-block threshold must not drift with eye height.
+                    final WaypointVerticalRelation verticalRelation =
+                        WaypointVerticalRelation.between(waypoint.y(), player.y());
                     if (playerId != null
                         || !WaypointMarkerRenderer.itemIcon(waypoint.iconItemId()).isEmpty()) {
                         itemLabels.add(new WaypointItemHudRenderer.Label(
@@ -219,7 +223,8 @@ public final class WaypointWorldRenderer {
                                 candidate.selected(), labelSelection.hasHighlight()
                             ) * playerHighlightAlpha(waypoint, currentDimension),
                             candidate.selected(),
-                            playerId
+                            playerId,
+                            verticalRelation
                         ));
                         continue;
                     }
@@ -228,7 +233,8 @@ public final class WaypointWorldRenderer {
                         waypoint, renderDistance, labelProjectionDistance, progress,
                         highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight())
                             * playerHighlightAlpha(waypoint, currentDimension),
-                        candidate.selected()
+                        candidate.selected(),
+                        verticalRelation
                     );
                 }
                 labelPass.endLabels();
