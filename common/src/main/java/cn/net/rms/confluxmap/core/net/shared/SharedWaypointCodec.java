@@ -747,6 +747,10 @@ public final class SharedWaypointCodec {
         switch (type) {
             case NORMAL -> out.writeByte(0);
             case DEATH -> out.writeByte(1);
+            // A silent fall-through would write no byte and corrupt the stream.
+            case TEMPORARY -> throw new SharedWaypointProtocolException(
+                "temporary waypoints are never shared"
+            );
         }
     }
 

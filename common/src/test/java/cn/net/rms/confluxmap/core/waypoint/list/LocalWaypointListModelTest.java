@@ -133,6 +133,23 @@ class LocalWaypointListModelTest {
     }
 
     @Test
+    void temporaryDraftCreatesInMemoryOnlyRowAndTypeFlipsCrossTheBoundary() {
+        assertTrue(model.createWaypoint(new EditDraft(
+            "Pin", DimensionId.OVERWORLD, 1, 2, 3, 0xFF00FF00, Waypoint.Type.TEMPORARY,
+            "", "", false, null, ""
+        )));
+        assertEquals(Waypoint.Type.TEMPORARY, model.rowById(idOf("Pin")).type());
+        assertTrue(store.list().stream().anyMatch(waypoint -> waypoint.name.equals("Pin")));
+        assertTrue(store.state().waypoints().stream().noneMatch(waypoint -> waypoint.name.equals("Pin")));
+
+        assertTrue(model.updateWaypoint(model.rowById(idOf("Pin")), new EditDraft(
+            "Pin", DimensionId.OVERWORLD, 1, 2, 3, 0xFF00FF00, Waypoint.Type.NORMAL,
+            "", "", false, null, ""
+        )));
+        assertTrue(store.state().waypoints().stream().anyMatch(waypoint -> waypoint.name.equals("Pin")));
+    }
+
+    @Test
     void readOnlyStoreDeniesEverythingWithReasonKey() {
         final Waypoint original = waypoint("Locked", "", true);
         final WaypointStore readOnly = new WaypointStore(WORLD, new WaypointStore.State(

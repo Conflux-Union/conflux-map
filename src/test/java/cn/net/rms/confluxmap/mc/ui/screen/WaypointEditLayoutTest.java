@@ -125,6 +125,16 @@ final class WaypointEditLayoutTest {
     }
 
     @Test
+    void localSetRowSplitsIntoCyclerAndTemporaryToggle() {
+        assertEquals(WaypointEditLayout.FORM_WIDTH,
+            WaypointEditLayout.SET_SELECTOR_WIDTH + WaypointEditLayout.OPTION_GAP
+                + WaypointEditLayout.TEMPORARY_WIDTH,
+            "local set row");
+        assertEquals(154, WaypointEditLayout.SET_SELECTOR_WIDTH);
+        assertEquals(68, WaypointEditLayout.TEMPORARY_WIDTH);
+    }
+
+    @Test
     void everyRowSpansTheSameFormWidth() {
         final int w = WaypointEditLayout.FORM_WIDTH;
         assertEquals(w, WaypointEditLayout.COORD_WIDTH * 3 + WaypointEditLayout.COORD_GAP * 2,

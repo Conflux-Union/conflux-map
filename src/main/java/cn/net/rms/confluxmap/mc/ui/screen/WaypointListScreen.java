@@ -1901,8 +1901,28 @@ public final class WaypointListScreen extends ConfluxScreen {
                 WaypointVerticalRelation.NONE
             );
             final int maxNameWidth = Math.max(24, nameRight() - nameX(row.indented()));
-            final String name = this.textRenderer.trimToWidth(info.name(), maxNameWidth);
+            final String temporaryTag = info.row().type() == Waypoint.Type.TEMPORARY
+                ? WaypointMarkerRenderer.temporaryTag()
+                : "";
+            // Reserve the half-height tag's visual width so the trimmed name never slides under it.
+            final int reservedTagWidth = temporaryTag.isEmpty()
+                ? 0
+                : (this.textRenderer.getWidth(temporaryTag) + 1) / 2 + 2;
+            final String name = this.textRenderer.trimToWidth(
+                info.name(), maxNameWidth - reservedTagWidth
+            );
             draw.drawTextWithShadow(this.textRenderer, name, nameX(row.indented()), info.y() + 4, 0xFFFFFFFF);
+            if (!temporaryTag.isEmpty()) {
+                matrices.push();
+                matrices.translate(
+                    nameX(row.indented()) + this.textRenderer.getWidth(name) + 2f,
+                    info.y() + 4f,
+                    0f
+                );
+                matrices.scale(0.5f, 0.5f, 1f);
+                draw.drawTextWithShadow(this.textRenderer, temporaryTag, 0f, 0f, 0xFFAAAAAA);
+                matrices.pop();
+            }
             // The preprocessor's method mapping for this call misses chained accessor
             // arguments, so keep the argument a plain local like every other call site.
             final String secondaryText = info.row().secondaryText();

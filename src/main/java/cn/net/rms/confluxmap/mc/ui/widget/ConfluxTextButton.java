@@ -188,6 +188,9 @@ public class ConfluxTextButton extends ButtonWidget {
     }
 
     private void drawIcon(final GuiDraw draw) {
+        // The icon quad draws immediately while button bodies (self-drawn fills or the vanilla
+        // sprite) stay buffered; without the flush the body paints later and dims the icon.
+        draw.flushGui();
         final ConfluxMapClient app = ConfluxMapClient.get();
         final UiResourceTheme theme = app == null ? null : app.uiResourceTheme();
         final UiIcon resolved = theme == null ? UiIcon.monochrome(icon) : theme.icon(icon);

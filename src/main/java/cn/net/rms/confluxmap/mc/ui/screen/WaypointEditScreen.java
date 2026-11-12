@@ -44,9 +44,10 @@ import net.minecraft.text.Text;
  * {@link #dimensionId}), cross-dimension visibility with an optional Y override
  * for the linked-dimension view, a color palette, and a group selector - the
  * local store's waypoint sets or the shared server's groups. The dimension
- * itself and the normal/death type are fixed at creation and not editable
- * here, per the implementation brief. Saves go through the unified list
- * models; only the archived-world store form writes the store directly.
+ * itself and the normal/death type are fixed at creation; the temporary
+ * lifecycle is the one editable exception, via the toggle beside the local
+ * set cycler. Saves go through the unified list models; only the
+ * archived-world store form writes the store directly.
  */
 public final class WaypointEditScreen extends ConfluxScreen {
     private enum CreateTarget { LOCAL, PUBLIC, CHAT }
@@ -118,6 +119,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private String draftGroup;
     private String draftMarkerLabel = "";
     private String draftCrossDimensionY = "";
+    private boolean temporary;
     private WaypointMarkerMode markerMode = WaypointMarkerMode.TEXT;
     private boolean deleteConfirmationPending;
     private String errorKey;
@@ -158,6 +160,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         this.initialVisible = visible;
         this.crossDimensionVisible = crossDimensionVisible;
         this.createTarget = createTarget;
+        this.temporary = type == Waypoint.Type.TEMPORARY;
         this.openedFromHotkey = openedFromHotkey;
         this.editingRow = editingRow;
         final ConfluxMapClient app = ConfluxMapClient.get();
@@ -416,14 +419,35 @@ public final class WaypointEditScreen extends ConfluxScreen {
         if (createTarget == CreateTarget.LOCAL) {
             setNames = localSetNames();
             selectedSetIndex = Math.max(0, setNames.indexOf(draftGroup));
+            // DEATH keeps the full-width cycler (its type is fixed at creation);
+            // every other local form splits the row with the temporary toggle.
+            final boolean typeSwitchable = type != Waypoint.Type.DEATH;
+            final int setWidth = typeSwitchable
+                ? WaypointEditLayout.SET_SELECTOR_WIDTH
+                : WaypointEditLayout.FORM_WIDTH;
             setButton = addDrawableChild(Widgets.button(
                 centerX - WaypointEditLayout.FORM_WIDTH / 2,
                 rows.groupY(),
-                WaypointEditLayout.FORM_WIDTH,
+                setWidth,
                 FIELD_HEIGHT,
                 selectedSetLabel(),
                 button -> selectNextSet()
             ));
+            if (typeSwitchable) {
+                final ButtonWidget temporaryButton = addDrawableChild(Widgets.button(
+                    centerX - WaypointEditLayout.FORM_WIDTH / 2 + setWidth
+                        + WaypointEditLayout.OPTION_GAP,
+                    rows.groupY(),
+                    WaypointEditLayout.TEMPORARY_WIDTH,
+                    FIELD_HEIGHT,
+                    temporaryLabel(),
+                    button -> {
+                        temporary = !temporary;
+                        button.setMessage(temporaryLabel());
+                    }
+                ));
+                setHoverTooltip(temporaryButton, "confluxmap.screen.waypoint.temporary_hint");
+            }
         } else if (createTarget == CreateTarget.PUBLIC) {
             sharedGroups = sharedModel.groupsForDisplay();
             selectedGroupIndex = Math.max(0, indexOfGroupKey(draftGroup));
@@ -800,9 +824,27 @@ public final class WaypointEditScreen extends ConfluxScreen {
 
     private Text selectedSetLabel() {
         final String name = selectedSetName();
-        return name.isEmpty()
-            ? Texts.translatable("confluxmap.screen.waypoint.set_default")
-            : Text.of(name);
+        if (name.isEmpty()) {
+            return Texts.translatable("confluxmap.screen.waypoint.set_default");
+        }
+        return Text.of(trimToSetButtonWidth(name));
+    }
+
+    /** Names wider than the split cycler would render into the toggle; trim with an ellipsis. */
+    private String trimToSetButtonWidth(final String name) {
+        final int maxWidth = WaypointEditLayout.SET_SELECTOR_WIDTH - 8;
+        if (this.textRenderer.getWidth(name) <= maxWidth) {
+            return name;
+        }
+        final String ellipsis = "...";
+        // Plain locals on both sides of the seam: injected //$$ lines are not name-mapped.
+        final int budget = maxWidth - this.textRenderer.getWidth(ellipsis);
+        //#if MC>=260100
+        //$$ final String trimmed = this.font.plainSubstrByWidth(name, budget);
+        //#else
+        final String trimmed = this.textRenderer.trimToWidth(name, budget);
+        //#endif
+        return trimmed + ellipsis;
     }
 
     private void selectNextSharedGroup() {
@@ -958,7 +1000,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
             editingId == null ? UUID.randomUUID() : editingId,
             values.name(), dimensionId, values.x(), values.y(), values.z(),
             colorSelection.selected(), groupKey,
-            initialVisible, crossDimensionVisible, type, createdAtEpochMs
+            initialVisible, crossDimensionVisible, draftType(), createdAtEpochMs
         );
         waypoint.crossDimensionY = crossDimensionY;
         waypoint.iconItemId = iconItemId;
@@ -1026,7 +1068,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         }
         final EditDraft draft = new EditDraft(
             values.name(), dimensionId, values.x(), values.y(), values.z(),
-            colorSelection.selected(), type, iconItemId, markerLabel,
+            colorSelection.selected(), draftType(), iconItemId, markerLabel,
             crossDimensionVisible, crossDimensionY, groupKey
         );
         if (createTarget == CreateTarget.PUBLIC) {
@@ -1261,5 +1303,17 @@ public final class WaypointEditScreen extends ConfluxScreen {
                 crossDimensionVisible ? "confluxmap.value.on" : "confluxmap.value.off"
             ).getString()
         );
+    }
+
+    private Text temporaryLabel() {
+        return Texts.translatable(
+            "confluxmap.screen.waypoint.temporary",
+            Texts.translatable(temporary ? "confluxmap.value.on" : "confluxmap.value.off").getString()
+        );
+    }
+
+    /** The draft's type: the creation type, or TEMPORARY while the toggle is on. */
+    private Waypoint.Type draftType() {
+        return temporary ? Waypoint.Type.TEMPORARY : type;
     }
 }

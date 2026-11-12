@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.ui.world;
 
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
@@ -133,6 +134,23 @@ final class WaypointLabelPainter {
                 matrices, panel.name(), textX, WaypointLabelStyle.LABEL_NAME_TEXT_Y,
                 WaypointLabelStyle.withAlpha(WaypointLabelStyle.LABEL_NAME_COLOR, textAlpha)
             );
+            if (!panel.nameSuffix().isEmpty()) {
+                // Plain locals: the mapping engine misses chained accessor args (see WaypointListScreen).
+                final String panelName = panel.name();
+                final int panelNameWidth = textRenderer.getWidth(panelName);
+                matrices.push();
+                matrices.translate(
+                    textX + panelNameWidth + 1f,
+                    WaypointLabelStyle.LABEL_NAME_TEXT_Y,
+                    0f
+                );
+                matrices.scale(0.5f, 0.5f, 1f);
+                sink.text(
+                    matrices, panel.nameSuffix(), 0f, 0f,
+                    WaypointLabelStyle.withAlpha(WaypointLabelStyle.LABEL_DISTANCE_COLOR, textAlpha)
+                );
+                matrices.pop();
+            }
             sink.text(
                 matrices, panel.distanceText(), textX, WaypointLabelStyle.LABEL_DISTANCE_TEXT_Y,
                 WaypointLabelStyle.withAlpha(WaypointLabelStyle.LABEL_DISTANCE_COLOR, textAlpha)
@@ -180,6 +198,26 @@ final class WaypointLabelPainter {
         );
         matrices.pop();
         drawHeightBadge(verticalRelation, halfSize, alpha, matrices, sink);
+        // Same "T" badge as the map markers, via the sink: this plate shares no GUI primitives.
+        if (waypoint.type() == Waypoint.Type.TEMPORARY && waypoint.local()) {
+            final float badgeHalf = WaypointMarkerRenderer.TEMPORARY_BADGE_SIZE / 2f;
+            sink.rect(
+                matrices, halfSize - badgeHalf, -halfSize - badgeHalf,
+                WaypointMarkerRenderer.TEMPORARY_BADGE_SIZE,
+                WaypointMarkerRenderer.TEMPORARY_BADGE_SIZE,
+                WaypointLabelStyle.withAlpha(WaypointMarkerRenderer.TEMPORARY_BADGE_OUTLINE, alpha)
+            );
+            final int letterWidth = textRenderer.getWidth(WaypointMarkerRenderer.TEMPORARY_BADGE_LETTER);
+            matrices.push();
+            matrices.translate(halfSize, -halfSize, 0f);
+            matrices.scale(0.5f, 0.5f, 1f);
+            sink.text(
+                matrices, WaypointMarkerRenderer.TEMPORARY_BADGE_LETTER,
+                -letterWidth / 2f, -textRenderer.fontHeight / 2f,
+                WaypointLabelStyle.withAlpha(WaypointMarkerRenderer.TEMPORARY_BADGE_TEXT, alpha)
+            );
+            matrices.pop();
+        }
     }
 
     /**
