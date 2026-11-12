@@ -218,17 +218,17 @@ final class WaypointHudProjectionTest {
     //$$ }
     //$$
     //$$ @Test
-    //$$ void submittedHudOmitsTheVerticalRelationBadge() throws Exception {
+    //$$ void submittedHudDrawsTheVerticalRelationBadge() throws Exception {
     //$$     final String source = Files.readString(preprocessedLabelPainterSource());
     //$$     final String drawIcon = methodBody(source, "\n    private void drawIcon(");
     //$$
-    //$$     assertFalse(
+    //$$     assertTrue(
     //$$         drawIcon.contains("WaypointVerticalRelation"),
-    //$$         "the in-world waypoint HUD must not carry vertical-relation decoration state"
+    //$$         "the in-world waypoint icon must keep receiving the vertical relation"
     //$$     );
-    //$$     assertFalse(
-    //$$         drawIcon.contains("submitHeightBadge"),
-    //$$         "the in-world waypoint HUD must not draw the triangular height badge"
+    //$$     assertTrue(
+    //$$         drawIcon.contains("drawHeightBadge("),
+    //$$         "the in-world waypoint HUD must draw the vertical-relation height badge"
     //$$     );
     //$$ }
     //#endif
