@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.ui.world;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
@@ -25,6 +26,11 @@ final class WaypointLabelPainter {
 
         /** One flat colored quad in label space, after the billboard transform. */
         void rect(MatrixStack matrices, float x, float y, float width, float height, int color);
+
+        /** One flat colored triangle in label space, after the billboard transform. */
+        void triangle(
+            MatrixStack matrices, float x0, float y0, float x1, float y1, float x2, float y2, int color
+        );
 
         /** One see-through text run in label space, after the billboard transform. */
         void text(MatrixStack matrices, String text, float x, float y, int color);
@@ -50,6 +56,7 @@ final class WaypointLabelPainter {
         final float animationProgress,
         final float visibilityAlpha,
         final boolean selected,
+        final WaypointVerticalRelation verticalRelation,
         final Sink sink
     ) {
         final float nearFade = (float) MathHelper.clamp(
@@ -117,7 +124,7 @@ final class WaypointLabelPainter {
         drawIcon(
             matrices, textRenderer, waypoint, iconHalfSize,
             nearFade * labelOpacity * visibilityAlpha,
-            selected, sink
+            selected, verticalRelation, sink
         );
 
         if (panel.textReveal() > 0.01f) {
@@ -159,6 +166,7 @@ final class WaypointLabelPainter {
         final float halfSize,
         final float alpha,
         final boolean selected,
+        final WaypointVerticalRelation verticalRelation,
         final Sink sink
     ) {
         final float size = halfSize * 2f;
@@ -189,6 +197,7 @@ final class WaypointLabelPainter {
             )
         );
         matrices.pop();
+        drawHeightBadge(verticalRelation, halfSize, alpha, matrices, sink);
         // Same "T" badge as the map markers, via the sink: this plate shares no GUI primitives.
         if (waypoint.type() == Waypoint.Type.TEMPORARY && waypoint.local()) {
             final float badgeHalf = WaypointMarkerRenderer.TEMPORARY_BADGE_SIZE / 2f;
@@ -209,5 +218,38 @@ final class WaypointLabelPainter {
             );
             matrices.pop();
         }
+    }
+
+    /**
+     * The label icon's height badge at its top-left corner; one geometry source with the
+     * map markers via {@link WaypointMarkerRenderer#emitHeightBadge}.
+     */
+    static void drawHeightBadge(
+        final WaypointVerticalRelation relation,
+        final float halfSize,
+        final float alpha,
+        final MatrixStack matrices,
+        final Sink sink
+    ) {
+        if (relation == WaypointVerticalRelation.NONE) {
+            return;
+        }
+        WaypointMarkerRenderer.emitHeightBadge(
+            relation, -halfSize, -halfSize, alpha,
+            new WaypointMarkerRenderer.HeightBadgeConsumer() {
+                @Override
+                public void rect(final float x, final float y, final float w, final float h, final int color) {
+                    sink.rect(matrices, x, y, w, h, color);
+                }
+
+                @Override
+                public void triangle(
+                    final float x0, final float y0, final float x1, final float y1,
+                    final float x2, final float y2, final int color
+                ) {
+                    sink.triangle(matrices, x0, y0, x1, y1, x2, y2, color);
+                }
+            }
+        );
     }
 }

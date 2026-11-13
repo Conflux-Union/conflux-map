@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -56,6 +57,25 @@ final class WaypointItemHudRendererTest {
         );
 
         assertEquals(playerId, player.playerId());
+    }
+
+    @Test
+    void labelsCarryTheVerticalRelationForTheBadge() {
+        final WaypointItemHudRenderer.Label base = label();
+
+        final WaypointItemHudRenderer.Label below = new WaypointItemHudRenderer.Label(
+            base.waypoint(),
+            base.distance3d(),
+            base.projectionDistance(),
+            base.animationProgress(),
+            base.visibilityAlpha(),
+            base.selected(),
+            null,
+            WaypointVerticalRelation.BELOW
+        );
+
+        assertEquals(WaypointVerticalRelation.BELOW, below.verticalRelation());
+        assertEquals(WaypointVerticalRelation.NONE, base.verticalRelation());
     }
 
     @Test

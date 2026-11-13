@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.world;
 
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
 //#if MC<260100
 import cn.net.rms.confluxmap.mixin.GameRendererAccessor;
 //#endif
@@ -266,6 +267,9 @@ public final class WaypointItemHudRenderer {
                     draw.drawItemIcon(client, stack, 0f, 0f, iconLocalSize);
                 }
             }
+            WaypointMarkerRenderer.drawHeightBadge(
+                draw.matrices(), label.verticalRelation(), 0f, 0f, iconLocalSize / 2f, plateAlpha
+            );
             WaypointMarkerRenderer.drawTemporaryBadge(draw, textRenderer, waypoint, 0f, 0f, innerHalf, plateAlpha);
 
             if (panel.textReveal() > 0.01f) {
@@ -417,7 +421,8 @@ public final class WaypointItemHudRenderer {
         float animationProgress,
         float visibilityAlpha,
         boolean selected,
-        UUID playerId
+        UUID playerId,
+        WaypointVerticalRelation verticalRelation
     ) {
         public Label(
             final WaypointRenderEntry waypoint,
@@ -429,7 +434,24 @@ public final class WaypointItemHudRenderer {
         ) {
             this(
                 waypoint, distance3d, projectionDistance,
-                animationProgress, visibilityAlpha, selected, null
+                animationProgress, visibilityAlpha, selected, null,
+                WaypointVerticalRelation.NONE
+            );
+        }
+
+        public Label(
+            final WaypointRenderEntry waypoint,
+            final double distance3d,
+            final double projectionDistance,
+            final float animationProgress,
+            final float visibilityAlpha,
+            final boolean selected,
+            final UUID playerId
+        ) {
+            this(
+                waypoint, distance3d, projectionDistance,
+                animationProgress, visibilityAlpha, selected, playerId,
+                WaypointVerticalRelation.NONE
             );
         }
     }

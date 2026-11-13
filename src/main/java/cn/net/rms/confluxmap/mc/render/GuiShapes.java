@@ -424,7 +424,11 @@ public final class GuiShapes {
         //$$ mesh.vertex(model, x0, y0, 0).color(r, g, b, a).next();
         //$$ mesh.drawGui(RenderPipelines.GUI);
         //#else
+        // Callers pass either winding, and this immediate path inherits the global cull state
+        // (enabled during HUD passes). Disable it for the draw like the disk fan below does.
+        RenderSystem.disableCull();
         mesh.draw();
+        RenderSystem.enableCull();
         //#endif
     }
 

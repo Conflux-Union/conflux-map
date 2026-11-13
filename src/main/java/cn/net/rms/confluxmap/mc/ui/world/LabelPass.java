@@ -7,10 +7,12 @@ import cn.net.rms.confluxmap.mc.render.WorldMatrices;
 
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
 import com.mojang.blaze3d.systems.RenderSystem;
 //#if MC>=260200
 //$$ import net.fabricmc.fabric.api.client.rendering.v1.FabricOrderedSubmitNodeCollector;
 //$$ import net.fabricmc.fabric.api.client.rendering.v1.SubmitRenderPhases;
+//$$ import com.mojang.blaze3d.vertex.VertexConsumer;
 //$$ import net.minecraft.client.renderer.feature.CustomFeatureRenderer;
 //$$ import net.minecraft.client.renderer.feature.TextFeatureRenderer;
 //$$ import net.minecraft.client.renderer.rendertype.RenderTypes;
@@ -102,12 +104,13 @@ final class LabelPass implements WaypointLabelPainter.Sink {
         final double projectionDistance,
         final float animationProgress,
         final float visibilityAlpha,
-        final boolean selected
+        final boolean selected,
+        final WaypointVerticalRelation verticalRelation
     ) {
         labelPainter.drawLabel(
             frame.matrices, frame.cameraPos, worldX, worldY, worldZ,
             waypoint, distance3d, projectionDistance, animationProgress,
-            visibilityAlpha, selected, this
+            visibilityAlpha, selected, verticalRelation, this
         );
     }
 
@@ -139,6 +142,38 @@ final class LabelPass implements WaypointLabelPainter.Sink {
         //$$ submitRect(matrices, x, y, width, height, color);
         //#else
         GuiShapes.fillRect3D(matrices, x, y, width, height, color);
+        //#endif
+    }
+
+    /**
+     * The height badge's triangles: immediate GuiShapes before 26.2, recorded like the
+     * plates from 26.2 on. 26.3 dropped the plate's see-through render type, so its
+     * fallback is debugQuads (position+color, unculled, depth-tested). Both windings are
+     * emitted wherever the render type's culling is unknown.
+     */
+    @Override
+    public void triangle(
+        final MatrixStack matrices,
+        final float x0, final float y0,
+        final float x1, final float y1,
+        final float x2, final float y2,
+        final int color
+    ) {
+        //#if MC>=260300
+        //$$ plateSubmits.submitCustomGeometry(
+        //$$     matrices, RenderTypes.debugQuads(),
+        //$$     (pose, vertices) -> emitWoundTriangle(pose, vertices, x0, y0, x1, y1, x2, y2, color)
+        //$$ );
+        //#elseif MC>=260200
+        //$$ plateSubmits.submitCustom(
+        //$$     SubmitRenderPhases.ALWAYS_ON_TOP,
+        //$$     new CustomFeatureRenderer.Submit(
+        //$$         matrices.last().copy(), RenderTypes.textBackgroundSeeThrough(),
+        //$$         (pose, vertices) -> emitWoundTriangle(pose, vertices, x0, y0, x1, y1, x2, y2, color)
+        //$$     )
+        //$$ );
+        //#else
+        GuiShapes.fillTriangle(matrices, x0, y0, x1, y1, x2, y2, color);
         //#endif
     }
 
@@ -175,6 +210,25 @@ final class LabelPass implements WaypointLabelPainter.Sink {
     }
 
     //#if MC>=260200
+    //$$ /** One triangle as two degenerate quads with opposite winding (QUADS topology). */
+    //$$ private static void emitWoundTriangle(
+    //$$     final PoseStack.Pose pose,
+    //$$     final VertexConsumer vertices,
+    //$$     final float x0, final float y0,
+    //$$     final float x1, final float y1,
+    //$$     final float x2, final float y2,
+    //$$     final int color
+    //$$ ) {
+    //$$     vertices.addVertex(pose, x0, y0, 0f).setColor(color).setLight(WaypointLabelStyle.LABEL_LIGHT);
+    //$$     vertices.addVertex(pose, x1, y1, 0f).setColor(color).setLight(WaypointLabelStyle.LABEL_LIGHT);
+    //$$     vertices.addVertex(pose, x2, y2, 0f).setColor(color).setLight(WaypointLabelStyle.LABEL_LIGHT);
+    //$$     vertices.addVertex(pose, x2, y2, 0f).setColor(color).setLight(WaypointLabelStyle.LABEL_LIGHT);
+    //$$     vertices.addVertex(pose, x2, y2, 0f).setColor(color).setLight(WaypointLabelStyle.LABEL_LIGHT);
+    //$$     vertices.addVertex(pose, x1, y1, 0f).setColor(color).setLight(WaypointLabelStyle.LABEL_LIGHT);
+    //$$     vertices.addVertex(pose, x0, y0, 0f).setColor(color).setLight(WaypointLabelStyle.LABEL_LIGHT);
+    //$$     vertices.addVertex(pose, x0, y0, 0f).setColor(color).setLight(WaypointLabelStyle.LABEL_LIGHT);
+    //$$ }
+    //$$
     //$$ private void submitRect(
     //$$     final PoseStack matrices,
     //$$     final float x,
