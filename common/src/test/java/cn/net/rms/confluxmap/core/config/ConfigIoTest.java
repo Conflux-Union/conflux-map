@@ -93,6 +93,26 @@ class ConfigIoTest {
     }
 
     @Test
+    void radarEntityTypeVisibilityRoundTripsCopiesAndNormalizes(@TempDir final Path tmp)
+        throws IOException {
+        final ConfigIo io = new ConfigIo(tmp.resolve("config.json"), LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        config.radarEntityTypeVisibility.put("minecraft:creeper", true);
+        config.radarEntityTypeVisibility.put("minecraft:bat", false);
+
+        io.save(config);
+
+        final ConfluxConfig loaded = io.load();
+        assertEquals(Boolean.TRUE, loaded.radarEntityTypeVisibility.get("minecraft:creeper"));
+        assertEquals(Boolean.FALSE, loaded.radarEntityTypeVisibility.get("minecraft:bat"));
+        assertEquals(2, config.copy().radarEntityTypeVisibility.size());
+
+        loaded.radarEntityTypeVisibility = null;
+        loaded.normalize();
+        assertTrue(loaded.radarEntityTypeVisibility.isEmpty());
+    }
+
+    @Test
     void explicitFeatureOptOutsSurviveRoundTrip(@TempDir final Path tmp) throws IOException {
         final ConfigIo io = new ConfigIo(tmp.resolve("config.json"), LOGGER);
         final ConfluxConfig config = new ConfluxConfig();

@@ -545,6 +545,16 @@ final class ConfigRows {
                     () -> config.radarShowOther, v -> config.radarShowOther = v,
                     radarControlsActive, radarTooltipKey
                 );
+                y = addActionRow(
+                    y,
+                    "confluxmap.config.radar.entity_visibility",
+                    () -> MinecraftAccess.setScreen(
+                        MinecraftClient.getInstance(),
+                        new RadarEntityVisibilityScreen(screen, config, configIo)
+                    ),
+                    radarControlsActive,
+                    radarTooltipKey
+                );
                 y = addToggleRow(
                     y, "confluxmap.config.radar.show_player_names",
                     () -> config.radarShowPlayerNames, v -> config.radarShowPlayerNames = v,

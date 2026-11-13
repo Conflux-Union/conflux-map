@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.radar;
 
+import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.radar.RadarCategory;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
@@ -143,7 +144,7 @@ public final class EntityRadarScanner {
         return serverAllowed ? current : List.of();
     }
 
-    static boolean isRadarCandidate(final Class<? extends Entity> entityClass) {
+    public static boolean isRadarCandidate(final Class<? extends Entity> entityClass) {
         if (AbstractDecorationEntity.class.isAssignableFrom(entityClass)) {
             return false;
         }
@@ -202,27 +203,50 @@ public final class EntityRadarScanner {
             final String name = category == RadarCategory.PLAYER ? entity.getName().getString() : null;
             raw.add(new RadarEntry(
                 entity.getX(), entity.getZ(), yDelta, category, name, entity.getId(), spectator,
-                category == RadarCategory.PLAYER ? entity.getUuid() : null
+                category == RadarCategory.PLAYER ? entity.getUuid() : null,
+                Regs.entityTypeId(entity.getType()).toString()
             ));
         }
 
         final RadarFilter filter = new RadarFilter(
-            config.radarShowPlayers, config.radarShowHostile, config.radarShowPassive, config.radarShowOther, config.radarMaxEntities
+            config.radarShowPlayers, config.radarShowHostile, config.radarShowPassive, config.radarShowOther,
+            config.radarMaxEntities, config.radarEntityTypeVisibility
         );
         return filter.apply(raw, ox, oz);
     }
 
     private static RadarCategory classify(final Entity entity) {
-        if (entity instanceof PlayerEntity) {
+        return classifyType(entity.getClass(), entity.getType().getSpawnGroup());
+    }
+
+    /**
+     * Registry-level twin of {@link #classify(Entity)}: buckets an entity type the same way a
+     * live scan buckets its instances, so the visibility-management screen can group types by
+     * the exact category toggle that governs them at runtime.
+     */
+    public static RadarCategory classifyType(
+        final Class<? extends Entity> entityClass,
+        final SpawnGroup group
+    ) {
+        if (PlayerEntity.class.isAssignableFrom(entityClass)) {
             return RadarCategory.PLAYER;
         }
-        if (!(entity instanceof MobEntity)) {
+        if (!MobEntity.class.isAssignableFrom(entityClass)) {
             return RadarCategory.OTHER;
         }
-        final SpawnGroup group = entity.getType().getSpawnGroup();
+        return group == SpawnGroup.MONSTER ? RadarCategory.HOSTILE : RadarCategory.PASSIVE;
+    }
+
+    /**
+     * World-free fallback for {@link #classifyType}: with no world to instantiate a probe
+     * in, types bucket by {@link SpawnGroup} alone. {@link SpawnGroup#MISC} mixes non-mobs
+     * with a few mob types (iron/snow golem, ender dragon) that live scans bucket as
+     * PASSIVE; this fallback lists those under OTHER.
+     */
+    public static RadarCategory classifySpawnGroup(final SpawnGroup group) {
         if (group == SpawnGroup.MONSTER) {
             return RadarCategory.HOSTILE;
         }
-        return RadarCategory.PASSIVE;
+        return group == SpawnGroup.MISC ? RadarCategory.OTHER : RadarCategory.PASSIVE;
     }
 }

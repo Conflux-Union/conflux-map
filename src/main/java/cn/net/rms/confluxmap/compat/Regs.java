@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.compat;
 
 import net.minecraft.block.Block;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.item.Item;
 import net.minecraft.util.Identifier;
@@ -120,6 +121,29 @@ public final class Regs {
         //#else
         return entityTypes().getId(type);
         //#endif
+    }
+
+    /**
+     * The concrete class {@code type}'s factory builds, from one throwaway instance —
+     * {@code getBaseClass()} is the {@code TypeFilter} section key and returns
+     * {@code Entity.class} for every type. Null when the type is feature-disabled or its
+     * factory refuses. Side effects are one constructor call: {@code create} ignores its
+     * {@code SpawnReason} and the probe never enters the world.
+     */
+    public static Class<? extends Entity> probeEntityClass(final EntityType<?> type, final World world) {
+        final Entity probe;
+        try {
+            //#if MC>=260100
+            //$$ probe = type.create(world, net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+            //#elseif MC>=12102
+            //$$ probe = type.create(world, net.minecraft.entity.SpawnReason.COMMAND);
+            //#else
+            probe = type.create(world);
+            //#endif
+        } catch (final RuntimeException e) {
+            return null;
+        }
+        return probe == null ? null : probe.getClass();
     }
 
     /** The registry identifier of {@code block}. */

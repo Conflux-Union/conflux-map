@@ -20,6 +20,8 @@ import java.util.UUID;
  * @param spectator true when the entity was in spectator game mode at scan time; the render
  *     layer draws such entries translucent instead of hiding them
  * @param playerId stable player identity, populated only for player entries
+ * @param entityType registry id of the scanned entity's type (e.g. {@code minecraft:creeper}),
+ *     used for per-type visibility overrides; null when the entry carries no type
  */
 public record RadarEntry(
     double x,
@@ -29,7 +31,8 @@ public record RadarEntry(
     String name,
     int entityId,
     boolean spectator,
-    UUID playerId
+    UUID playerId,
+    String entityType
 ) {
     public RadarEntry(
         final double x,
@@ -40,6 +43,19 @@ public record RadarEntry(
         final int entityId,
         final boolean spectator
     ) {
-        this(x, z, yDelta, category, name, entityId, spectator, null);
+        this(x, z, yDelta, category, name, entityId, spectator, null, null);
+    }
+
+    public RadarEntry(
+        final double x,
+        final double z,
+        final int yDelta,
+        final RadarCategory category,
+        final String name,
+        final int entityId,
+        final boolean spectator,
+        final UUID playerId
+    ) {
+        this(x, z, yDelta, category, name, entityId, spectator, playerId, null);
     }
 }

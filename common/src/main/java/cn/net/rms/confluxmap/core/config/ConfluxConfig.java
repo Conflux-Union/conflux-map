@@ -290,6 +290,13 @@ public final class ConfluxConfig {
     public boolean radarShowPassive = true;
     /** Dropped items, vehicles, projectiles, and defensive fallback targets. */
     public boolean radarShowOther = true;
+    /**
+     * Per-entity-type visibility overrides for the entity radar, keyed by registry id
+     * (e.g. {@code minecraft:creeper}). An absent key follows the category toggles
+     * above; {@code true}/{@code false} force that type shown/hidden regardless of
+     * its category toggle. The player type is managed by {@link #radarShowPlayers}.
+     */
+    public Map<String, Boolean> radarEntityTypeVisibility = new LinkedHashMap<>();
     public boolean radarShowPlayerNames = true;
     /**
      * Show player name labels on the minimap without holding the player-list key. The
@@ -515,6 +522,9 @@ public final class ConfluxConfig {
             sharedWaypointCrossDimensionYById == null
                 ? new LinkedHashMap<>()
                 : new LinkedHashMap<>(sharedWaypointCrossDimensionYById);
+        c.radarEntityTypeVisibility = radarEntityTypeVisibility == null
+            ? new LinkedHashMap<>()
+            : new LinkedHashMap<>(radarEntityTypeVisibility);
         c.hiddenSharedWaypointIds = hiddenSharedWaypointIds == null
             ? new LinkedHashSet<>()
             : new LinkedHashSet<>(hiddenSharedWaypointIds);
@@ -709,6 +719,12 @@ public final class ConfluxConfig {
         if (sharedWaypointCrossDimensionYById == null) {
             sharedWaypointCrossDimensionYById = new LinkedHashMap<>();
         }
+        if (radarEntityTypeVisibility == null) {
+            radarEntityTypeVisibility = new LinkedHashMap<>();
+        }
+        radarEntityTypeVisibility.entrySet().removeIf(
+            e -> e.getKey() == null || e.getValue() == null
+        );
         sharedWaypointCrossDimensionYById.values().removeIf(
             y -> y == null || !Double.isFinite(y)
         );
