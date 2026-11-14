@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.net.shared;
 
+import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.compat.PlayNetworking;
@@ -203,6 +204,11 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
     }
 
     public int negotiatedMinor() {
+        return stateMachine.negotiatedMinor();
+    }
+
+    /** Negotiated waypoints_v1 minor, the gate for the image channel too. */
+    public int negotiatedMinorForImages() {
         return stateMachine.negotiatedMinor();
     }
 
@@ -713,7 +719,30 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
             return;
         }
         notifyChanges(before, stateMachine.view());
+        prefetchImages(message);
         perform(action);
+    }
+
+    /** Hands non-empty image ids of the applied state to the image channel (minor-gated). */
+    private void prefetchImages(final SharedWaypointMessage message) {
+        final ConfluxMapClient root = ConfluxMapClient.get();
+        if (root == null || root.waypointImages() == null) {
+            return;
+        }
+        final List<String> imageIds = new ArrayList<>();
+        if (message instanceof final SnapshotS2C snapshot) {
+            for (final SharedWaypoint waypoint : snapshot.list()) {
+                if (!waypoint.imageId().isEmpty()) {
+                    imageIds.add(waypoint.imageId());
+                }
+            }
+        } else if (message instanceof final UpsertS2C upsert
+            && !upsert.waypoint().imageId().isEmpty()) {
+            imageIds.add(upsert.waypoint().imageId());
+        }
+        if (!imageIds.isEmpty()) {
+            root.waypointImages().ensureFetched(imageIds);
+        }
     }
 
     private void perform(final SharedWaypointClientState.Action action) {

@@ -685,5 +685,16 @@
   "confluxmap.screen.structure_candidates.bounds": "Radius / result count",
   "confluxmap.screen.structure_candidates.waypoint": "Add Waypoint",
   "confluxmap.screen.structure_candidates.invalid": "Enter valid search values",
-  "confluxmap.screen.structure_candidates.not_found": "No possible structures found in this area"
+  "confluxmap.screen.structure_candidates.not_found": "No possible structures found in this area",
+  "confluxmap.screen.waypoint.notes.button": "Notes…",
+  "confluxmap.screen.waypoint.notes.title": "Waypoint notes",
+  "confluxmap.screen.waypoint.notes.screenshot": "Screenshot",
+  "confluxmap.screen.waypoint.notes.paste": "Paste",
+  "confluxmap.screen.waypoint.notes.templates": "Templates…",
+  "confluxmap.screen.waypoint.notes.clear": "Clear",
+  "confluxmap.screen.waypoint.notes.done": "Done",
+  "confluxmap.screen.waypoint.notes.cancel": "Cancel",
+  "confluxmap.screen.waypoint.notes.loading": "Loading…",
+  "confluxmap.screen.waypoint.notes.error.paste": "No image on the clipboard",
+  "confluxmap.screen.waypoint.notes.error.invalid": "Description too long or unsafe"
 }

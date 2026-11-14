@@ -65,6 +65,8 @@ import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.ChunkLoadStateClient;
 import cn.net.rms.confluxmap.mc.net.MapSyncClient;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.mc.net.waypointimage.WaypointImageClient;
+import cn.net.rms.confluxmap.mc.ui.screen.WaypointCaptureCoordinator;
 import cn.net.rms.confluxmap.mc.platform.UnsupportedPlatformWarningNotifier;
 import cn.net.rms.confluxmap.mc.portal.PortalScanHandler;
 import cn.net.rms.confluxmap.mc.portal.PortalScanService;
@@ -146,6 +148,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private FullscreenMapViewState fullscreenMapViewState;
     private LayerSelector layerSelector;
     private WaypointService waypointService;
+    private WaypointImageClient waypointImages;
     private AnnotationService annotationService;
     private CrossWorldWaypointService crossWorldWaypoints;
     private WaypointRenderCatalog waypointRenderCatalog;
@@ -325,6 +328,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
             )
         );
         ClientTickEvents.END_CLIENT_TICK.register(ignored -> mapExportService.tick());
+        ClientTickEvents.END_CLIENT_TICK.register(ignored -> {
+            waypointImages.poll();
+            WaypointCaptureCoordinator.tick(client);
+        });
         xaeroImportService = new XaeroImportService(
             mapWorlds, regionCache, tileService, cacheRoot, new XaeroSnapshotBaker(client), ConfluxMapMod.LOGGER
         );
@@ -338,6 +345,17 @@ public final class ConfluxMapClient implements ClientModInitializer {
         clientNetworking.register();
         sharedWaypoints = new SharedWaypointClient(client, config, configIo);
         sharedWaypoints.register();
+        waypointImages = new WaypointImageClient(
+            client,
+            () -> {
+                final SessionGuard.Session session = sessionGuard.current();
+                return session.active()
+                    ? waypointRoot.resolve(session.world().serverId()).resolve("images")
+                    : null;
+            },
+            () -> sharedWaypoints.negotiatedMinorForImages()
+        );
+        waypointImages.register();
         groundTeleportService = new ClientGroundTeleportService(client, config, this::resolveUnknownLanding);
 
         predictionPaletteBuilder = new PredictionPaletteBuilder(client, predictionState, spriteColorSampler);
@@ -437,6 +455,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
         // RegionCacheService owns the map-world rotation and final-flush boundary as one transition.
         sessionTracker.addListener(regionCache::onSessionChanged);
+        sessionTracker.addListener(session -> waypointImages.onSessionChanged());
         sessionTracker.addListener(chunkCapture::onSessionChanged);
         sessionTracker.addListener(tileService::onSessionChanged);
         sessionTracker.addListener(mcaBackfillService::onSessionChanged);
@@ -814,6 +833,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public SharedWaypointListModel sharedWaypointListModel() {
         return sharedWaypointListModel;
+    }
+
+    public WaypointImageClient waypointImages() {
+        return waypointImages;
     }
 
     public SharedWaypointClient sharedWaypoints() {

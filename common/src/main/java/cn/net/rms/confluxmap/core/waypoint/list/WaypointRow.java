@@ -32,6 +32,8 @@ public record WaypointRow(
     Waypoint.Type type,
     String iconItemId,
     String markerLabel,
+    String description,
+    String imageId,
     String groupKey,
     boolean hidden,
     boolean guest,
@@ -46,6 +48,8 @@ public record WaypointRow(
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(iconItemId, "iconItemId");
         Objects.requireNonNull(markerLabel, "markerLabel");
+        description = description == null ? "" : description;
+        imageId = imageId == null ? "" : imageId;
         Objects.requireNonNull(groupKey, "groupKey");
         Objects.requireNonNull(worldLabel, "worldLabel");
     }

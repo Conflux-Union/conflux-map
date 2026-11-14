@@ -76,6 +76,19 @@ final class PaperSharedWaypointNetworking implements PluginMessageListener {
         sessions.disconnect(playerId);
     }
 
+    /** Session view for companion channels that share the waypoints trust domain. */
+    boolean isMuted(final UUID playerId) {
+        return sessions.isMuted(playerId);
+    }
+
+    int negotiatedMinor(final UUID playerId) {
+        return sessions.negotiatedMinor(playerId);
+    }
+
+    SharedWaypointSessionHandler.MalformedOutcome recordMalformed(final UUID playerId) {
+        return sessions.recordMalformed(playerId);
+    }
+
     void featureStateChanged() {
         if (!companion.sharedWaypointsEnabled()) {
             sessions.clearSubscriptions();

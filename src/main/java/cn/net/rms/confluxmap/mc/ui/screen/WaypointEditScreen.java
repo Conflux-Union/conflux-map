@@ -6,6 +6,7 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import cn.net.rms.confluxmap.core.waypoint.WaypointDescription;
 import cn.net.rms.confluxmap.core.waypoint.WaypointMarkerStyle;
 import cn.net.rms.confluxmap.core.waypoint.WaypointSet;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
@@ -91,6 +92,8 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private final boolean openedFromHotkey;
     /** Unified-template row of the waypoint being edited; the model routes updates by id. */
     private final WaypointRow editingRow;
+    private String draftDescription;
+    private String draftImageId;
 
     private TextFieldWidget nameField;
     private TextFieldWidget markerLabelField;
@@ -163,6 +166,8 @@ public final class WaypointEditScreen extends ConfluxScreen {
         this.temporary = type == Waypoint.Type.TEMPORARY;
         this.openedFromHotkey = openedFromHotkey;
         this.editingRow = editingRow;
+        this.draftDescription = editingRow == null ? "" : editingRow.description();
+        this.draftImageId = editingRow == null ? "" : editingRow.imageId();
         final ConfluxMapClient app = ConfluxMapClient.get();
         this.sharedWaypoints = app.sharedWaypoints();
         this.localModel = app.localWaypointListModel();
@@ -323,6 +328,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
             waypoint.id(), waypoint.name(), "", waypoint.dimensionId(),
             waypoint.x(), waypoint.y(), waypoint.z(), waypoint.colorArgb(), waypoint.type(),
             waypoint.iconItemId(), waypoint.markerLabel(),
+            waypoint.description(), waypoint.imageId(),
             waypoint.groupId() == null ? GroupRef.UNGROUPED_KEY : waypoint.groupId().toString(),
             false, false,
             app.config().isSharedWaypointCrossDimensionVisible(waypoint.id()),
@@ -335,7 +341,8 @@ public final class WaypointEditScreen extends ConfluxScreen {
         return new WaypointRow(
             waypoint.id, waypoint.name, "", waypoint.dimensionId,
             waypoint.x, waypoint.y, waypoint.z, waypoint.colorArgb, waypoint.type,
-            waypoint.iconItemId, waypoint.markerLabel, waypoint.group,
+            waypoint.iconItemId, waypoint.markerLabel,
+            waypoint.description, waypoint.imageId, waypoint.group,
             !waypoint.visible, false, waypoint.crossDimensionVisible, ""
         );
     }
@@ -398,6 +405,14 @@ public final class WaypointEditScreen extends ConfluxScreen {
         nameField.setMaxLength(64);
         nameField.setText(draftName);
         addDrawableChild(nameField);
+        final WaypointEditLayout.NotesButtonBounds notesBounds =
+            WaypointEditLayout.notesButtonBounds(width);
+        addDrawableChild(Widgets.button(
+            notesBounds.x(), notesBounds.y(),
+            notesBounds.width(), notesBounds.height(),
+            Texts.translatable("confluxmap.screen.waypoint.notes.button"),
+            button -> openNotesScreen()
+        ));
         if (openedFromHotkey) {
             deferInitialFocusUntilNextTick(nameField);
         } else {
@@ -915,6 +930,21 @@ public final class WaypointEditScreen extends ConfluxScreen {
         }
     }
 
+    private void openNotesScreen() {
+        MinecraftAccess.setScreen(
+            MinecraftClient.getInstance(),
+            new WaypointDescriptionScreen(
+                this, draftDescription, draftImageId, this::applyNotes
+            )
+        );
+    }
+
+    /** Notes-screen completion: stores the normalized pair into the draft. */
+    void applyNotes(final String description, final String imageId) {
+        draftDescription = description;
+        draftImageId = imageId;
+    }
+
     private void captureDraft() {
         draftName = nameField.getText();
         draftX = xField.getText();
@@ -1005,6 +1035,8 @@ public final class WaypointEditScreen extends ConfluxScreen {
         waypoint.crossDimensionY = crossDimensionY;
         waypoint.iconItemId = iconItemId;
         waypoint.markerLabel = markerLabel;
+        waypoint.description = WaypointDescription.normalize(draftDescription);
+        waypoint.imageId = WaypointDescription.normalizeImageId(draftImageId);
         return waypoint;
     }
 
@@ -1057,7 +1089,8 @@ public final class WaypointEditScreen extends ConfluxScreen {
             final EditDraft publicDraft = createTarget == CreateTarget.PUBLIC
                 ? new EditDraft(
                     values.name(), dimensionId, values.x(), values.y(), values.z(),
-                    colorSelection.selected(), type, iconItemId, markerLabel, "", "",
+                    colorSelection.selected(), type, iconItemId, markerLabel,
+                    draftDescription, draftImageId,
                     crossDimensionVisible, crossDimensionY, groupKey)
                 : null;
             MinecraftAccess.setScreen(
@@ -1068,7 +1101,8 @@ public final class WaypointEditScreen extends ConfluxScreen {
         }
         final EditDraft draft = new EditDraft(
             values.name(), dimensionId, values.x(), values.y(), values.z(),
-            colorSelection.selected(), draftType(), iconItemId, markerLabel, "", "",
+            colorSelection.selected(), draftType(), iconItemId, markerLabel,
+            draftDescription, draftImageId,
             crossDimensionVisible, crossDimensionY, groupKey
         );
         if (createTarget == CreateTarget.PUBLIC) {

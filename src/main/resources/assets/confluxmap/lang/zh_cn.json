@@ -685,5 +685,16 @@
   "confluxmap.screen.structure_candidates.bounds": "搜索半径 / 结果数量",
   "confluxmap.screen.structure_candidates.waypoint": "添加路径点",
   "confluxmap.screen.structure_candidates.invalid": "请输入有效的搜索参数",
-  "confluxmap.screen.structure_candidates.not_found": "该范围内没有找到可能存在的结构"
+  "confluxmap.screen.structure_candidates.not_found": "该范围内没有找到可能存在的结构",
+  "confluxmap.screen.waypoint.notes.button": "备注…",
+  "confluxmap.screen.waypoint.notes.title": "路径点备注",
+  "confluxmap.screen.waypoint.notes.screenshot": "截图",
+  "confluxmap.screen.waypoint.notes.paste": "粘贴",
+  "confluxmap.screen.waypoint.notes.templates": "模板…",
+  "confluxmap.screen.waypoint.notes.clear": "清除",
+  "confluxmap.screen.waypoint.notes.done": "完成",
+  "confluxmap.screen.waypoint.notes.cancel": "取消",
+  "confluxmap.screen.waypoint.notes.loading": "加载中…",
+  "confluxmap.screen.waypoint.notes.error.paste": "剪贴板中没有图片",
+  "confluxmap.screen.waypoint.notes.error.invalid": "备注过长或含非法字符"
 }

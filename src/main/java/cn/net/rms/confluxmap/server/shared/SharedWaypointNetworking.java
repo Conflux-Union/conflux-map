@@ -165,6 +165,21 @@ public final class SharedWaypointNetworking {
         }
     }
 
+    /** Session view for companion channels that share the waypoints trust domain. */
+    public boolean isMuted(final UUID playerId) {
+        return sessions.isMuted(playerId);
+    }
+
+    /** Negotiated waypoints_v1 minor for one player, 0 when unknown. */
+    public int negotiatedMinor(final UUID playerId) {
+        return sessions.negotiatedMinor(playerId);
+    }
+
+    /** One malformed strike on the shared trust domain. */
+    public SharedWaypointSessionHandler.MalformedOutcome recordMalformed(final UUID playerId) {
+        return sessions.recordMalformed(playerId);
+    }
+
     /** Publishes a command-originated mutation to clients subscribed through the binary protocol. */
     public void onCommandMutation(
         final MinecraftServer server,
