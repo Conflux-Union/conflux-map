@@ -215,4 +215,26 @@ class SharedWaypointImageStoreTest {
         assertNull(store.chunk(PLAYER, UUID.randomUUID(), 0, payload(8), 1_000_000L));
         assertTrue(store.imageStore().load(UUID.randomUUID()).isEmpty());
     }
+
+    @Test
+    void persistIoFailureIsReportedAsStorageError(@TempDir final Path tempDir) throws Exception {
+        final WaypointImageStore images = new WaypointImageStore(tempDir.resolve("images"));
+        final UUID imageId = UUID.randomUUID();
+        // The destination path is a directory, so save()'s atomic move fails.
+        java.nio.file.Files.createDirectories(
+            tempDir.resolve("images").resolve(imageId + WaypointImageStore.EXTENSION)
+        );
+        final SharedWaypointImageStore store = new SharedWaypointImageStore(images, limits(), LOGGER);
+        final long now = 1_000_000L;
+
+        assertEquals(
+            WaypointImageProto.STATUS_OK,
+            store.begin(PLAYER, imageId, WaypointImageProto.FORMAT_PNG, 320, 180, 48, now)
+        );
+        // A failed persist is a storage fault, not a quota breach.
+        assertEquals(
+            WaypointImageProto.STATUS_STORAGE_ERROR,
+            store.chunk(PLAYER, imageId, 0, payload(48), now)
+        );
+    }
 }

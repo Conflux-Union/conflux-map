@@ -31,4 +31,5 @@ public final class WaypointImageProto {
     public static final int STATUS_QUOTA_EXCEEDED = 3;
     public static final int STATUS_DUPLICATE_OWNER_CONFLICT = 4;
     public static final int STATUS_INVALID_FORMAT = 5;
+    public static final int STATUS_STORAGE_ERROR = 6;
 }

@@ -107,4 +107,25 @@ class MultilineTextFieldStateTest {
         assertEquals("abcd", state.text());
         assertEquals(1, state.lines().size());
     }
+
+    @Test
+    void backspaceRemovesOneWholeCodePoint() {
+        // Pre-12109 charTyped delivers a supplementary char as two inserts;
+        // a split pair would be rejected by normalize at Done.
+        state.insert(0xD83D, WaypointDescription.MAX_CODE_POINTS);
+        state.insert(0xDE00, WaypointDescription.MAX_CODE_POINTS);
+        assertEquals(1, state.text().codePointCount(0, state.text().length()));
+        state.backspace();
+        assertEquals("", state.text());
+        assertEquals(0, state.cursorColumn());
+    }
+
+    @Test
+    void forwardDeleteRemovesOneWholeCodePoint() {
+        state.insert(0xD83D, WaypointDescription.MAX_CODE_POINTS);
+        state.insert(0xDE00, WaypointDescription.MAX_CODE_POINTS);
+        state.setCursor(0, 0);
+        state.delete();
+        assertEquals("", state.text());
+    }
 }

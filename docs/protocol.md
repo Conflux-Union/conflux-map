@@ -869,7 +869,10 @@ channel is silent by construction.
 
 `formatTag`: `1` = PNG (the only defined format). `status`: `0` OK,
 `1` TOO_LARGE, `2` RATE_LIMITED, `3` QUOTA_EXCEEDED,
-`4` DUPLICATE_OWNER_CONFLICT, `5` INVALID_FORMAT.
+`4` DUPLICATE_OWNER_CONFLICT, `5` INVALID_FORMAT, `6` STORAGE_ERROR.
+Receivers must treat any non-zero status as a generic failure; STORAGE_ERROR
+covers a server-side persist fault and says nothing about the player's
+quota.
 
 Upload flow: BEGIN declares the full size and dimensions, CHUNKs follow in
 order (each ≤ 16 KiB); every non-final chunk gets no reply, the completing

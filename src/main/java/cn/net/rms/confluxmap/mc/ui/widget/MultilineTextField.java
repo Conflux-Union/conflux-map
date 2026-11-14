@@ -281,9 +281,10 @@ public final class MultilineTextField {
         public void backspace() {
             if (cursorColumn > 0) {
                 final String line = lines.get(cursorLine);
+                final int removed = codePointWidthBefore(line, cursorColumn);
                 lines.set(cursorLine,
-                    line.substring(0, cursorColumn - 1) + line.substring(cursorColumn));
-                cursorColumn--;
+                    line.substring(0, cursorColumn - removed) + line.substring(cursorColumn));
+                cursorColumn -= removed;
             } else if (cursorLine > 0) {
                 final String current = lines.remove(cursorLine);
                 cursorLine--;
@@ -295,12 +296,31 @@ public final class MultilineTextField {
         public void delete() {
             final String line = lines.get(cursorLine);
             if (cursorColumn < line.length()) {
+                final int removed = codePointWidthAt(line, cursorColumn);
                 lines.set(cursorLine,
-                    line.substring(0, cursorColumn) + line.substring(cursorColumn + 1));
+                    line.substring(0, cursorColumn) + line.substring(cursorColumn + removed));
             } else if (cursorLine < lines.size() - 1) {
                 final String next = lines.remove(cursorLine + 1);
                 lines.set(cursorLine, line + next);
             }
+        }
+
+        private static int codePointWidthBefore(final String line, final int column) {
+            if (column >= 2
+                && Character.isHighSurrogate(line.charAt(column - 2))
+                && Character.isLowSurrogate(line.charAt(column - 1))) {
+                return 2;
+            }
+            return 1;
+        }
+
+        private static int codePointWidthAt(final String line, final int column) {
+            if (column + 2 <= line.length()
+                && Character.isHighSurrogate(line.charAt(column))
+                && Character.isLowSurrogate(line.charAt(column + 1))) {
+                return 2;
+            }
+            return 1;
         }
 
         public void moveLeft() {

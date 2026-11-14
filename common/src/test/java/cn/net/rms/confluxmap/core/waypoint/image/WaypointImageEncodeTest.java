@@ -51,11 +51,26 @@ class WaypointImageEncodeTest {
     }
 
     @Test
-    void tinyBudgetReturnsEmptyOrTheSmallestAllowedEdge(@TempDir final Path tempDir) {
+    void tinyBudgetReturnsEmptyOrTheSmallestAllowedEdge(@TempDir final Path tempDir)
+        throws java.io.IOException {
         // A 96px checker gradient can still exceed 4 KiB; either outcome is
         // legitimate — the caller treats empty as TOO_LARGE and keeps the old image.
         final java.util.Optional<WaypointImageEncode.Encoded> encoded =
             WaypointImageEncode.encodeWithin(gradient(1920, 1080), tempDir, 320, 4 * 1024);
         assertTrue(encoded.isEmpty() || encoded.get().width() <= 96);
+    }
+
+    @Test
+    void encodeIoFailurePropagatesInsteadOfReportingTooLarge(@TempDir final Path tempDir)
+        throws Exception {
+        // A scratch dir that is a regular file fails every encode attempt;
+        // callers must see the failure, not a TOO_LARGE look-alike.
+        final java.nio.file.Path blocked = java.nio.file.Files.createFile(tempDir.resolve("blocked"));
+
+        final java.io.IOException thrown = org.junit.jupiter.api.Assertions.assertThrows(
+            java.io.IOException.class,
+            () -> WaypointImageEncode.encodeWithin(gradient(64, 48), blocked, 320, 48 * 1024)
+        );
+        assertTrue(thrown.getMessage().contains("blocked"));
     }
 }

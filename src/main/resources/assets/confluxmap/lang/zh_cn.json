@@ -696,5 +696,6 @@
   "confluxmap.screen.waypoint.notes.cancel": "取消",
   "confluxmap.screen.waypoint.notes.loading": "加载中…",
   "confluxmap.screen.waypoint.notes.error.paste": "剪贴板中没有图片",
-  "confluxmap.screen.waypoint.notes.error.invalid": "备注过长或含非法字符"
+  "confluxmap.screen.waypoint.notes.error.invalid": "备注过长或含非法字符",
+  "confluxmap.screen.waypoint.notes.error.upload": "图片上传被拒绝"
 }

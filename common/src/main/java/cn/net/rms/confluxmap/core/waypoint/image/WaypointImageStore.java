@@ -72,7 +72,11 @@ public final class WaypointImageStore {
         return sweep(referencedIds, minAgeMs, nowEpochMs, (owner, bytes) -> {});
     }
 
-    /** Deletes unreferenced aged files, reporting each freed image's owner and byte size. */
+    /**
+     * Deletes unreferenced aged files, reporting each freed image's owner and
+     * byte size. Also removes aged tmp residue from a crashed save: it matches
+     * no reference and would pile up forever.
+     */
     public int sweep(
         final Set<String> referencedIds,
         final long minAgeMs,
@@ -83,14 +87,23 @@ public final class WaypointImageStore {
         if (!Files.isDirectory(dir)) {
             return 0;
         }
+        int deleted = sweepImages(referencedIds, minAgeMs, nowEpochMs, onDeleted);
+        deleted += sweepAged("*" + EXTENSION + ".tmp", minAgeMs, nowEpochMs);
+        return deleted;
+    }
+
+    private int sweepImages(
+        final Set<String> referencedIds,
+        final long minAgeMs,
+        final long nowEpochMs,
+        final java.util.function.BiConsumer<UUID, Long> onDeleted
+    )
+        throws IOException {
         int deleted = 0;
         try (DirectoryStream<Path> files = Files.newDirectoryStream(dir, "*" + EXTENSION)) {
             for (final Path file : files) {
                 final UUID imageId = imageIdFromFileName(file);
-                if (imageId == null) {
-                    continue;
-                }
-                if (referencedIds.contains(imageId.toString())) {
+                if (imageId == null || referencedIds.contains(imageId.toString())) {
                     continue;
                 }
                 try {
@@ -104,6 +117,25 @@ public final class WaypointImageStore {
                 Files.deleteIfExists(file);
                 deleted++;
                 header.ifPresent(h -> onDeleted.accept(h.owner(), (long) h.payloadBytes()));
+            }
+        }
+        return deleted;
+    }
+
+    private int sweepAged(final String glob, final long minAgeMs, final long nowEpochMs)
+        throws IOException {
+        int deleted = 0;
+        try (DirectoryStream<Path> files = Files.newDirectoryStream(dir, glob)) {
+            for (final Path file : files) {
+                try {
+                    if (nowEpochMs - Files.getLastModifiedTime(file).toMillis() < minAgeMs) {
+                        continue;
+                    }
+                } catch (final IOException e) {
+                    continue;
+                }
+                Files.deleteIfExists(file);
+                deleted++;
             }
         }
         return deleted;

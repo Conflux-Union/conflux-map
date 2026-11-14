@@ -2965,10 +2965,6 @@ private static final int NOTES_THUMBNAIL = 48;
         final boolean hasHighlight = waypointHighlightState.hasRenderableTarget(
             waypoints, currentDimension
         );
-        if (hovered != null
-            && (!hovered.description().isEmpty() || !hovered.imageId().isEmpty())) {
-            drawNotesCard(draw, hovered, mouseX, mouseY);
-        }
 
         for (final ScreenMarker marker : markers) {
             final WaypointRenderEntry waypoint = marker.waypoint();
@@ -2999,6 +2995,12 @@ private static final int NOTES_THUMBNAIL = 48;
                     );
                 }
             }
+        }
+
+        // Notes card is topmost: nearby markers and name labels must not cover it.
+        if (hovered != null
+            && (!hovered.description().isEmpty() || !hovered.imageId().isEmpty())) {
+            drawNotesCard(draw, hovered, mouseX, mouseY);
         }
     }
 
@@ -3038,13 +3040,9 @@ private static final int NOTES_THUMBNAIL = 48;
                 }
             }
             if (wrapped.size() == 7) {
-                wrapped.set(6, wrapped.get(6) + "…");
-                // Only keep the first six full lines plus the ellipsis marker.
-                if (wrapped.get(6).length() > wrapped.get(5).length()) {
-                    wrapped.subList(6, wrapped.size()).clear();
-                } else {
-                    wrapped.subList(6, 7).clear();
-                }
+                // Six-line cap hit: mark the truncation instead of cutting silently.
+                wrapped.set(5, wrapped.get(5) + "…");
+                wrapped.subList(6, wrapped.size()).clear();
             }
         }
         final int textWidth = wrapped.stream()

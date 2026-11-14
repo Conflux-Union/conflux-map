@@ -97,4 +97,22 @@ class WaypointImageStoreTest {
         assertEquals(0, store.sweep(Set.of(), 0L, System.currentTimeMillis()));
         assertTrue(store.load(UUID.randomUUID()).isEmpty());
     }
+
+    @Test
+    void sweepAlsoRemovesAgedTmpResidue(@TempDir final Path tempDir) throws IOException {
+        final WaypointImageStore store = new WaypointImageStore(tempDir.resolve("images"));
+        // Crash residue: the tmp sibling WaypointImageFile.save writes before its atomic move.
+        final Path tmp = store.directory().resolve(
+            UUID.randomUUID() + WaypointImageStore.EXTENSION + ".tmp"
+        );
+        java.nio.file.Files.createDirectories(store.directory());
+        java.nio.file.Files.writeString(tmp, "partial");
+
+        final long now = System.currentTimeMillis();
+        assertEquals(0, store.sweep(Set.of(), 24L * 3600 * 1000, now));
+        assertTrue(java.nio.file.Files.exists(tmp));
+
+        assertEquals(1, store.sweep(Set.of(), 24L * 3600 * 1000, now + 25L * 3600 * 1000));
+        assertFalse(java.nio.file.Files.exists(tmp));
+    }
 }

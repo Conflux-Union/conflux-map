@@ -81,8 +81,17 @@ class WaypointImageCodecTest {
         assertThrows(IllegalArgumentException.class, () -> new ImageDataS2C(
             IMAGE_ID, WaypointImageProto.FORMAT_PNG, new byte[WaypointImageProto.MAX_IMAGE_BYTES + 1]
         ));
-        assertThrows(IllegalArgumentException.class, () -> new ImageUploadResultS2C(IMAGE_ID, 6));
+        assertThrows(IllegalArgumentException.class, () -> new ImageUploadResultS2C(
+            IMAGE_ID, WaypointImageProto.STATUS_STORAGE_ERROR + 1
+        ));
         assertThrows(IllegalArgumentException.class, () -> new ImageUploadResultS2C(IMAGE_ID, -1));
+    }
+
+    @Test
+    void storageErrorStatusRoundTrips() throws IOException, SharedWaypointProtocolException {
+        assertS2CRoundTrips(new ImageUploadResultS2C(
+            IMAGE_ID, WaypointImageProto.STATUS_STORAGE_ERROR
+        ));
     }
 
     @Test

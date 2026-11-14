@@ -19,7 +19,7 @@ public final class SharedWaypointImageSessions {
     private final int uploadsPerMinute;
     private final Map<UUID, PlayerBuckets> players = new HashMap<>();
 
-    public SharedWaypointImageSessions(final int uploadsPerMinute, final long nowEpochMs) {
+    public SharedWaypointImageSessions(final int uploadsPerMinute) {
         if (uploadsPerMinute < 1) {
             throw new IllegalArgumentException("uploadsPerMinute must be positive");
         }

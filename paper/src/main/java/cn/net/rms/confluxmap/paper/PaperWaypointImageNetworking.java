@@ -35,7 +35,7 @@ final class PaperWaypointImageNetworking implements PluginMessageListener {
     private final PaperSharedWaypointNetworking sharedNetworking;
     private final PaperPluginMessageDispatcher messages;
     private final SharedWaypointImageSessions rateLimits =
-        new SharedWaypointImageSessions(10, 0L);
+        new SharedWaypointImageSessions(10);
     private volatile SharedWaypointImageStore imageStore;
     private int gcCountdown;
     private boolean registered;

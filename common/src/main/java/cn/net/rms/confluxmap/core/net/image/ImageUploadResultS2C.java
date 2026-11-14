@@ -8,7 +8,7 @@ public record ImageUploadResultS2C(UUID imageId, int status) implements Waypoint
 
     public ImageUploadResultS2C {
         Objects.requireNonNull(imageId, "imageId");
-        if (status < WaypointImageProto.STATUS_OK || status > WaypointImageProto.STATUS_INVALID_FORMAT) {
+        if (status < WaypointImageProto.STATUS_OK || status > WaypointImageProto.STATUS_STORAGE_ERROR) {
             throw new IllegalArgumentException("unknown upload status " + status);
         }
     }

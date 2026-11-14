@@ -78,6 +78,7 @@ public final class WaypointImageClient {
     private final Map<String, QueuedTexture> completed = new ConcurrentHashMap<>();
     private final FetchTracker fetchTracker = new FetchTracker();
     private final Map<String, PendingUpload> pendingUploads = new ConcurrentHashMap<>();
+    private final Set<String> refusedUploads = ConcurrentHashMap.newKeySet();
     private final AtomicLong generation = new AtomicLong();
     private volatile WaypointImageStore store;
     private volatile Path storeDir;
@@ -101,6 +102,7 @@ public final class WaypointImageClient {
         final Path dir = imagesDir.get();
         generation.incrementAndGet();
         fetchTracker.reset();
+        refusedUploads.clear();
         synchronized (completed) {
             completed.clear();
         }
@@ -176,7 +178,9 @@ public final class WaypointImageClient {
     /**
      * Encodes an in-memory draft screenshot and uploads it chunked. The
      * callback receives the server status (or -1 when the channel or the
-     * encode cannot serve the upload) on the client main thread.
+     * encode cannot serve the upload) on the client main thread; every non-OK
+     * outcome is recorded, and {@link #uploadRefused} lets editors drop the
+     * draft reference instead of publishing a dangling id.
      */
     public void uploadDraftImage(
         final UUID imageId,
@@ -186,7 +190,7 @@ public final class WaypointImageClient {
         final IntConsumer onStatus
     ) {
         if (!imagesSupported() || argb.length != width * height) {
-            client.execute(() -> onStatus.accept(-1));
+            completeUpload(imageId, onStatus, -1);
             return;
         }
         final long taskGeneration = generation.get();
@@ -196,8 +200,13 @@ public final class WaypointImageClient {
                 taskGeneration, imageId, new ImageScale.Raster(argb, width, height), scratch, onStatus
             ));
         } catch (final RejectedExecutionException e) {
-            client.execute(() -> onStatus.accept(-1));
+            completeUpload(imageId, onStatus, -1);
         }
+    }
+
+    /** True when this imageId's most recent upload attempt failed or was refused. */
+    public boolean uploadRefused(final String imageId) {
+        return refusedUploads.contains(imageId);
     }
 
     /**
@@ -317,25 +326,9 @@ public final class WaypointImageClient {
         final long now = System.currentTimeMillis();
         for (final PendingUpload pending : pendingUploads.values()) {
             if (now - pending.startedEpochMs > PENDING_UPLOAD_TIMEOUT_MS) {
-                pendingUploads.remove(pending.imageId.toString());
-                final IntConsumer callback = pending.onStatus;
-                client.execute(() -> callback.accept(-1));
+                completeUpload(pending.imageId, pending.onStatus, -1);
             }
         }
-    }
-
-    public void onSessionEnded() {
-        generation.incrementAndGet();
-        store = null;
-        storeDir = null;
-        fetchTracker.reset();
-        pendingUploads.clear();
-        client.execute(() -> {
-            synchronized (textures) {
-                textures.values().forEach(NativeImageBackedTexture::close);
-                textures.clear();
-            }
-        });
     }
 
     private boolean imagesSupported() {
@@ -391,21 +384,28 @@ public final class WaypointImageClient {
         final IntConsumer onStatus
     ) {
         if (taskGeneration != generation.get() || scratch == null) {
-            client.execute(() -> onStatus.accept(-1));
+            completeUpload(imageId, onStatus, -1);
             return;
         }
-        final Optional<WaypointImageEncode.Encoded> encoded = WaypointImageEncode.encodeWithin(
-            raster, scratch, WaypointImageEncode.MAX_EDGE_START, WaypointImageEncode.TARGET_BYTES
-        );
+        final Optional<WaypointImageEncode.Encoded> encoded;
+        try {
+            encoded = WaypointImageEncode.encodeWithin(
+                raster, scratch, WaypointImageEncode.MAX_EDGE_START, WaypointImageEncode.TARGET_BYTES
+            );
+        } catch (final IOException e) {
+            LOGGER.warn("waypoint-image: encode failed for {}", imageId, e);
+            completeUpload(imageId, onStatus, -1);
+            return;
+        }
         if (encoded.isEmpty()) {
-            client.execute(() -> onStatus.accept(WaypointImageProto.STATUS_TOO_LARGE));
+            completeUpload(imageId, onStatus, WaypointImageProto.STATUS_TOO_LARGE);
             return;
         }
         final WaypointImageEncode.Encoded result = encoded.get();
         final List<byte[]> chunks = chunk(result.png());
         client.execute(() -> {
             if (taskGeneration != generation.get()) {
-                onStatus.accept(-1);
+                completeUpload(imageId, onStatus, -1);
                 return;
             }
             pendingUploads.put(imageId.toString(), new PendingUpload(imageId, onStatus, chunks));
@@ -414,10 +414,22 @@ public final class WaypointImageClient {
                     imageId, WaypointImageProto.FORMAT_PNG, result.width(), result.height(), result.png().length
                 )));
             } catch (final SharedWaypointProtocolException e) {
-                pendingUploads.remove(imageId.toString());
-                onStatus.accept(-1);
+                completeUpload(imageId, onStatus, -1);
             }
         });
+    }
+
+    /**
+     * Ends one upload: non-OK outcomes are recorded (editors drop the draft
+     * reference rather than publish a dangling id) and the callback fires on
+     * the client main thread.
+     */
+    private void completeUpload(final UUID imageId, final IntConsumer onStatus, final int status) {
+        pendingUploads.remove(imageId.toString());
+        if (status != WaypointImageProto.STATUS_OK) {
+            refusedUploads.add(imageId.toString());
+        }
+        client.execute(() -> onStatus.accept(status));
     }
 
     static List<byte[]> chunk(final byte[] payload) {
@@ -436,8 +448,7 @@ public final class WaypointImageClient {
                 new ImageUploadChunkC2S(pending.imageId, seq, pending.chunks.get(seq))
             ));
         } catch (final SharedWaypointProtocolException e) {
-            pendingUploads.remove(pending.imageId.toString());
-            client.execute(() -> pending.onStatus.accept(-1));
+            completeUpload(pending.imageId, pending.onStatus, -1);
         }
     }
 
@@ -477,9 +488,8 @@ public final class WaypointImageClient {
                 return;
             }
             if (result.status() != WaypointImageProto.STATUS_OK) {
-                // A refused upload ends the attempt; the UI keeps the old image.
-                pendingUploads.remove(result.imageId().toString());
-                client.execute(() -> pending.onStatus.accept(result.status()));
+                // A refused upload ends the attempt; the UI drops the reference.
+                completeUpload(result.imageId(), pending.onStatus, result.status());
                 return;
             }
             if (pending.sentChunks == 0) {
@@ -489,8 +499,7 @@ public final class WaypointImageClient {
                     sendChunk(pending, seq);
                 }
             } else {
-                pendingUploads.remove(result.imageId().toString());
-                client.execute(() -> pending.onStatus.accept(WaypointImageProto.STATUS_OK));
+                completeUpload(result.imageId(), pending.onStatus, WaypointImageProto.STATUS_OK);
             }
         }
     }

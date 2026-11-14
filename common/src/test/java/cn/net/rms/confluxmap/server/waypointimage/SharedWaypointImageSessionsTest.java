@@ -13,7 +13,7 @@ class SharedWaypointImageSessionsTest {
 
     @Test
     void uploadsAreBurstTenThenRateLimitedUntilTheMinutePasses() {
-        final SharedWaypointImageSessions sessions = new SharedWaypointImageSessions(10, 0L);
+        final SharedWaypointImageSessions sessions = new SharedWaypointImageSessions(10);
         for (int i = 0; i < 10; i++) {
             assertTrue(sessions.tryUpload(PLAYER, 0L), "upload " + i + " should pass");
         }
@@ -26,7 +26,7 @@ class SharedWaypointImageSessionsTest {
 
     @Test
     void fetchesHaveTheirOwnIndependentBucket() {
-        final SharedWaypointImageSessions sessions = new SharedWaypointImageSessions(10, 0L);
+        final SharedWaypointImageSessions sessions = new SharedWaypointImageSessions(10);
         for (int i = 0; i < 60; i++) {
             assertTrue(sessions.tryFetch(PLAYER, 0L), "fetch " + i + " should pass");
         }
@@ -37,7 +37,7 @@ class SharedWaypointImageSessionsTest {
 
     @Test
     void fetchesRefillAtSixtyPerMinute() {
-        final SharedWaypointImageSessions sessions = new SharedWaypointImageSessions(10, 0L);
+        final SharedWaypointImageSessions sessions = new SharedWaypointImageSessions(10);
         for (int i = 0; i < 60; i++) {
             sessions.tryFetch(PLAYER, 0L);
         }

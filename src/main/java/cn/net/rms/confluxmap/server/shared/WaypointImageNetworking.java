@@ -44,7 +44,7 @@ public final class WaypointImageNetworking {
     private final SharedWaypointNetworking sharedNetworking;
     private volatile SharedWaypointImageStore imageStore;
     private final SharedWaypointImageSessions rateLimits =
-        new SharedWaypointImageSessions(10, 0L);
+        new SharedWaypointImageSessions(10);
     private int gcCountdown;
     private boolean registered;
 

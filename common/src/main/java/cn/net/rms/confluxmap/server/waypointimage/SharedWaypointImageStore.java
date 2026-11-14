@@ -181,17 +181,12 @@ public final class SharedWaypointImageStore {
             imageStore.save(imageId, playerId, target.formatTag, target.width, target.height, full);
         } catch (final IOException e) {
             logger.error("Failed to persist waypoint image {}", imageId, e);
-            return WaypointImageProto.STATUS_QUOTA_EXCEEDED;
+            return WaypointImageProto.STATUS_STORAGE_ERROR;
         }
         final PlayerAccounting player = accounting.computeIfAbsent(playerId, key -> new PlayerAccounting());
         player.storedBytes += target.totalBytes;
         storedBytesPerWorld += target.totalBytes;
         return WaypointImageProto.STATUS_OK;
-    }
-
-    public void forgetPlayer(final UUID playerId) {
-        pending.remove(playerId);
-        accounting.remove(playerId);
     }
 
     /** Frees the accounting a GC deletion just released (no-op for unknown owners). */

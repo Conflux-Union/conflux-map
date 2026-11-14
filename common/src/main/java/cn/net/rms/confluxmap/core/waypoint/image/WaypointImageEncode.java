@@ -27,24 +27,21 @@ public final class WaypointImageEncode {
     /**
      * Encodes within the byte budget, or empty when even the 96px floor
      * exceeds it (callers treat that as TOO_LARGE and keep the previous image).
-     * Scratch files live in {@code scratchDir} and are always cleaned up.
+     * Encode IO failures propagate — they are a storage fault, not a size
+     * verdict. Scratch files live in {@code scratchDir} and are always cleaned
+     * up.
      */
     public static Optional<Encoded> encodeWithin(
         final ImageScale.Raster raster,
         final Path scratchDir,
         final int maxEdgeStart,
         final int maxBytes
-    ) {
+    ) throws IOException {
         int edge = Math.min(maxEdgeStart, Math.max(raster.width(), raster.height()));
         while (true) {
             final int[] target = ImageScale.fitMaxEdge(raster.width(), raster.height(), edge);
             final ImageScale.Raster downscaled = ImageScale.downscale(raster, target[0], target[1]);
-            final byte[] png;
-            try {
-                png = encode(downscaled, scratchDir);
-            } catch (final IOException e) {
-                return Optional.empty();
-            }
+            final byte[] png = encode(downscaled, scratchDir);
             if (png.length <= maxBytes) {
                 return Optional.of(new Encoded(downscaled.width(), downscaled.height(), png));
             }
