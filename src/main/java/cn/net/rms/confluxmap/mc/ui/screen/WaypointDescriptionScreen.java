@@ -36,6 +36,8 @@ public final class WaypointDescriptionScreen extends ConfluxScreen {
     private static final int FIELD_LINES = 6;
     private static final int BUTTON_HEIGHT = 20;
     private static final int MARGIN = 8;
+    private static final int TEMPLATE_ROW_HEIGHT = BUTTON_HEIGHT + 2;
+    private static final int TEMPLATE_POPUP_WIDTH = 110;
 
     private final Screen parent;
     private final BiConsumer<String, String> onResult;
@@ -116,6 +118,8 @@ public final class WaypointDescriptionScreen extends ConfluxScreen {
             Texts.translatable("confluxmap.screen.waypoint.notes.cancel"),
             button -> requestClose(parent)
         ));
+        // Focus at init is safe: the screen opens only from button presses, never a hotkey.
+        notes.setFocused(true);
     }
 
     private int notesTop() {
@@ -197,18 +201,24 @@ public final class WaypointDescriptionScreen extends ConfluxScreen {
     @Override
     protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
         matrices = draw.matrices();
+        draw.renderBackground(this, mouseX, mouseY, tickDelta);
         draw.drawTextWithShadow(this.textRenderer, title, left + MARGIN, top + 8, 0xFFFFFF);
         notes.render(draw, draw.matrices(), 0xFFFFFF);
         drawThumbnail(draw, mouseX, mouseY);
-        if (templatePopupOpen) {
-            drawTemplatePopup(draw);
-        }
         if (errorMessage != null) {
             draw.drawTextWithShadow(
                 this.textRenderer,
                 Texts.translatable(errorMessage),
                 left + MARGIN, top + contentHeight() - 2, 0xFFFF5555
             );
+        }
+    }
+
+    @Override
+    protected void renderAfterWidgets(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
+        // Popup draws after the widget loop, or the footer buttons paint over it.
+        if (templatePopupOpen) {
+            drawTemplatePopup(draw, mouseX, mouseY);
         }
     }
 
@@ -283,20 +293,37 @@ public final class WaypointDescriptionScreen extends ConfluxScreen {
         return notesTop() + notesHeight() + 4 + BUTTON_HEIGHT + 2;
     }
 
-    private void drawTemplatePopup(final GuiDraw draw) {
+    private void drawTemplatePopup(final GuiDraw draw, final int mouseX, final int mouseY) {
         final List<WaypointDescriptionTemplates.Template> templates =
             WaypointDescriptionTemplates.builtIn();
         final int popupX = popupX();
         final int popupY = popupY();
-        final int height = templates.size() * (BUTTON_HEIGHT + 2) + 2;
-        GuiShapes.fillRect(matrices, popupX, popupY, 110, height, 0xFF8B8B8B);
-        GuiShapes.fillRect(matrices, popupX + 1, popupY + 1, 108, height - 2, 0xE0000000 | 0x1C6BA0);
+        final int height = templates.size() * TEMPLATE_ROW_HEIGHT + 2;
+        draw.fillPopup(
+            popupX - 1, popupY - 1, popupX + TEMPLATE_POPUP_WIDTH + 1, popupY + height + 1, 0xFF000000
+        );
+        final int hoverRow = templateRowAt(mouseY);
         for (int i = 0; i < templates.size(); i++) {
+            final int rowY = popupY + 1 + i * TEMPLATE_ROW_HEIGHT;
+            draw.fillPopup(
+                popupX, rowY, popupX + TEMPLATE_POPUP_WIDTH, rowY + TEMPLATE_ROW_HEIGHT,
+                i == hoverRow ? 0xFF6E6E6E : 0xFF2A2A2A
+            );
             draw.drawTextWithShadow(
-                this.textRenderer, labelFor(templates.get(i)), popupX + 6,
-                popupY + 4 + i * (BUTTON_HEIGHT + 2), 0xFFFFFF
+                this.textRenderer, labelFor(templates.get(i)), popupX + 5,
+                rowY + (TEMPLATE_ROW_HEIGHT - this.textRenderer.fontHeight) / 2f, 0xFFE0E0E0
             );
         }
+    }
+
+    private int templateRowAt(final double mouseY) {
+        final List<WaypointDescriptionTemplates.Template> templates =
+            WaypointDescriptionTemplates.builtIn();
+        final int relative = (int) mouseY - popupY() - 1;
+        if (relative < 0 || relative >= templates.size() * TEMPLATE_ROW_HEIGHT) {
+            return -1;
+        }
+        return relative / TEMPLATE_ROW_HEIGHT;
     }
 
     //#if MC>=12109
@@ -326,18 +353,23 @@ public final class WaypointDescriptionScreen extends ConfluxScreen {
                 WaypointDescriptionTemplates.builtIn();
             final int popupX = popupX();
             final int popupY = popupY();
-            final int popupHeight = templates.size() * (BUTTON_HEIGHT + 2) + 2;
-            if (mouseX >= popupX && mouseX < popupX + 110
+            final int popupHeight = templates.size() * TEMPLATE_ROW_HEIGHT + 2;
+            if (mouseX >= popupX && mouseX < popupX + TEMPLATE_POPUP_WIDTH
                 && mouseY >= popupY && mouseY < popupY + popupHeight) {
-                final int index = (int) ((mouseY - popupY - 2) / (BUTTON_HEIGHT + 2));
-                if (index >= 0 && index < templates.size()) {
+                final int index = templateRowAt(mouseY);
+                if (index >= 0) {
                     insertTemplate(templates.get(index));
                     return true;
                 }
             }
             templatePopupOpen = false;
         }
-        return notes.mouseClicked(mouseX, mouseY, button);
+        final boolean handledByNotes = notes.mouseClicked(mouseX, mouseY, button);
+        if (!handledByNotes) {
+            // Outside clicks drop focus; otherwise typing keeps flowing into notes after a button is selected.
+            notes.setFocused(false);
+        }
+        return handledByNotes;
     }
 
     //#if MC>=12109

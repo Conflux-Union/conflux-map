@@ -87,7 +87,6 @@ import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
 import cn.net.rms.confluxmap.mc.net.ChunkLoadStateClient;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
-import cn.net.rms.confluxmap.mc.net.waypointimage.WaypointImageClient;
 import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
@@ -129,7 +128,6 @@ import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.texture.NativeImageBackedTexture;
 //#if MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
 //#endif
@@ -252,8 +250,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final double NAME_LABEL_MAX_SCALE = 2.0;
     private static final double HOVER_RADIUS_PX = 6.0;
     private static final double DEFAULT_CREATE_Y = 64.0;
-    /** Hover-card thumbnail edge, matching the notes screen preview. */
-private static final int NOTES_THUMBNAIL = 48;
 
 /** Cursor travel between left-press and left-release below which a hovered marker click edits it, not pans (see {@link #mouseReleased}). */
     static final double CLICK_DRAG_TOLERANCE_PX = 4.0;
@@ -3000,104 +2996,11 @@ private static final int NOTES_THUMBNAIL = 48;
         // Notes card is topmost: nearby markers and name labels must not cover it.
         if (hovered != null
             && (!hovered.description().isEmpty() || !hovered.imageId().isEmpty())) {
-            drawNotesCard(draw, hovered, mouseX, mouseY);
-        }
-    }
-
-    /**
-     * Hover card for waypoints that carry notes: a tooltip-style panel at the
-     * cursor with a 48px thumbnail and up to six wrapped description lines.
-     * A missing thumbnail draws its placeholder; the fetch (already issued via
-     * the shared-waypoint snapshot hooks) fills it in on a later frame.
-     */
-    private void drawNotesCard(
-        final GuiDraw draw,
-        final WaypointRenderEntry waypoint,
-        final int mouseX,
-        final int mouseY
-    ) {
-        final WaypointImageClient images = ConfluxMapClient.get().waypointImages();
-        if (images != null && !waypoint.imageId().isEmpty()) {
-            images.ensureFetched(List.of(waypoint.imageId()));
-        }
-        final java.util.Optional<WaypointImageClient.Thumbnail> thumbnail =
-            images == null || waypoint.imageId().isEmpty()
-                ? java.util.Optional.empty()
-                : images.thumbnail(waypoint.imageId());
-        final int descriptionWidth = Math.min(220, width / 3);
-        final List<String> wrapped = new ArrayList<>();
-        if (!waypoint.description().isEmpty()) {
-            for (final net.minecraft.text.OrderedText ordered
-                : this.textRenderer.wrapLines(Texts.literal(waypoint.description()), descriptionWidth)) {
-                final StringBuilder out = new StringBuilder();
-                ordered.accept((index, style, codePoint) -> {
-                    out.appendCodePoint(codePoint);
-                    return true;
-                });
-                wrapped.add(out.toString());
-                if (wrapped.size() >= 7) {
-                    break;
-                }
-            }
-            if (wrapped.size() == 7) {
-                // Six-line cap hit: mark the truncation instead of cutting silently.
-                wrapped.set(5, wrapped.get(5) + "…");
-                wrapped.subList(6, wrapped.size()).clear();
-            }
-        }
-        final int textWidth = wrapped.stream()
-            .mapToInt(this.textRenderer::getWidth)
-            .max().orElse(0);
-        final int textLeft = thumbnail.isPresent() || !waypoint.imageId().isEmpty()
-            ? NOTES_THUMBNAIL + 8
-            : 0;
-        final int panelWidth = Math.max(
-            thumbnail.isPresent() ? NOTES_THUMBNAIL + 8 + textWidth : textWidth,
-            Math.min(textWidth + (thumbnail.isPresent() ? textLeft : 0), width - 20)
-        );
-        final int textHeight = wrapped.size() * (this.textRenderer.fontHeight + 2);
-        final int panelHeight = Math.max(
-            thumbnail.isPresent() ? NOTES_THUMBNAIL + 8 : 0, textHeight + 8
-        );
-        int panelX = mouseX + 12;
-        int panelY = mouseY + 12;
-        panelX = Math.max(4, Math.min(panelX, width - panelWidth - 4));
-        panelY = Math.max(4, Math.min(panelY, height - panelHeight - 4));
-        GuiShapes.fillRect(draw.matrices(), panelX - 1, panelY - 1, panelWidth + 2, panelHeight + 2, 0xFF28004C);
-        GuiShapes.fillRect(draw.matrices(), panelX, panelY, panelWidth, panelHeight, 0x90000000 | 0x100010);
-        final int textX = panelX + 4 + (thumbnail.isPresent() ? NOTES_THUMBNAIL + 8 : 0);
-        int row = 0;
-        for (final String line : wrapped) {
-            if (row >= 6) {
-                break;
-            }
-            draw.drawTextWithShadow(
-                this.textRenderer, line, textX, panelY + 4 + row * (this.textRenderer.fontHeight + 2),
-                0xFFFFFF
-            );
-            row++;
-        }
-        if (thumbnail.isPresent()) {
-            bindThumbnailTexture(thumbnail.get().texture());
-            TextureBinds.beginTexturedQuads();
-            GuiShapes.drawQuad(
-                draw.matrices(), panelX + 4, panelY + 4, NOTES_THUMBNAIL, NOTES_THUMBNAIL, 0f, 0f, 1f, 1f
-            );
-        } else if (!waypoint.imageId().isEmpty()) {
-            GuiShapes.fillRect(
-                draw.matrices(), panelX + 4, panelY + 4, NOTES_THUMBNAIL, NOTES_THUMBNAIL, 0xFF3F3F3F
+            WaypointNotesCard.draw(
+                draw, this.textRenderer, hovered.description(), hovered.imageId(),
+                mouseX, mouseY, width, height
             );
         }
-    }
-
-    private void bindThumbnailTexture(final NativeImageBackedTexture texture) {
-        //#if MC>=12108
-        //$$ TextureBinds.bindTexture(texture.getGlTextureView());
-        //#elseif MC>=12105
-        //$$ TextureBinds.bindTexture(texture.getGlTexture());
-        //#else
-        TextureBinds.bindTexture(texture.getGlId());
-        //#endif
     }
 
     private List<WaypointRenderEntry> waypointsForRender(final DimensionId dimension) {

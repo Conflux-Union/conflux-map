@@ -164,7 +164,8 @@ public final class MultilineTextField {
                 final int cursorX = drawX + font.getWidth(text.substring(0, state.cursorColumn()));
                 if (cursorX >= x + INNER_PADDING && cursorX <= x + width - INNER_PADDING
                     && lineY + lineHeight <= clipBottom) {
-                    GuiShapes.fillRect(matrices, cursorX, lineY, 1, lineHeight - LINE_GAP, textColor);
+                    // fillRect lacks vanilla text's tweakTransparency: an RGB-only color renders the cursor transparent.
+                    GuiShapes.fillRect(matrices, cursorX, lineY, 1, lineHeight - LINE_GAP, 0xFF000000 | textColor);
                 }
             }
         }
