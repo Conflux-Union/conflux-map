@@ -48,10 +48,8 @@ import cn.net.rms.confluxmap.core.trail.PlayerTrail;
 import cn.net.rms.confluxmap.core.update.GithubReleaseFetcher;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
 import cn.net.rms.confluxmap.core.waypoint.CrossWorldWaypointService;
-import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
-import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
 import cn.net.rms.confluxmap.core.waypoint.list.ConfigWaypointPersonalPreferences;
 import cn.net.rms.confluxmap.core.waypoint.list.LocalWaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.SharedWaypointListModel;
@@ -112,7 +110,6 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.resource.ResourceType;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.OptionalInt;
@@ -845,20 +842,15 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     /**
      * Image ids the local waypoint store references, for the client-side sweep.
-     * Null means the store is not loaded yet: the sweep is skipped this session.
+     * Null means the store is missing, stale, or not loaded yet: the sweep is
+     * skipped this session.
      */
     private Set<String> localReferencedImageIds() {
-        final WaypointStore store = waypointService.current();
-        if (store == null) {
+        final SessionGuard.Session session = sessionGuard.current();
+        if (!session.active()) {
             return null;
         }
-        final Set<String> referenced = new HashSet<>();
-        for (final Waypoint waypoint : store.list()) {
-            if (!waypoint.imageId.isEmpty()) {
-                referenced.add(waypoint.imageId);
-            }
-        }
-        return referenced;
+        return WaypointImageClient.referencedIdsForSweep(waypointService.current(), session.world());
     }
 
     public SharedWaypointClient sharedWaypoints() {

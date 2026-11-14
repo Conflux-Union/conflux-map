@@ -13,6 +13,9 @@ import cn.net.rms.confluxmap.core.net.image.WaypointImageCodec;
 import cn.net.rms.confluxmap.core.net.image.WaypointImageMessage;
 import cn.net.rms.confluxmap.core.net.image.WaypointImageProto;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProtocolException;
+import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
 import cn.net.rms.confluxmap.core.waypoint.image.ImageScale;
 import cn.net.rms.confluxmap.core.waypoint.image.StoredImage;
 import cn.net.rms.confluxmap.core.waypoint.image.WaypointImageEncode;
@@ -22,6 +25,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -146,6 +150,24 @@ public final class WaypointImageClient {
         } catch (final IOException e) {
             LOGGER.warn("waypoint-image: sweep failed", e);
         }
+    }
+
+    /**
+     * The ids the loaded waypoint store references, or null when the store is
+     * missing or belongs to a world other than the active one: sweeping with a
+     * stale reference set would delete files the new world's waypoints use.
+     */
+    public static Set<String> referencedIdsForSweep(final WaypointStore store, final WorldIdentity activeWorld) {
+        if (store == null || !store.world().equals(activeWorld)) {
+            return null;
+        }
+        final Set<String> referenced = new HashSet<>();
+        for (final Waypoint waypoint : store.list()) {
+            if (!waypoint.imageId.isEmpty()) {
+                referenced.add(waypoint.imageId);
+            }
+        }
+        return referenced;
     }
 
     /**
