@@ -1,11 +1,13 @@
 package cn.net.rms.confluxmap.mc.predict;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.predict.ChestLootPreview;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.QuadrantLayout;
 import cn.net.rms.confluxmap.core.predict.SearchOrder;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
+import cn.net.rms.confluxmap.core.predict.StructureLootSupport;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.nativepredict.CubiomesContext;
@@ -18,6 +20,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -25,6 +28,12 @@ import java.util.function.BooleanSupplier;
  * supplies a visible block rectangle and renders the returned markers.
  */
 public final class StructureMarkerService {
+    /** Native status of {@code cfxStructureChests}/{@code cfxRollChestLoot} for a native fault. */
+    private static final int NATIVE_FAULT = -2;
+
+    /** Serializes loot queries' native section: the fork's loot-table state is process-global. */
+    private static final Object LOOT_ROLL_LOCK = new Object();
+
     private final Path cacheRoot;
     private final PredictionState prediction;
     private final BooleanSupplier structureSearchAllowed;
@@ -371,6 +380,161 @@ public final class StructureMarkerService {
         if (snapshot != null) {
             executors.io().execute(snapshot::save);
         }
+    }
+
+    /** Whether this session's mc version has chest loot for {@code type}. */
+    public boolean lootSupported(final StructureIndex.StructureType type) {
+        return StructureLootSupport.supports(type, prediction.mcVersion());
+    }
+
+    /**
+     * Chest loot previews for one structure instance, resolved on a worker with the same gating
+     * and session discipline as {@link #detailedCandidates}. Already-completed and empty when
+     * the query cannot run (no session, search forbidden, type unsupported for the dimension or
+     * version); a session generation change or a native fault completes the scheduled future
+     * empty. The context comes from the executing worker's per-thread cache, so enumeration and
+     * rolls mutate that worker's own handle state; the native section itself additionally
+     * serializes on {@link #LOOT_ROLL_LOCK} because the fork's loot-table state is process-global.
+     */
+    public CompletableFuture<List<ChestLootPreview>> lootPreviewAsync(
+        final StructureIndex.Marker marker
+    ) {
+        final int mcVersion;
+        final long seed;
+        final int nativeDim;
+        final int flags;
+        final long generationAtStart;
+        synchronized (this) {
+            final DimensionId dimension = currentDimension;
+            if (current == null || dimension == null || !structureSearchAllowed.getAsBoolean()
+                || !marker.type().supports(prediction.mcVersion(), dimension)
+                || !prediction.structuresCubiomesBacked(dimension)
+                || !StructureLootSupport.supports(marker.type(), prediction.mcVersion())) {
+                return CompletableFuture.completedFuture(List.of());
+            }
+            nativeDim = PredictionDimensions.nativeStructureDim(dimension);
+            if (nativeDim == Integer.MIN_VALUE) {
+                return CompletableFuture.completedFuture(List.of());
+            }
+            mcVersion = prediction.mcVersion();
+            seed = prediction.seed();
+            flags = prediction.cubiomesFlags(dimension);
+            generationAtStart = generation;
+        }
+        return CompletableFuture.supplyAsync(
+            () -> lootPreview(marker, mcVersion, seed, nativeDim, flags, generationAtStart),
+            executors.workers()
+        );
+    }
+
+    private List<ChestLootPreview> lootPreview(
+        final StructureIndex.Marker marker,
+        final int mcVersion,
+        final long seed,
+        final int nativeDim,
+        final int flags,
+        final long generationAtStart
+    ) {
+        if (activeGeneration() != generationAtStart) {
+            return List.of();
+        }
+        try {
+            final CubiomesContext context = CubiomesContexts.get(mcVersion, seed, nativeDim, flags);
+            if (context == null) {
+                return List.of();
+            }
+            final int[] positions = new int[CubiomesContext.MAX_CHESTS_PER_STRUCTURE * 3];
+            final long[] lootSeeds = new long[CubiomesContext.MAX_CHESTS_PER_STRUCTURE];
+            final String[] tables = new String[CubiomesContext.MAX_CHESTS_PER_STRUCTURE];
+            final List<ChestLootPreview> previews;
+            synchronized (LOOT_ROLL_LOCK) {
+                final int chests = context.structureChests(
+                    marker.type().nativeId(), marker.blockX(), marker.blockZ(),
+                    CubiomesContext.MAX_CHESTS_PER_STRUCTURE, positions, lootSeeds, tables
+                );
+                if (chests == NATIVE_FAULT) {
+                    throw new IllegalStateException("chest enumeration reported a native fault");
+                }
+                if (chests <= 0) {
+                    // -1: unsupported for this type or version - degrade to no previews, never a
+                    // native-disable.
+                    return List.of();
+                }
+                final int written = Math.min(chests, CubiomesContext.MAX_CHESTS_PER_STRUCTURE);
+                previews = new ArrayList<>(written);
+                for (int chest = 0; chest < written; chest++) {
+                    previews.add(rollChest(context, positions, lootSeeds, tables, chest));
+                }
+            }
+            return activeGeneration() != generationAtStart ? List.of() : previews;
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return List.of();
+        }
+    }
+
+    private ChestLootPreview rollChest(
+        final CubiomesContext context,
+        final int[] positions,
+        final long[] lootSeeds,
+        final String[] tables,
+        final int chest
+    ) {
+        final int[] counts = new int[CubiomesContext.MAX_LOOT_STACKS + 1];
+        final int[] itemCounts = new int[CubiomesContext.MAX_LOOT_STACKS];
+        final String[] items = new String[CubiomesContext.MAX_LOOT_STACKS];
+        final String[] effects = new String[CubiomesContext.MAX_LOOT_STACKS];
+        final int enchantCapacity =
+            CubiomesContext.MAX_LOOT_STACKS * CubiomesContext.MAX_ENCHANTS_PER_STACK;
+        final String[] enchantNames = new String[enchantCapacity];
+        final int[] enchantLevels = new int[enchantCapacity];
+        final int status = context.rollChestLoot(
+            tables[chest], lootSeeds[chest], CubiomesContext.MAX_LOOT_STACKS,
+            counts, itemCounts, items, effects, enchantNames, enchantLevels, enchantCapacity
+        );
+        if (status == NATIVE_FAULT) {
+            throw new IllegalStateException("loot roll reported a native fault");
+        }
+        return new ChestLootPreview(
+            new ChestLootPreview.ChestLoot(
+                positions[chest * 3], positions[chest * 3 + 1], positions[chest * 3 + 2],
+                tables[chest]
+            ),
+            lootStacks(status, counts, itemCounts, items, effects, enchantNames, enchantLevels),
+            status >= 0
+        );
+    }
+
+    private static List<ChestLootPreview.LootStack> lootStacks(
+        final int status,
+        final int[] counts,
+        final int[] itemCounts,
+        final String[] items,
+        final String[] effects,
+        final String[] enchantNames,
+        final int[] enchantLevels
+    ) {
+        if (status <= 0) {
+            return List.of();
+        }
+        final List<ChestLootPreview.LootStack> stacks = new ArrayList<>(status);
+        int enchantBase = 0;
+        for (int stack = 0; stack < status; stack++) {
+            final int enchantCount = counts[1 + stack];
+            final List<ChestLootPreview.LootEnchantment> enchantments =
+                new ArrayList<>(enchantCount);
+            for (int enchantment = 0; enchantment < enchantCount; enchantment++) {
+                enchantments.add(new ChestLootPreview.LootEnchantment(
+                    enchantNames[enchantBase + enchantment],
+                    enchantLevels[enchantBase + enchantment]
+                ));
+            }
+            enchantBase += enchantCount;
+            stacks.add(new ChestLootPreview.LootStack(
+                items[stack], itemCounts[stack], enchantments, effects[stack]
+            ));
+        }
+        return stacks;
     }
 
     private StructureIndex.Candidate[] detailedCandidates(

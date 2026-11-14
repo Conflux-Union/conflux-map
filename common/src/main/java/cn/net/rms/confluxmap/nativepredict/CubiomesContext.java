@@ -493,7 +493,8 @@ public final class CubiomesContext implements AutoCloseable {
      * one loot seed per chest, {@code outTables} one table name per chest
      * ("chests/pillager_outpost" style). The chest Y is the fork's piece Y, which bastion and
      * camp pieces leave unset - those arrive as 0, with the surface height left to the caller.
-     * Returns the chest count, or a negative status:
+     * Shares the fork's process-global loot-table registry with {@link #rollChestLoot} -
+     * callers must not run the two concurrently. Returns the chest count, or a negative status:
      * -1 pieces/chests unsupported for this type or version, -2 native fault. A return value
      * above the written count means the outputs truncated.
      */
@@ -526,6 +527,12 @@ public final class CubiomesContext implements AutoCloseable {
      * #MAX_ENCHANTS_PER_STACK} covers the worst case, and the flattened arrays
      * ({@code outEnchantNames}/{@code outEnchantLevels}) must both hold it. Returns the stack
      * count, or a negative status: -1 table/version not rollable, -2 native fault.
+     *
+     * <p>Thread safety: the fork's loot-table contexts are process-global statics mutated by a
+     * roll ({@code set_loot_seed}/{@code generate_loot}), so concurrent rolls can interleave
+     * and produce wrong or mixed stacks. Rolls must be serialized across threads and against
+     * {@link #structureChests} - callers hold the same discipline, one static lock around the
+     * whole native section of a loot query.
      */
     public int rollChestLoot(
         final String lootTable,

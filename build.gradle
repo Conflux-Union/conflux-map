@@ -337,7 +337,7 @@ tasks.register('verifyNativeSmoke') {
 // known-answer case plus a roll matrix per loot-bearing type at 1.21.9 and
 // 1.17.1. A later task freezes the matrix output into Java constants.
 tasks.register('compileTestNativeChestLoot', Exec) {
-    group = 'build'
+    group = 'verification'
     description = 'Compiles the loot-library known-answer and smoke harness.'
     final File binFile = rootProject.file('build/bin/test_chest_loot')
     // The harness drives the fork's APIs directly; no shim sources.
