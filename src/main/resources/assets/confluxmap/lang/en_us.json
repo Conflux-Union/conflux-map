@@ -244,6 +244,7 @@
   "confluxmap.screen.waypoint.share": "Share Waypoint",
   "confluxmap.screen.waypoint.publish": "Set as Shared Waypoint",
   "confluxmap.screen.waypoint.publish_pending": "Setting…",
+  "confluxmap.screen.waypoint.publish_upload_failed": "Image upload failed; the waypoint was not published",
   "confluxmap.screen.waypoint.already_shared": "Shared Waypoint Already Exists",
   "confluxmap.screen.waypoint.send_chat": "Send to Chat",
   "confluxmap.screen.waypoint.error.name_required": "Enter a waypoint name",

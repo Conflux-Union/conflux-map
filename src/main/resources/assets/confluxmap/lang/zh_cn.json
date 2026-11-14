@@ -244,6 +244,7 @@
   "confluxmap.screen.waypoint.share": "分享路径点",
   "confluxmap.screen.waypoint.publish": "设置为共享路径点",
   "confluxmap.screen.waypoint.publish_pending": "正在设置…",
+  "confluxmap.screen.waypoint.publish_upload_failed": "图片上传失败，路径点未发布",
   "confluxmap.screen.waypoint.already_shared": "此处已有共享路径点",
   "confluxmap.screen.waypoint.send_chat": "发送到聊天栏",
   "confluxmap.screen.waypoint.error.name_required": "请输入路径点名称",

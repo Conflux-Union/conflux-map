@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
+import cn.net.rms.confluxmap.core.net.image.WaypointImageProto;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
@@ -9,6 +10,7 @@ import cn.net.rms.confluxmap.core.waypoint.list.EditDraft;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointRow;
 import cn.net.rms.confluxmap.mc.chat.WaypointChatDiagnostics;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.mc.net.waypointimage.WaypointImageClient;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.compat.Texts;
@@ -45,6 +47,7 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
     private final String xaeroPreview;
     private ButtonWidget confirmButton;
     private String errorKey;
+    private boolean uploadInFlight;
 
     public WaypointShareConfirmScreen(final Screen parent, final Waypoint waypoint, final Target target) {
         this(parent, waypoint, target, true, null);
@@ -216,6 +219,13 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
     }
 
     @Override
+    public void removed() {
+        super.removed();
+        // A late upload callback must never publish after the screen is gone.
+        uploadInFlight = false;
+    }
+
+    @Override
     public boolean isPauseScreen() {
         return false;
     }
@@ -242,12 +252,12 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
         final boolean shared = sharedWaypoints.isLocationShared(waypoint);
         final boolean pending = sharedWaypoints.isCreatePending(waypoint);
         final String createDisabledReasonKey = sharedWaypoints.createDisabledReasonKey();
-        confirmButton.active = createDisabledReasonKey == null && !shared && !pending;
+        confirmButton.active = createDisabledReasonKey == null && !shared && !pending && !uploadInFlight;
         setDisabledTooltip(confirmButton, createDisabledReasonKey);
         confirmButton.setMessage(Texts.translatable(
             shared
                 ? "confluxmap.screen.waypoint.already_shared"
-                : pending
+                : pending || uploadInFlight
                     ? "confluxmap.screen.waypoint.publish_pending"
                     : "confluxmap.screen.waypoint.publish"
         ));
@@ -264,20 +274,16 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
                 errorKey = "confluxmap.screen.waypoint.publish_pending_message";
                 return;
             }
-            // The public form's publish goes through the shared model so the selected
-            // group rides along; a plain local waypoint keeps the gateway create.
-            final boolean sent = publicDraft != null
-                ? ConfluxMapClient.get().sharedWaypointListModel().createWaypoint(publicDraft)
-                : sharedWaypoints.create(waypoint);
-            if (!sent) {
-                final String reasonKey =
-                    ConfluxMapClient.get().sharedWaypointListModel().canCreateWaypoint().reasonKey();
-                errorKey = reasonKey == null
-                    ? "confluxmap.screen.waypoint.public_unavailable"
-                    : reasonKey;
+            if (uploadInFlight) {
                 return;
             }
-            onClose();
+            // The image goes out with the waypoint: the create waits until the
+            // upload is acknowledged, so the server never sees a dangling id.
+            if (WaypointImageClient.needsUpload(waypoint.imageId, "")) {
+                beginPublishUpload(waypoint.imageId);
+                return;
+            }
+            finishPublicCreate();
             return;
         }
 
@@ -294,6 +300,51 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
         MinecraftAccess.sendChatMessage(client, confluxPreview);
         MinecraftAccess.sendChatMessage(client, xaeroPreview);
         onClose();
+    }
+
+    private void finishPublicCreate() {
+        // The public form's publish goes through the shared model so the selected
+        // group rides along; a plain local waypoint keeps the gateway create.
+        final boolean sent = publicDraft != null
+            ? ConfluxMapClient.get().sharedWaypointListModel().createWaypoint(publicDraft)
+            : sharedWaypoints.create(waypoint);
+        if (!sent) {
+            final String reasonKey =
+                ConfluxMapClient.get().sharedWaypointListModel().canCreateWaypoint().reasonKey();
+            errorKey = reasonKey == null
+                ? "confluxmap.screen.waypoint.public_unavailable"
+                : reasonKey;
+            return;
+        }
+        onClose();
+    }
+
+    private void beginPublishUpload(final String imageId) {
+        final WaypointImageClient images = ConfluxMapClient.get().waypointImages();
+        if (images == null || !images.channelSupported()) {
+            // Server below the description/image channel: publish without an image.
+            finishPublicCreate();
+            return;
+        }
+        uploadInFlight = true;
+        updatePublicButton();
+        images.publishImage(imageId, status -> {
+            // The flag clears even if the target moved on, so returning to
+            // PUBLIC never leaves a permanently disabled confirm button.
+            if (!uploadInFlight) {
+                return;
+            }
+            uploadInFlight = false;
+            if (target != Target.PUBLIC) {
+                return;
+            }
+            if (status == WaypointImageProto.STATUS_OK) {
+                finishPublicCreate();
+            } else {
+                errorKey = "confluxmap.screen.waypoint.publish_upload_failed";
+                updatePublicButton();
+            }
+        });
     }
 
     static boolean shouldShowPublicTarget(
