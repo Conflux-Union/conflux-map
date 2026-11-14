@@ -341,7 +341,9 @@ class FullscreenMapLocationMenuTest {
             "the split map pane must capture menu targets through the embedded map"
         );
         assertTrue(
-            pane.contains("map.runLocationAction(action, target, waypoint, playerId, host)"),
+            pane.contains(
+                "map.runLocationAction(action, target, waypoint, playerId, structure, host)"
+            ),
             "the split map pane must run actions on the embedded map with itself as return screen"
         );
         assertTrue(
@@ -367,6 +369,85 @@ class FullscreenMapLocationMenuTest {
                 name + " must route clicks around the open menu before its widget dispatch"
             );
         }
+    }
+
+    @Test
+    void lootSupportedStructuresGainTheLootEntryAndOthersDoNot() {
+        final StructureIndex.Marker outpost = new StructureIndex.Marker(
+            StructureIndex.StructureType.PILLAGER_OUTPOST,
+            32,
+            48,
+            2,
+            StructureIndex.State.CANDIDATE
+        );
+
+        assertTrue(FullscreenMapLocationMenu.lootEntryShown(outpost, type -> true));
+        assertFalse(
+            FullscreenMapLocationMenu.lootEntryShown(outpost, type -> false),
+            "the loot entry must follow the session's per-type support gate"
+        );
+        assertFalse(
+            FullscreenMapLocationMenu.lootEntryShown(null, type -> true),
+            "only structure targets gain the loot entry"
+        );
+
+        assertEquals(
+            "confluxmap.map.location_menu.loot",
+            FullscreenMapLocationMenu.Action.LOOT.translationKey()
+        );
+        assertEquals(List.of(
+            FullscreenMapLocationMenu.Action.TELEPORT,
+            FullscreenMapLocationMenu.Action.SET_WAYPOINT,
+            FullscreenMapLocationMenu.Action.SHARE_LOCATION,
+            FullscreenMapLocationMenu.Action.HIGHLIGHT,
+            FullscreenMapLocationMenu.Action.LOOT
+        ), FullscreenMapLocationMenu.actions(false, false, false, true));
+        assertEquals(List.of(
+            FullscreenMapLocationMenu.Action.TELEPORT,
+            FullscreenMapLocationMenu.Action.SET_WAYPOINT,
+            FullscreenMapLocationMenu.Action.SHARE_LOCATION,
+            FullscreenMapLocationMenu.Action.HIGHLIGHT
+        ), FullscreenMapLocationMenu.actions(false, false, false, false));
+    }
+
+    @Test
+    void lootEntryWiresTheSupportGateAndTheLootScreen() throws IOException {
+        final Path root = projectRoot();
+        final String controller = Files.readString(root.resolve(
+            "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/MapLocationMenuController.java"
+        )).replace("\r\n", "\n");
+        assertTrue(
+            controller.contains("FullscreenMapLocationMenu.lootEntryShown("),
+            "the loot entry must follow the marker service's per-type support gate"
+        );
+        assertTrue(
+            controller.contains("screen.structureMarkers::lootSupported"),
+            "the gate must come from the map's marker service, not a hardcoded type list"
+        );
+        assertTrue(
+            controller.contains("active = screen.viewingLiveSession();"),
+            "the loot entry must grey out when the viewed session is not the live one"
+        );
+        assertTrue(
+            controller.contains("StructureLootScreen.create(structure, screen.structureMarkers)"),
+            "the loot action must open the structure loot screen with the captured marker"
+        );
+
+        final String pane = Files.readString(root.resolve(
+            "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/SplitMapPane.java"
+        )).replace("\r\n", "\n");
+        assertTrue(
+            pane.contains(
+                "menuTarget, menuWaypoint, menuPlayerId, menuDeletePending, menuStructure"
+            ),
+            "the split map pane must pass the captured structure into the shared specs"
+        );
+        assertTrue(
+            pane.contains(
+                "map.runLocationAction(action, target, waypoint, playerId, structure, host)"
+            ),
+            "the split map pane must pass the captured structure into the action dispatch"
+        );
     }
 
     @Test
@@ -403,20 +484,25 @@ class FullscreenMapLocationMenuTest {
         for (final boolean existingWaypoint : new boolean[] {false, true}) {
             for (final boolean highlighted : new boolean[] {false, true}) {
                 for (final boolean playerTarget : new boolean[] {false, true}) {
-                    final List<FullscreenMapLocationMenu.Action> actions =
-                        FullscreenMapLocationMenu.actions(existingWaypoint, highlighted, playerTarget);
-                    assertNotNull(
-                        FullscreenMapLocationMenu.hotkeyLabel(actions.size() - 1),
-                        "the menu outgrew its digit shortcuts: " + actions
-                    );
+                    for (final boolean lootEntry : new boolean[] {false, true}) {
+                        final List<FullscreenMapLocationMenu.Action> actions =
+                            FullscreenMapLocationMenu.actions(
+                                existingWaypoint, highlighted, playerTarget, lootEntry
+                            );
+                        assertNotNull(
+                            FullscreenMapLocationMenu.hotkeyLabel(actions.size() - 1),
+                            "the menu outgrew its digit shortcuts: " + actions
+                        );
+                    }
                 }
             }
         }
         assertEquals("1", FullscreenMapLocationMenu.hotkeyLabel(0));
         assertEquals("5", FullscreenMapLocationMenu.hotkeyLabel(4));
-        assertNull(FullscreenMapLocationMenu.hotkeyLabel(5));
+        assertEquals("6", FullscreenMapLocationMenu.hotkeyLabel(5));
         assertEquals(0, FullscreenMapLocationMenu.hotkeyIndex(Keys.DIGIT_1));
         assertEquals(4, FullscreenMapLocationMenu.hotkeyIndex(Keys.DIGIT_5));
+        assertEquals(5, FullscreenMapLocationMenu.hotkeyIndex(Keys.DIGIT_6));
         assertEquals(-1, FullscreenMapLocationMenu.hotkeyIndex(Keys.ESCAPE));
     }
 

@@ -168,6 +168,7 @@ final class MapLocationMenuController {
     private FullscreenMapLocationMenu.Target locationMenuTarget;
     private WaypointRenderEntry locationMenuWaypoint;
     private UUID locationMenuPlayerId;
+    private StructureIndex.Marker locationMenuStructure;
     private List<FullscreenMapLocationMenu.ButtonSpec> locationMenuSpecs = List.of();
     private FullscreenMapLocationMenu.Action pendingLocationAction;
     private boolean locationMenuDeletePending;
@@ -215,6 +216,7 @@ final class MapLocationMenuController {
         locationMenuTarget = null;
         locationMenuWaypoint = null;
         locationMenuPlayerId = null;
+        locationMenuStructure = null;
         pendingLocationAction = null;
         locationMenuDeletePending = false;
         // A reset invalidates the panel's whole context, so it snaps instead of fading.
@@ -271,7 +273,8 @@ final class MapLocationMenuController {
 
         void addLocationMenuButtons() {
         final List<FullscreenMapLocationMenu.ButtonSpec> specs = locationMenuButtonSpecs(
-            locationMenuTarget, locationMenuWaypoint, locationMenuPlayerId, locationMenuDeletePending
+            locationMenuTarget, locationMenuWaypoint, locationMenuPlayerId,
+            locationMenuDeletePending, locationMenuStructure
         );
         locationMenuSpecs = specs;
         for (int index = 0; index < specs.size(); index++) {
@@ -293,7 +296,7 @@ final class MapLocationMenuController {
                 case SHARE_LOCATION -> shareLocationButton = button;
                 case TELEPORT -> teleportLocationButton = button;
                 case DELETE_WAYPOINT, SHARE_WAYPOINT, HIGHLIGHT, HIGHLIGHT_WAYPOINT, CLEAR_HIGHLIGHT,
-                     HIGHLIGHT_PLAYER, CLEAR_PLAYER_HIGHLIGHT -> {
+                     HIGHLIGHT_PLAYER, CLEAR_PLAYER_HIGHLIGHT, LOOT -> {
                 }
             }
         }
@@ -307,7 +310,8 @@ final class MapLocationMenuController {
         final FullscreenMapLocationMenu.Target target,
         final WaypointRenderEntry waypoint,
         final UUID playerId,
-        final boolean deletePending
+        final boolean deletePending,
+        final StructureIndex.Marker structure
     ) {
         final MinecraftClient client = MinecraftClient.getInstance();
         final boolean playerPresent = client.player != null;
@@ -337,7 +341,10 @@ final class MapLocationMenuController {
             FullscreenMapLocationMenu.actions(
                 existingWaypoint,
                 locationMenuTargetHighlighted(waypoint, target, playerId),
-                playerId != null
+                playerId != null,
+                FullscreenMapLocationMenu.lootEntryShown(
+                    structure, screen.structureMarkers::lootSupported
+                )
             )
         );
         // A seed-sibling waypoint belongs to another world namespace: teleport and highlight
@@ -374,6 +381,9 @@ final class MapLocationMenuController {
                 active = screen.waypointHighlightState.active();
             } else if (action == FullscreenMapLocationMenu.Action.CLEAR_PLAYER_HIGHLIGHT) {
                 active = playerId != null && screen.serverPlayerRadar.isHighlighted(playerId);
+            } else if (action == FullscreenMapLocationMenu.Action.LOOT) {
+                // Loot rolls the viewed session's marker state, so browse views grey it out.
+                active = screen.viewingLiveSession();
             }
             specs.add(new FullscreenMapLocationMenu.ButtonSpec(
                 action,
@@ -422,6 +432,7 @@ final class MapLocationMenuController {
         locationMenuTarget = capture.target();
         locationMenuWaypoint = capture.waypoint();
         locationMenuPlayerId = capture.playerId();
+        locationMenuStructure = capture.structure();
         pendingLocationAction = null;
         locationMenuDeletePending = false;
         reveal.setOpen(true);
@@ -441,8 +452,10 @@ final class MapLocationMenuController {
             ? screen.centerX + (mouseX - mapCenterX) * screen.scale : playerTarget.x();
         final double worldZ = playerTarget == null
             ? screen.centerZ + (mouseY - mapCenterY) * screen.scale : playerTarget.z();
+        final StructureIndex.Marker structure = playerTarget == null
+            ? screen.hoveredStructure : null;
         final FullscreenMapLocationMenu.Point point = FullscreenMapLocationMenu.pointAt(
-            worldX, worldZ, playerTarget == null ? screen.hoveredStructure : null
+            worldX, worldZ, structure
         );
         final int blockX = point.blockX();
         final int blockZ = point.blockZ();
@@ -456,7 +469,12 @@ final class MapLocationMenuController {
             viewportWidth,
             viewportHeight,
             FullscreenMapLocationMenu.actions(
-                existingWaypoint, false, playerTarget != null
+                existingWaypoint,
+                false,
+                playerTarget != null,
+                FullscreenMapLocationMenu.lootEntryShown(
+                    structure, screen.structureMarkers::lootSupported
+                )
             ).size()
         );
         final FullscreenMapLocationMenu.Target target = FullscreenMapLocationMenu.targetAt(
@@ -469,7 +487,9 @@ final class MapLocationMenuController {
             blockZ
         );
         return new FullscreenMapLocationMenu.Capture(
-            bounds, target, waypoint, playerTarget == null ? null : playerTarget.playerId()
+            bounds, target, waypoint,
+            playerTarget == null ? null : playerTarget.playerId(),
+            structure
         );
     }
     void performPendingLocationAction() {
@@ -477,6 +497,7 @@ final class MapLocationMenuController {
         final FullscreenMapLocationMenu.Target target = locationMenuTarget;
         final WaypointRenderEntry waypoint = locationMenuWaypoint;
         final UUID playerId = locationMenuPlayerId;
+        final StructureIndex.Marker structure = locationMenuStructure;
         if (action == null || target == null) {
             return;
         }
@@ -488,7 +509,7 @@ final class MapLocationMenuController {
             return;
         }
         dismissLocationMenu();
-        runLocationAction(action, target, waypoint, playerId, screen);
+        runLocationAction(action, target, waypoint, playerId, structure, screen);
     }
     /**
      * Runs one captured location-menu action. Embedded split-map hosts pass themselves as
@@ -499,6 +520,7 @@ final class MapLocationMenuController {
         final FullscreenMapLocationMenu.Target target,
         final WaypointRenderEntry waypoint,
         final UUID playerId,
+        final StructureIndex.Marker structure,
         final Screen returnTo
     ) {
         switch (action) {
@@ -574,6 +596,14 @@ final class MapLocationMenuController {
                     screen.onClose();
                 }
             }
+            case LOOT -> {
+                if (structure != null) {
+                    MinecraftAccess.setScreen(
+                        MinecraftClient.getInstance(),
+                        StructureLootScreen.create(structure, screen.structureMarkers)
+                    );
+                }
+            }
         }
         fireLocationActionPerformed(action, target);
     }
@@ -638,7 +668,13 @@ final class MapLocationMenuController {
             case CLEAR_HIGHLIGHT -> ConfluxMapEvents.LocationAction.CLEAR_HIGHLIGHT;
             case HIGHLIGHT_PLAYER -> ConfluxMapEvents.LocationAction.HIGHLIGHT_PLAYER;
             case CLEAR_PLAYER_HIGHLIGHT -> ConfluxMapEvents.LocationAction.CLEAR_PLAYER_HIGHLIGHT;
+            // Loot is a read-only preview: nothing about the location changes, so the public
+            // LocationAction vocabulary stays untouched and no event is reported.
+            case LOOT -> null;
         };
+        if (mapped == null) {
+            return;
+        }
         api.fireLocationActionPerformed(
             mapped, target.blockX(), target.blockZ(), screen.viewSession().dimension(), target.groundKnown()
         );
@@ -709,6 +745,7 @@ final class MapLocationMenuController {
         locationMenuTarget = null;
         locationMenuWaypoint = null;
         locationMenuPlayerId = null;
+        locationMenuStructure = null;
         locationMenuSpecs = List.of();
         pendingLocationAction = null;
         locationMenuDeletePending = false;
@@ -821,6 +858,7 @@ final class MapLocationMenuController {
             case CLEAR_HIGHLIGHT -> "confluxmap.map.location_menu.clear_highlight.tooltip";
             case HIGHLIGHT_PLAYER -> "confluxmap.map.location_menu.highlight_player.tooltip";
             case CLEAR_PLAYER_HIGHLIGHT -> "confluxmap.map.location_menu.clear_player_highlight.tooltip";
+            case LOOT -> "confluxmap.map.location_menu.loot.tooltip";
         };
     }
     boolean locationActionHeightUnavailable() {

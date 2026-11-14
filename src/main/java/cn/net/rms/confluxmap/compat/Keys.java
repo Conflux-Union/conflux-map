@@ -22,6 +22,7 @@ public final class Keys {
     //$$ public static final int DIGIT_3 = InputConstants.KEY_3;
     //$$ public static final int DIGIT_4 = InputConstants.KEY_4;
     //$$ public static final int DIGIT_5 = InputConstants.KEY_5;
+    //$$ public static final int DIGIT_6 = InputConstants.KEY_6;
     //$$ public static final int DOWN = InputConstants.KEY_DOWN;
     //$$ public static final int ENTER = InputConstants.KEY_RETURN;
     //$$ public static final int ESCAPE = InputConstants.KEY_ESCAPE;
@@ -52,6 +53,7 @@ public final class Keys {
     public static final int DIGIT_3 = org.lwjgl.glfw.GLFW.GLFW_KEY_3;
     public static final int DIGIT_4 = org.lwjgl.glfw.GLFW.GLFW_KEY_4;
     public static final int DIGIT_5 = org.lwjgl.glfw.GLFW.GLFW_KEY_5;
+    public static final int DIGIT_6 = org.lwjgl.glfw.GLFW.GLFW_KEY_6;
     public static final int DOWN = org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN;
     public static final int ENTER = org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER;
     public static final int ESCAPE = org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE;
