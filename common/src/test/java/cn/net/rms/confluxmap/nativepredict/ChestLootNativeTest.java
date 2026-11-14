@@ -53,6 +53,15 @@ class ChestLootNativeTest {
         "chests/stronghold_library", "chests/stronghold_crossing", "chests/stronghold_corridor",
         "chests/stronghold_corridor", "chests/stronghold_crossing",
     };
+    /**
+     * Frozen per-stack item counts and item names of the known outpost roll in generated_items
+     * order (the fork's {@code tests/test_loot.c} output, replayed through the JNI path).
+     */
+    private static final int[] GOLDEN_OUTPOST_ITEM_COUNTS = {1, 4, 5, 2, 2, 2, 1};
+    private static final String[] GOLDEN_OUTPOST_ITEM_NAMES = {
+        "minecraft:crossbow", "minecraft:wheat", "minecraft:wheat", "minecraft:dark_oak_log",
+        "minecraft:dark_oak_log", "minecraft:string", "minecraft:book",
+    };
 
     @BeforeEach
     void requireNative() {
@@ -144,15 +153,20 @@ class ChestLootNativeTest {
         final int stackCap = CubiomesContext.MAX_LOOT_STACKS;
         final int enchCap = stackCap * CubiomesContext.MAX_ENCHANTS_PER_STACK;
         final int[] counts = new int[stackCap + 1];
+        final int[] itemCounts = new int[stackCap];
         final String[] items = new String[stackCap];
         final String[] effects = new String[stackCap];
         final String[] enchNames = new String[enchCap];
         final int[] enchLevels = new int[enchCap];
         final int stacks = knownSeedContext().rollChestLoot(
             OUTPOST_TABLE, KNOWN_LOOT_SEED, stackCap,
-            counts, items, effects, enchNames, enchLevels, enchCap
+            counts, itemCounts, items, effects, enchNames, enchLevels, enchCap
         );
         assertEquals(7, stacks, "the fork's known roll yields 7 stacks");
+        assertArrayEquals(GOLDEN_OUTPOST_ITEM_COUNTS, Arrays.copyOf(itemCounts, stacks),
+            "per-stack item counts=" + Arrays.toString(Arrays.copyOf(itemCounts, stacks)));
+        assertArrayEquals(GOLDEN_OUTPOST_ITEM_NAMES, Arrays.copyOf(items, stacks),
+            "item names=" + Arrays.toString(Arrays.copyOf(items, stacks)));
 
         // Enchantments are stack-major: stack i occupies the next counts[1 + i] slots.
         int offset = 0;
@@ -191,7 +205,7 @@ class ChestLootNativeTest {
         final int enchCap = stackCap * CubiomesContext.MAX_ENCHANTS_PER_STACK;
         final int status = knownSeedContext().rollChestLoot(
             "chests/does_not_exist", KNOWN_LOOT_SEED, stackCap,
-            new int[stackCap + 1], new String[stackCap], new String[stackCap],
+            new int[stackCap + 1], new int[stackCap], new String[stackCap], new String[stackCap],
             new String[enchCap], new int[enchCap], enchCap
         );
         assertEquals(-1, status, "an unrollable table must report -1, not throw or roll");

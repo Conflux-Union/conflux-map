@@ -519,7 +519,9 @@ public final class CubiomesContext implements AutoCloseable {
     /**
      * Rolls one loot table with one seed - see {@link CubiomesNative#cfxRollChestLoot} for the
      * full contract. Writes up to {@code maxStacks} stacks (clamped to the output arrays;
-     * size them from {@link #MAX_LOOT_STACKS}). {@code maxEnchants} is the total flattened
+     * size them from {@link #MAX_LOOT_STACKS}). {@code outItemCounts[i]} receives the fork's
+     * per-stack item count of stack {@code i} (a shorter array just bounds the writes; null
+     * is a -2 fault). {@code maxEnchants} is the total flattened
      * capacity across all stacks - {@link #MAX_LOOT_STACKS} &times; {@link
      * #MAX_ENCHANTS_PER_STACK} covers the worst case, and the flattened arrays
      * ({@code outEnchantNames}/{@code outEnchantLevels}) must both hold it. Returns the stack
@@ -530,6 +532,7 @@ public final class CubiomesContext implements AutoCloseable {
         final long lootSeed,
         final int maxStacks,
         final int[] outCounts,
+        final int[] outItemCounts,
         final String[] outItemNames,
         final String[] outEffects,
         final String[] outEnchantNames,
@@ -546,7 +549,8 @@ public final class CubiomesContext implements AutoCloseable {
         );
         return CubiomesNative.cfxRollChestLoot(
             handle, lootTable, lootSeed, stackCapacity,
-            outCounts, outItemNames, outEffects, outEnchantNames, outEnchantLevels, enchantCapacity
+            outCounts, outItemCounts, outItemNames, outEffects, outEnchantNames, outEnchantLevels,
+            enchantCapacity
         );
     }
 

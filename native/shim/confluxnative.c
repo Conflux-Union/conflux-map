@@ -3826,7 +3826,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
 
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxRollChestLoot(
     JNIEnv *env, jclass clazz, jlong handle, jstring lootTable, jlong lootSeed, jint maxStacks,
-    jintArray outCounts, jobjectArray outItemNames, jobjectArray outEffects,
+    jintArray outCounts, jintArray outItemCounts, jobjectArray outItemNames, jobjectArray outEffects,
     jobjectArray outEnchantNames, jintArray outEnchantLevels, jint maxEnchants
 ) {
     (void) clazz;
@@ -3834,6 +3834,10 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     if (ctx == NULL) {
         return -2;
     }
+    if (outItemCounts == NULL) {
+        return -2;
+    }
+    const jint itemCountCap = (*env)->GetArrayLength(env, outItemCounts);
     jint stacksCap = maxStacks;
     const jint countsCap = (*env)->GetArrayLength(env, outCounts) - 1;
     if (stacksCap > countsCap) {
@@ -3896,9 +3900,12 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     /* A legitimate roll can produce zero stacks; never hand malloc a zero
      * size (some libcs return NULL there and the fault path would lie). */
     jint *counts = malloc(sizeof(jint) * (size_t) (written > 0 ? written : 1));
+    jint *itemCounts =
+        malloc(sizeof(jint) * (size_t) (written > 0 ? written : 1));
     jint *levels = malloc(sizeof(jint) * (size_t) (enchCap > 0 ? enchCap : 1));
-    if (counts == NULL || levels == NULL) {
+    if (counts == NULL || itemCounts == NULL || levels == NULL) {
         free(counts);
+        free(itemCounts);
         free(levels);
         return -2;
     }
@@ -3907,6 +3914,9 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     int enchWritten = 0;
     for (int i = 0; i < written && status == 0; i++) {
         const ItemStack *stack = &ltc->generated_items[i];
+        if (i < itemCountCap) {
+            itemCounts[i] = (jint) stack->count;
+        }
 
         const char *itemName = get_item_name(ltc, stack->item);
         jstring itemStr = (*env)->NewStringUTF(env, itemName != NULL ? itemName : "");
@@ -3967,9 +3977,14 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     if (status == 0) {
         (*env)->SetIntArrayRegion(env, outCounts, 0, 1, &stackCount);
         (*env)->SetIntArrayRegion(env, outCounts, 1, written, counts);
+        if (itemCountCap > 0) {
+            const jint itemCountWritten = written < itemCountCap ? written : itemCountCap;
+            (*env)->SetIntArrayRegion(env, outItemCounts, 0, itemCountWritten, itemCounts);
+        }
         (*env)->SetIntArrayRegion(env, outEnchantLevels, 0, enchWritten, levels);
     }
     free(counts);
+    free(itemCounts);
     free(levels);
     return status != 0 ? status : stackCount;
 }
