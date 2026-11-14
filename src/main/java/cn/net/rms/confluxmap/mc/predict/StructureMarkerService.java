@@ -505,7 +505,7 @@ public final class StructureMarkerService {
         );
     }
 
-    private static List<ChestLootPreview.LootStack> lootStacks(
+    static List<ChestLootPreview.LootStack> lootStacks(
         final int status,
         final int[] counts,
         final int[] itemCounts,
@@ -517,9 +517,11 @@ public final class StructureMarkerService {
         if (status <= 0) {
             return List.of();
         }
-        final List<ChestLootPreview.LootStack> stacks = new ArrayList<>(status);
+        // The roll reports its full count even when it wrote fewer; iterate the written bound.
+        final int written = Math.min(status, CubiomesContext.MAX_LOOT_STACKS);
+        final List<ChestLootPreview.LootStack> stacks = new ArrayList<>(written);
         int enchantBase = 0;
-        for (int stack = 0; stack < status; stack++) {
+        for (int stack = 0; stack < written; stack++) {
             final int enchantCount = counts[1 + stack];
             final List<ChestLootPreview.LootEnchantment> enchantments =
                 new ArrayList<>(enchantCount);

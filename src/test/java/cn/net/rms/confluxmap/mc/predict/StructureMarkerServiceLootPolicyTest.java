@@ -30,18 +30,16 @@ class StructureMarkerServiceLootPolicyTest {
         @TempDir final Path cacheRoot
     ) {
         final MapExecutors executors = new MapExecutors();
-        try {
-            final StructureMarkerService service = service(
-                cacheRoot, McVersions.toCubiomes("1.21.9").getAsInt(), () -> true, executors
-            );
-            final CompletableFuture<List<ChestLootPreview>> preview =
-                service.lootPreviewAsync(outpostMarker());
-            // Already done means the gate returned before any worker task was scheduled.
-            assertTrue(preview.isDone());
-            assertTrue(preview.join().isEmpty());
-        } finally {
-            executors.shutdown(1_000L);
-        }
+        final StructureMarkerService service = service(
+            cacheRoot, McVersions.toCubiomes("1.21.9").getAsInt(), () -> true, executors
+        );
+        executors.shutdown(1_000L);
+        // With the pool shut down, a gate regression fails as RejectedExecutionException
+        // instead of a vacuous isDone() pass.
+        final CompletableFuture<List<ChestLootPreview>> preview =
+            service.lootPreviewAsync(outpostMarker());
+        assertTrue(preview.isDone());
+        assertTrue(preview.join().isEmpty());
     }
 
     @Test
@@ -50,21 +48,18 @@ class StructureMarkerServiceLootPolicyTest {
     ) {
         final AtomicBoolean allowed = new AtomicBoolean(true);
         final MapExecutors executors = new MapExecutors();
-        try {
-            final StructureMarkerService service = service(
-                cacheRoot, McVersions.toCubiomes("1.21.9").getAsInt(), allowed::get, executors
-            );
-            service.onSessionChanged(new SessionGuard.Session(
-                1L, WorldIdentity.multiplayer("loot-policy"), DimensionId.OVERWORLD
-            ));
-            allowed.set(false);
-            final CompletableFuture<List<ChestLootPreview>> preview =
-                service.lootPreviewAsync(outpostMarker());
-            assertTrue(preview.isDone());
-            assertTrue(preview.join().isEmpty());
-        } finally {
-            executors.shutdown(1_000L);
-        }
+        final StructureMarkerService service = service(
+            cacheRoot, McVersions.toCubiomes("1.21.9").getAsInt(), allowed::get, executors
+        );
+        service.onSessionChanged(new SessionGuard.Session(
+            1L, WorldIdentity.multiplayer("loot-policy"), DimensionId.OVERWORLD
+        ));
+        allowed.set(false);
+        executors.shutdown(1_000L);
+        final CompletableFuture<List<ChestLootPreview>> preview =
+            service.lootPreviewAsync(outpostMarker());
+        assertTrue(preview.isDone());
+        assertTrue(preview.join().isEmpty());
     }
 
     @Test
@@ -75,16 +70,8 @@ class StructureMarkerServiceLootPolicyTest {
                 cacheRoot, McVersions.toCubiomes("1.21.9").getAsInt(), () -> true, executors
             );
             assertTrue(service.lootSupported(StructureIndex.StructureType.PILLAGER_OUTPOST));
-            // Zero loot tables in the fork's own table registry.
-            for (final StructureIndex.StructureType type : new StructureIndex.StructureType[] {
-                StructureIndex.StructureType.SWAMP_HUT,
-                StructureIndex.StructureType.OCEAN_MONUMENT,
-                StructureIndex.StructureType.NETHER_FOSSIL,
-                StructureIndex.StructureType.TRAIL_RUINS,
-            }) {
-                assertFalse(service.lootSupported(type), type.id());
-            }
-            // Missing from the fork's getStructureSaltConfig, so chests cannot be enumerated.
+            // No piece path: missing from the fork's getStructureSaltConfig, or (Nether_Fossil)
+            // no case in the fork's piece switch - enumeration reports -1 at every version.
             for (final StructureIndex.StructureType type : new StructureIndex.StructureType[] {
                 StructureIndex.StructureType.VILLAGE,
                 StructureIndex.StructureType.OCEAN_RUIN,
@@ -92,6 +79,15 @@ class StructureMarkerServiceLootPolicyTest {
                 StructureIndex.StructureType.ANCIENT_CITY,
                 StructureIndex.StructureType.MINESHAFT,
                 StructureIndex.StructureType.TRIAL_CHAMBERS,
+                StructureIndex.StructureType.NETHER_FOSSIL,
+            }) {
+                assertFalse(service.lootSupported(type), type.id());
+            }
+            // No loot tables in the fork's table registry.
+            for (final StructureIndex.StructureType type : new StructureIndex.StructureType[] {
+                StructureIndex.StructureType.SWAMP_HUT,
+                StructureIndex.StructureType.OCEAN_MONUMENT,
+                StructureIndex.StructureType.TRAIL_RUINS,
             }) {
                 assertFalse(service.lootSupported(type), type.id());
             }
