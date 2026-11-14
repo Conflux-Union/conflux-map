@@ -257,6 +257,77 @@ class WaypointIoTest {
     }
 
     @Test
+    void filesWithoutDescriptionFieldsLoadEmptyDescriptionAndImageId(@TempDir final Path tempDir)
+        throws IOException {
+        final Path file = tempDir.resolve("legacy-v2.json");
+        Files.writeString(file, "{\n"
+            + "  \"schemaVersion\": 2,\n"
+            + "  \"waypoints\": [{\n"
+            + "    \"id\": \"00000000-0000-0000-0000-000000000001\",\n"
+            + "    \"name\": \"Kept\",\n"
+            + "    \"dimensionId\": \"minecraft:overworld\",\n"
+            + "    \"x\": 1.0, \"y\": 70.0, \"z\": 2.0,\n"
+            + "    \"colorArgb\": -13408615,\n"
+            + "    \"visible\": true,\n"
+            + "    \"type\": \"NORMAL\",\n"
+            + "    \"createdAtEpochMs\": 2\n"
+            + "  }]\n"
+            + "}\n");
+
+        final Waypoint waypoint = WaypointIo.load(file, LOGGER).get(0);
+
+        assertEquals("Kept", waypoint.name);
+        assertEquals("", waypoint.description);
+        assertEquals("", waypoint.imageId);
+    }
+
+    @Test
+    void roundTripPreservesDescriptionAndImageIdWithoutBumpingTheSchema(@TempDir final Path tempDir)
+        throws IOException {
+        final Path file = tempDir.resolve("description.json");
+        final Waypoint waypoint = Waypoint.create(
+            "Base", DimensionId.OVERWORLD, 1.0, 64.0, 2.0,
+            0xFF336699, "", Waypoint.Type.NORMAL
+        );
+        waypoint.description = "产物:\n钻石 ×3";
+        waypoint.imageId = "0123ABCD-4567-789A-BCDE-F0123456789A";
+
+        WaypointIo.save(file, List.of(waypoint), LOGGER);
+        final Waypoint loaded = WaypointIo.load(file, LOGGER).get(0);
+
+        assertEquals("产物:\n钻石 ×3", loaded.description);
+        assertEquals("0123abcd-4567-789a-bcde-f0123456789a", loaded.imageId);
+        assertTrue(Files.readString(file).contains("\"schemaVersion\": 2"));
+    }
+
+    @Test
+    void invalidDescriptionOrImageIdIsClearedWithoutDroppingTheWaypoint(@TempDir final Path tempDir)
+        throws IOException {
+        final Path file = tempDir.resolve("invalid-notes.json");
+        Files.writeString(file, "{\n"
+            + "  \"schemaVersion\": 2,\n"
+            + "  \"waypoints\": [{\n"
+            + "    \"id\": \"00000000-0000-0000-0000-000000000001\",\n"
+            + "    \"name\": \"Kept\",\n"
+            + "    \"dimensionId\": \"minecraft:overworld\",\n"
+            + "    \"x\": 1.0, \"y\": 70.0, \"z\": 2.0,\n"
+            + "    \"colorArgb\": -13408615,\n"
+            + "    \"visible\": true,\n"
+            + "    \"type\": \"NORMAL\",\n"
+            + "    \"description\": \"bad\\n§cstring\",\n"
+            + "    \"imageId\": \"not-a-uuid\",\n"
+            + "    \"createdAtEpochMs\": 2\n"
+            + "  }]\n"
+            + "}\n");
+
+        final Waypoint waypoint = WaypointIo.load(file, LOGGER).get(0);
+
+        assertEquals("Kept", waypoint.name);
+        assertEquals("", waypoint.description);
+        assertEquals("", waypoint.imageId);
+    }
+
+    @Test
     void futureSchemaIsNeverOverwrittenByLaterSave(@TempDir final Path tempDir) throws IOException {
         final Path file = tempDir.resolve("future.json");
         final String futureJson = "{\n"

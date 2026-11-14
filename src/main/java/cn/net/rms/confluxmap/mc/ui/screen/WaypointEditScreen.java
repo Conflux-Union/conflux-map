@@ -1057,7 +1057,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
             final EditDraft publicDraft = createTarget == CreateTarget.PUBLIC
                 ? new EditDraft(
                     values.name(), dimensionId, values.x(), values.y(), values.z(),
-                    colorSelection.selected(), type, iconItemId, markerLabel,
+                    colorSelection.selected(), type, iconItemId, markerLabel, "", "",
                     crossDimensionVisible, crossDimensionY, groupKey)
                 : null;
             MinecraftAccess.setScreen(
@@ -1068,7 +1068,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         }
         final EditDraft draft = new EditDraft(
             values.name(), dimensionId, values.x(), values.y(), values.z(),
-            colorSelection.selected(), draftType(), iconItemId, markerLabel,
+            colorSelection.selected(), draftType(), iconItemId, markerLabel, "", "",
             crossDimensionVisible, crossDimensionY, groupKey
         );
         if (createTarget == CreateTarget.PUBLIC) {

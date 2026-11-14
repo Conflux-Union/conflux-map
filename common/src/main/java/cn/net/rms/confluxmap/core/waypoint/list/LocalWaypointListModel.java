@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.waypoint.list;
 
 import cn.net.rms.confluxmap.core.waypoint.SiblingWaypoint;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import cn.net.rms.confluxmap.core.waypoint.WaypointDescription;
 import cn.net.rms.confluxmap.core.waypoint.WaypointMarkerStyle;
 import cn.net.rms.confluxmap.core.waypoint.WaypointSet;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
@@ -229,6 +230,8 @@ public final class LocalWaypointListModel implements WaypointListModel {
         waypoint.crossDimensionY = draft.crossDimensionY();
         waypoint.iconItemId = WaypointMarkerStyle.iconItemId(draft.iconItemId());
         waypoint.markerLabel = WaypointMarkerStyle.markerLabel(draft.markerLabel());
+        waypoint.description = WaypointDescription.normalize(draft.description());
+        waypoint.imageId = WaypointDescription.normalizeImageId(draft.imageId());
         store.add(waypoint);
         return true;
     }
@@ -252,6 +255,8 @@ public final class LocalWaypointListModel implements WaypointListModel {
         existing.type = draft.type();
         existing.iconItemId = WaypointMarkerStyle.iconItemId(draft.iconItemId());
         existing.markerLabel = WaypointMarkerStyle.markerLabel(draft.markerLabel());
+        existing.description = WaypointDescription.normalize(draft.description());
+        existing.imageId = WaypointDescription.normalizeImageId(draft.imageId());
         store.update(existing);
         return true;
     }

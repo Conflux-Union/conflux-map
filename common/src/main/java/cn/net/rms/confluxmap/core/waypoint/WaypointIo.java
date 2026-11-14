@@ -68,6 +68,8 @@ public final class WaypointIo {
         String type;
         String iconItemId;
         String markerLabel;
+        String description;
+        String imageId;
         long createdAtEpochMs;
     }
 
@@ -206,6 +208,16 @@ public final class WaypointIo {
         } catch (final IllegalArgumentException e) {
             logger.warn("Clearing invalid marker label on waypoint {}", entry.id);
         }
+        try {
+            waypoint.description = WaypointDescription.normalize(entry.description);
+        } catch (final IllegalArgumentException e) {
+            logger.warn("Clearing invalid description on waypoint {}", entry.id);
+        }
+        try {
+            waypoint.imageId = WaypointDescription.normalizeImageId(entry.imageId);
+        } catch (final IllegalArgumentException e) {
+            logger.warn("Clearing invalid image id on waypoint {}", entry.id);
+        }
         return waypoint;
     }
 
@@ -253,6 +265,8 @@ public final class WaypointIo {
         entry.type = waypoint.type.name();
         entry.iconItemId = waypoint.iconItemId;
         entry.markerLabel = waypoint.markerLabel;
+        entry.description = waypoint.description;
+        entry.imageId = waypoint.imageId;
         entry.createdAtEpochMs = waypoint.createdAtEpochMs;
         return entry;
     }
