@@ -1312,8 +1312,16 @@ public final class WaypointEditScreen extends ConfluxScreen {
         );
     }
 
-    /** The draft's type: the creation type, or TEMPORARY while the toggle is on. */
     private Waypoint.Type draftType() {
-        return temporary ? Waypoint.Type.TEMPORARY : type;
+        return resolveDraftType(type, temporary);
+    }
+
+    /** The draft's type: TEMPORARY while the toggle is on, else the base type;
+     *  a temporary base falls back to NORMAL so the toggle can convert back. */
+    static Waypoint.Type resolveDraftType(final Waypoint.Type baseType, final boolean temporary) {
+        if (temporary) {
+            return Waypoint.Type.TEMPORARY;
+        }
+        return baseType == Waypoint.Type.TEMPORARY ? Waypoint.Type.NORMAL : baseType;
     }
 }
