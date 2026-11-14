@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.net.image.WaypointImageProto;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
@@ -17,6 +18,7 @@ import cn.net.rms.confluxmap.core.waypoint.list.SharedWaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointRow;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.mc.net.waypointimage.WaypointImageClient;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
@@ -94,6 +96,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private final WaypointRow editingRow;
     private String draftDescription;
     private String draftImageId;
+    /** The image id the row already carries; an unchanged id skips the publish upload. */
+    private final String publishedImageId;
+    private boolean publicUploadInFlight;
 
     private TextFieldWidget nameField;
     private TextFieldWidget markerLabelField;
@@ -168,6 +173,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         this.editingRow = editingRow;
         this.draftDescription = editingRow == null ? "" : editingRow.description();
         this.draftImageId = editingRow == null ? "" : editingRow.imageId();
+        this.publishedImageId = this.draftImageId;
         final ConfluxMapClient app = ConfluxMapClient.get();
         this.sharedWaypoints = app.sharedWaypoints();
         this.localModel = app.localWaypointListModel();
@@ -1044,6 +1050,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
     }
 
     private void onDone() {
+        if (publicUploadInFlight) {
+            return;
+        }
         if (createTarget == CreateTarget.LOCAL) {
             if (!localWritePermission().granted()) {
                 return;
@@ -1109,14 +1118,11 @@ public final class WaypointEditScreen extends ConfluxScreen {
             crossDimensionVisible, crossDimensionY, groupKey
         );
         if (createTarget == CreateTarget.PUBLIC) {
-            if (!sharedModel.updateWaypoint(editingRow, draft)) {
-                final WaypointListModel.Permission permission = publicWritePermission();
-                errorKey = permission.granted()
-                    ? "confluxmap.screen.waypoint.public_unavailable"
-                    : permission.reasonKey();
+            if (WaypointImageClient.needsUpload(draftImageId, publishedImageId)) {
+                beginPublishUpload(draft);
                 return;
             }
-            requestClose(parent);
+            applyPublicEdit(draft);
             return;
         }
         if (explicitLocalStore) {
@@ -1144,6 +1150,45 @@ public final class WaypointEditScreen extends ConfluxScreen {
         // An applied=false with permission granted means the target vanished mid-edit;
         // closing mirrors the store's historical silent no-op update.
         requestClose(parent);
+    }
+
+    private void applyPublicEdit(final EditDraft draft) {
+        if (!sharedModel.updateWaypoint(editingRow, draft)) {
+            final WaypointListModel.Permission permission = publicWritePermission();
+            errorKey = permission.granted()
+                ? "confluxmap.screen.waypoint.public_unavailable"
+                : permission.reasonKey();
+            return;
+        }
+        requestClose(parent);
+    }
+
+    private void beginPublishUpload(final EditDraft draft) {
+        final WaypointImageClient images = ConfluxMapClient.get().waypointImages();
+        if (images == null || !images.channelSupported()) {
+            // Server below the description/image channel: save without an image.
+            applyPublicEdit(draft);
+            return;
+        }
+        publicUploadInFlight = true;
+        images.publishImage(draft.imageId(), status -> {
+            if (!publicUploadInFlight) {
+                return;
+            }
+            publicUploadInFlight = false;
+            if (status == WaypointImageProto.STATUS_OK) {
+                applyPublicEdit(draft);
+            } else {
+                errorKey = "confluxmap.screen.waypoint.publish_upload_failed";
+            }
+        });
+    }
+
+    @Override
+    public void removed() {
+        super.removed();
+        // A late upload callback must never commit after the screen is gone.
+        publicUploadInFlight = false;
     }
 
     private void onCancel() {
