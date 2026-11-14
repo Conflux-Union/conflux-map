@@ -58,6 +58,8 @@ public final class WaypointImageClient {
     private static final int MAX_PENDING_FETCHES = 32;
     static final int UPLOAD_CHUNK_BYTES = 16 * 1024;
     private static final long PENDING_UPLOAD_TIMEOUT_MS = 60_000;
+    /** Drafts live on the user's own disk: a wider grace than the server's 24h GC. */
+    public static final long SWEEP_GRACE_MS = 7L * 24 * 3600 * 1000;
 
     /** A resident thumbnail texture; drawn through the shared texture-bind seam. */
     public record Thumbnail(int width, int height, NativeImageBackedTexture texture) {
@@ -69,6 +71,7 @@ public final class WaypointImageClient {
     private final MinecraftClient client;
     private final Supplier<Path> imagesDir;
     private final IntSupplier negotiatedMinor;
+    private final Supplier<Set<String>> referencedImageIds;
     private final ExecutorService worker = Executors.newSingleThreadExecutor(runnable -> {
         final Thread thread = new Thread(runnable, "confluxmap-waypoint-images");
         thread.setDaemon(true);
@@ -86,11 +89,13 @@ public final class WaypointImageClient {
     public WaypointImageClient(
         final MinecraftClient client,
         final Supplier<Path> imagesDir,
-        final IntSupplier negotiatedMinor
+        final IntSupplier negotiatedMinor,
+        final Supplier<Set<String>> referencedImageIds
     ) {
         this.client = client;
         this.imagesDir = imagesDir;
         this.negotiatedMinor = negotiatedMinor;
+        this.referencedImageIds = referencedImageIds;
     }
 
     public void register() {
@@ -120,7 +125,27 @@ public final class WaypointImageClient {
             return;
         }
         storeDir = dir;
-        store = new WaypointImageStore(dir);
+        final WaypointImageStore newStore = new WaypointImageStore(dir);
+        store = newStore;
+        try {
+            worker.execute(() -> sweepStore(newStore));
+        } catch (final RejectedExecutionException ignored) {
+            // Shutdown race; the next session start sweeps instead.
+        }
+    }
+
+    /** Deletes aged client files no local waypoint references; a null supplier result skips the sweep. */
+    private void sweepStore(final WaypointImageStore sweepStore) {
+        final Set<String> referenced = referencedImageIds.get();
+        if (referenced == null) {
+            // The waypoint store is not loaded yet; the next session start sweeps.
+            return;
+        }
+        try {
+            sweepStore.sweep(referenced, SWEEP_GRACE_MS, System.currentTimeMillis());
+        } catch (final IOException e) {
+            LOGGER.warn("waypoint-image: sweep failed", e);
+        }
     }
 
     /**

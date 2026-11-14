@@ -48,8 +48,10 @@ import cn.net.rms.confluxmap.core.trail.PlayerTrail;
 import cn.net.rms.confluxmap.core.update.GithubReleaseFetcher;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
 import cn.net.rms.confluxmap.core.waypoint.CrossWorldWaypointService;
+import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
+import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
 import cn.net.rms.confluxmap.core.waypoint.list.ConfigWaypointPersonalPreferences;
 import cn.net.rms.confluxmap.core.waypoint.list.LocalWaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.SharedWaypointListModel;
@@ -110,9 +112,11 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.resource.ResourceType;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.OptionalInt;
+import java.util.Set;
 import java.util.UUID;
 
 /** Composition root: builds and wires every client-side service. */
@@ -353,11 +357,11 @@ public final class ConfluxMapClient implements ClientModInitializer {
                     ? waypointRoot.resolve(session.world().serverId()).resolve("images")
                     : null;
             },
-            () -> sharedWaypoints.negotiatedMinorForImages()
+            () -> sharedWaypoints.negotiatedMinorForImages(),
+            this::localReferencedImageIds
         );
         waypointImages.register();
         groundTeleportService = new ClientGroundTeleportService(client, config, this::resolveUnknownLanding);
-
         predictionPaletteBuilder = new PredictionPaletteBuilder(client, predictionState, spriteColorSampler);
         tileTextureManager = new TileTextureManager(config, tileService, predictionTileService, daylightModel);
         fullscreenMapBrowseService = new FullscreenMapBrowseService(
@@ -837,6 +841,24 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public WaypointImageClient waypointImages() {
         return waypointImages;
+    }
+
+    /**
+     * Image ids the local waypoint store references, for the client-side sweep.
+     * Null means the store is not loaded yet: the sweep is skipped this session.
+     */
+    private Set<String> localReferencedImageIds() {
+        final WaypointStore store = waypointService.current();
+        if (store == null) {
+            return null;
+        }
+        final Set<String> referenced = new HashSet<>();
+        for (final Waypoint waypoint : store.list()) {
+            if (!waypoint.imageId.isEmpty()) {
+                referenced.add(waypoint.imageId);
+            }
+        }
+        return referenced;
     }
 
     public SharedWaypointClient sharedWaypoints() {
