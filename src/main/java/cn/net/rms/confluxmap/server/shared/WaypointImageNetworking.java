@@ -190,7 +190,7 @@ public final class WaypointImageNetworking {
             store.imageStore(),
             () -> java.util.Optional.of(waypointsFile),
             ConfluxMapMod.LOGGER
-        ).collect(System.currentTimeMillis());
+        ).collect(System.currentTimeMillis(), store::onImageDeleted);
     }
 
     private Path waypointsFile() {

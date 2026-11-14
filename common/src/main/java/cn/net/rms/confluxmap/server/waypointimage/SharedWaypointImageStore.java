@@ -194,6 +194,15 @@ public final class SharedWaypointImageStore {
         accounting.remove(playerId);
     }
 
+    /** Frees the accounting a GC deletion just released (no-op for unknown owners). */
+    public void onImageDeleted(final UUID owner, final long bytes) {
+        final PlayerAccounting player = accounting.get(owner);
+        if (player != null) {
+            player.storedBytes = Math.max(0L, player.storedBytes - bytes);
+        }
+        storedBytesPerWorld = Math.max(0L, storedBytesPerWorld - bytes);
+    }
+
     public long storedBytesBy(final UUID playerId) {
         final PlayerAccounting player = accounting.get(playerId);
         return player == null ? 0L : player.storedBytes;

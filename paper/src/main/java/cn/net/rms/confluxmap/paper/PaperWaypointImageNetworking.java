@@ -169,7 +169,7 @@ final class PaperWaypointImageNetworking implements PluginMessageListener {
             store.imageStore(),
             () -> java.util.Optional.of(waypointsFile),
             IMAGE_LOGGER
-        ).collect(System.currentTimeMillis());
+        ).collect(System.currentTimeMillis(), store::onImageDeleted);
     }
 
     private SharedWaypointImageStore imageStore() {

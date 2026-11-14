@@ -69,6 +69,23 @@ class WaypointImageStoreTest {
     }
 
     @Test
+    void sweepReportsOwnerAndBytesForEveryDeletedFile(@TempDir final Path tempDir) throws IOException {
+        final WaypointImageStore store = new WaypointImageStore(tempDir.resolve("images"));
+        final UUID kept = UUID.randomUUID();
+        final UUID deleted = UUID.randomUUID();
+        final UUID owner = UUID.randomUUID();
+        save(store, kept);
+        store.save(deleted, owner, WaypointImageProto.FORMAT_PNG, 64, 48, new byte[256]);
+
+        final java.util.Map<UUID, Long> freed = new java.util.LinkedHashMap<>();
+        final long old = System.currentTimeMillis() + 25L * 3600 * 1000;
+        assertEquals(1, store.sweep(
+            Set.of(kept.toString()), 24L * 3600 * 1000, old, freed::put
+        ));
+        assertEquals(java.util.Map.of(owner, 256L), freed);
+    }
+
+    @Test
     void unknownFilesInTheDirectoryAreIgnored(@TempDir final Path tempDir) throws IOException {
         final WaypointImageStore store = new WaypointImageStore(tempDir.resolve("images"));
         java.nio.file.Files.createDirectories(tempDir.resolve("images"));

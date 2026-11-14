@@ -39,8 +39,18 @@ public final class SharedWaypointImageGc {
         this.logger = Objects.requireNonNull(logger, "logger");
     }
 
-    /** Runs one collection pass; returns the number of deleted image files. */
     public int collect(final long nowEpochMs) {
+        return collect(nowEpochMs, (owner, bytes) -> {});
+    }
+
+    /**
+     * Runs one collection pass; {@code onDeleted} receives each freed image's
+     * owner and byte size so callers can keep quota accounting in step.
+     */
+    public int collect(
+        final long nowEpochMs,
+        final java.util.function.BiConsumer<UUID, Long> onDeleted
+    ) {
         final Optional<Path> file = waypointsFile.get();
         if (file.isEmpty() || !Files.exists(file.get())) {
             return 0;
@@ -71,7 +81,7 @@ public final class SharedWaypointImageGc {
             return 0;
         }
         try {
-            return imageStore.sweep(referenced, GRACE_MS, nowEpochMs);
+            return imageStore.sweep(referenced, GRACE_MS, nowEpochMs, onDeleted);
         } catch (final IOException e) {
             logger.warn("Waypoint image sweep failed", e);
             return 0;

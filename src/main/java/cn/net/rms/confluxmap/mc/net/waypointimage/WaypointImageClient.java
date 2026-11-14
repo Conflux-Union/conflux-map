@@ -76,7 +76,7 @@ public final class WaypointImageClient {
     private final Map<String, NativeImageBackedTexture> textures =
         new LinkedHashMap<>(16, 0.75f, true);
     private final Map<String, QueuedTexture> completed = new ConcurrentHashMap<>();
-    private final Set<String> fetching = ConcurrentHashMap.newKeySet();
+    private final FetchTracker fetchTracker = new FetchTracker();
     private final Map<String, PendingUpload> pendingUploads = new ConcurrentHashMap<>();
     private final AtomicLong generation = new AtomicLong();
     private volatile WaypointImageStore store;
@@ -100,6 +100,7 @@ public final class WaypointImageClient {
     public void onSessionChanged() {
         final Path dir = imagesDir.get();
         generation.incrementAndGet();
+        fetchTracker.reset();
         synchronized (completed) {
             completed.clear();
         }
@@ -148,7 +149,7 @@ public final class WaypointImageClient {
         }
         final List<String> missing = new ArrayList<>();
         for (final String imageId : imageIds) {
-            if (imageId == null || imageId.isEmpty() || fetching.contains(imageId)) {
+            if (imageId == null || imageId.isEmpty() || fetchTracker.pending(imageId)) {
                 continue;
             }
             synchronized (textures) {
@@ -159,15 +160,15 @@ public final class WaypointImageClient {
             missing.add(imageId);
         }
         for (final String imageId : missing.subList(
-            0, Math.min(missing.size(), MAX_PENDING_FETCHES - fetching.size())
+            0, Math.min(missing.size(), MAX_PENDING_FETCHES - fetchTracker.size())
         )) {
-            fetching.add(imageId);
+            fetchTracker.start(imageId);
             final long taskGeneration = generation.get();
             final WaypointImageStore currentStore = store;
             try {
                 worker.execute(() -> readOrFetch(taskGeneration, imageId, currentStore));
             } catch (final RejectedExecutionException e) {
-                fetching.remove(imageId);
+                fetchTracker.complete(imageId);
             }
         }
     }
@@ -327,6 +328,7 @@ public final class WaypointImageClient {
         generation.incrementAndGet();
         store = null;
         storeDir = null;
+        fetchTracker.reset();
         pendingUploads.clear();
         client.execute(() -> {
             synchronized (textures) {
@@ -343,11 +345,14 @@ public final class WaypointImageClient {
 
     private void readOrFetch(final long taskGeneration, final String imageId, final WaypointImageStore currentStore) {
         if (taskGeneration != generation.get()) {
+            fetchTracker.complete(imageId);
             return;
         }
         if (currentStore != null) {
             final Optional<StoredImageBytes> local = readLocal(currentStore, imageId);
             if (local.isPresent()) {
+                // Delivered: the id is restartable once the texture is evicted.
+                fetchTracker.complete(imageId);
                 queueTexture(imageId, local.get().argb, local.get().width, local.get().height);
                 return;
             }
@@ -358,7 +363,7 @@ public final class WaypointImageClient {
             ));
         } catch (final SharedWaypointProtocolException | IllegalArgumentException e) {
             LOGGER.warn("waypoint-image: cannot request {}", imageId, e);
-            fetching.remove(imageId);
+            fetchTracker.complete(imageId);
         }
     }
 
@@ -447,7 +452,7 @@ public final class WaypointImageClient {
         if (message instanceof final ImageDataS2C data) {
             final String imageId = data.imageId().toString();
             final byte[] png = data.bytes();
-            fetching.remove(imageId);
+            fetchTracker.complete(imageId);
             final long taskGeneration = generation.get();
             try {
                 worker.execute(() -> {
@@ -465,7 +470,7 @@ public final class WaypointImageClient {
                 // Shutdown race; the next hover re-requests.
             }
         } else if (message instanceof final ImageMissingS2C missing) {
-            fetching.remove(missing.imageId().toString());
+            fetchTracker.complete(missing.imageId().toString());
         } else if (message instanceof final ImageUploadResultS2C result) {
             final PendingUpload pending = pendingUploads.get(result.imageId().toString());
             if (pending == null) {
@@ -558,6 +563,35 @@ public final class WaypointImageClient {
         } catch (final IOException | RuntimeException e) {
             LOGGER.warn("waypoint-image: undecodable image ({}x{})", width, height, e);
             return null;
+        }
+    }
+
+    /**
+     * In-flight fetch bookkeeping. Every exit path (delivered, failed,
+     * session reset, generation kill) must complete its entry or the id can
+     * never be requested again once its texture is evicted.
+     */
+    static final class FetchTracker {
+        private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
+
+        boolean start(final String imageId) {
+            return inFlight.add(imageId);
+        }
+
+        void complete(final String imageId) {
+            inFlight.remove(imageId);
+        }
+
+        void reset() {
+            inFlight.clear();
+        }
+
+        boolean pending(final String imageId) {
+            return inFlight.contains(imageId);
+        }
+
+        int size() {
+            return inFlight.size();
         }
     }
 

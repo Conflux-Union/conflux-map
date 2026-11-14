@@ -931,6 +931,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
     }
 
     private void openNotesScreen() {
+        // Snapshot the widget text like every other sub-screen round trip, or
+        // returning from the notes screen re-inits from the stale draft.
+        captureDraft();
         MinecraftAccess.setScreen(
             MinecraftClient.getInstance(),
             new WaypointDescriptionScreen(

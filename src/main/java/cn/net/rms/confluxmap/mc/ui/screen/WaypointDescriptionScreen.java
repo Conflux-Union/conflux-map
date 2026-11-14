@@ -177,7 +177,9 @@ public final class WaypointDescriptionScreen extends ConfluxScreen {
             );
         } catch (final IllegalArgumentException e) {
             errorMessage = "confluxmap.screen.waypoint.notes.error.invalid";
+            return;
         }
+        requestClose(parent);
     }
 
     @Override

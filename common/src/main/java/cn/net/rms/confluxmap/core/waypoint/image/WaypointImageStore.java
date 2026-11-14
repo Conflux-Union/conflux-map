@@ -69,6 +69,17 @@ public final class WaypointImageStore {
      */
     public int sweep(final Set<String> referencedIds, final long minAgeMs, final long nowEpochMs)
         throws IOException {
+        return sweep(referencedIds, minAgeMs, nowEpochMs, (owner, bytes) -> {});
+    }
+
+    /** Deletes unreferenced aged files, reporting each freed image's owner and byte size. */
+    public int sweep(
+        final Set<String> referencedIds,
+        final long minAgeMs,
+        final long nowEpochMs,
+        final java.util.function.BiConsumer<UUID, Long> onDeleted
+    )
+        throws IOException {
         if (!Files.isDirectory(dir)) {
             return 0;
         }
@@ -89,8 +100,10 @@ public final class WaypointImageStore {
                 } catch (final IOException e) {
                     continue;
                 }
+                final Optional<WaypointImageFile.Header> header = readHeader(imageId);
                 Files.deleteIfExists(file);
                 deleted++;
+                header.ifPresent(h -> onDeleted.accept(h.owner(), (long) h.payloadBytes()));
             }
         }
         return deleted;

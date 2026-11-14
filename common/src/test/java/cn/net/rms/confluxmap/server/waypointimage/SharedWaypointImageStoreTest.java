@@ -184,6 +184,29 @@ class SharedWaypointImageStoreTest {
     }
 
     @Test
+    void deletedImagesFreeTheirQuotaImmediately(@TempDir final Path tempDir) throws Exception {
+        final SharedWaypointImageStore store = new SharedWaypointImageStore(
+            new WaypointImageStore(tempDir.resolve("images")),
+            new SharedWaypointImageStore.Limits(2 * 1024 * 1024, 100, 10),
+            LOGGER
+        );
+        final UUID imageId = UUID.randomUUID();
+        final long now = 1_000_000L;
+        store.begin(PLAYER, imageId, WaypointImageProto.FORMAT_PNG, 320, 180, 48, now);
+        assertEquals(WaypointImageProto.STATUS_OK, store.chunk(PLAYER, imageId, 0, payload(48), now));
+        assertEquals(48, store.storedBytesBy(PLAYER));
+
+        // A GC deletion frees the player's and the world's budget at once.
+        store.onImageDeleted(PLAYER, 48);
+        assertEquals(0, store.storedBytesBy(PLAYER));
+        assertEquals(0, store.storedBytesTotal());
+        assertEquals(
+            WaypointImageProto.STATUS_OK,
+            store.begin(PLAYER, UUID.randomUUID(), WaypointImageProto.FORMAT_PNG, 320, 180, 48, now)
+        );
+    }
+
+    @Test
     void chunksWithoutASessionAreIgnored(@TempDir final Path tempDir) throws Exception {
         final SharedWaypointImageStore store = new SharedWaypointImageStore(
             new WaypointImageStore(tempDir.resolve("images")), limits(), LOGGER
