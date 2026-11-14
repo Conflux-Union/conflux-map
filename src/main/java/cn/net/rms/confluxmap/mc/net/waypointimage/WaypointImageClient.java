@@ -497,38 +497,6 @@ public final class WaypointImageClient {
         });
     }
 
-    private void encodeAndUpload(
-        final long taskGeneration,
-        final UUID imageId,
-        final ImageScale.Raster raster,
-        final Path scratch,
-        final IntConsumer onStatus
-    ) {
-        if (taskGeneration != generation.get() || scratch == null) {
-            completeAttempt(imageId, onStatus, -1);
-            return;
-        }
-        final Optional<WaypointImageEncode.Encoded> encoded;
-        try {
-            encoded = WaypointImageEncode.encodeWithin(
-                raster, scratch, WaypointImageEncode.MAX_EDGE_START, WaypointImageEncode.TARGET_BYTES
-            );
-        } catch (final IOException e) {
-            LOGGER.warn("waypoint-image: encode failed for {}", imageId, e);
-            completeAttempt(imageId, onStatus, -1);
-            return;
-        }
-        if (encoded.isEmpty()) {
-            completeAttempt(imageId, onStatus, WaypointImageProto.STATUS_TOO_LARGE);
-            return;
-        }
-        final WaypointImageEncode.Encoded result = encoded.get();
-        beginUpload(
-            taskGeneration, imageId, WaypointImageProto.FORMAT_PNG,
-            result.width(), result.height(), result.png().length, chunk(result.png()), onStatus
-        );
-    }
-
     /** Registers a pending upload and sends BEGIN on the client main thread. */
     private void beginUpload(
         final long taskGeneration,
