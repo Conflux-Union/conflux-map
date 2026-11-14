@@ -697,5 +697,5 @@
   "confluxmap.screen.waypoint.notes.loading": "Loading…",
   "confluxmap.screen.waypoint.notes.error.paste": "No image on the clipboard",
   "confluxmap.screen.waypoint.notes.error.invalid": "Description too long or unsafe",
-  "confluxmap.screen.waypoint.notes.error.upload": "Image upload was refused"
+  "confluxmap.screen.waypoint.notes.error.save": "Could not save the image locally"
 }

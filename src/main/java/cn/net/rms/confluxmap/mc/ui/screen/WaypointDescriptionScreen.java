@@ -41,7 +41,6 @@ public final class WaypointDescriptionScreen extends ConfluxScreen {
     private final BiConsumer<String, String> onResult;
     private final String initialDescription;
     private final String initialImageId;
-    private final String fallbackImageId;
     private MultilineTextField notes;
     private String imageId;
     private boolean templatePopupOpen;
@@ -54,7 +53,6 @@ public final class WaypointDescriptionScreen extends ConfluxScreen {
         final Screen parent,
         final String initialDescription,
         final String initialImageId,
-        final String fallbackImageId,
         final BiConsumer<String, String> onResult
     ) {
         super(Texts.translatable("confluxmap.screen.waypoint.notes.title"));
@@ -62,7 +60,6 @@ public final class WaypointDescriptionScreen extends ConfluxScreen {
         this.initialDescription = initialDescription == null ? "" : initialDescription;
         this.initialImageId = initialImageId == null ? "" : initialImageId;
         this.imageId = this.initialImageId;
-        this.fallbackImageId = fallbackImageId == null ? "" : fallbackImageId;
         this.onResult = onResult;
     }
 
@@ -80,14 +77,11 @@ public final class WaypointDescriptionScreen extends ConfluxScreen {
             left + MARGIN, actionY, buttonWidth, BUTTON_HEIGHT,
             Texts.translatable("confluxmap.screen.waypoint.notes.screenshot"),
             button -> {
-                final String referenceBeforeCapture = imageId;
                 WaypointCaptureCoordinator.begin(
                     notes.text(), imageId,
                     (description, newImageId) -> MinecraftAccess.setScreen(
                         MinecraftClient.getInstance(),
-                        new WaypointDescriptionScreen(
-                            parent, description, newImageId, referenceBeforeCapture, onResult
-                        )
+                        new WaypointDescriptionScreen(parent, description, newImageId, onResult)
                     )
                 );
             }
@@ -154,11 +148,11 @@ public final class WaypointDescriptionScreen extends ConfluxScreen {
             }
             final UUID newImageId = UUID.randomUUID();
             images.seedDraftTexture(newImageId.toString(), width, height, argb);
-            images.uploadDraftImage(newImageId, argb, width, height, status -> {
+            images.saveDraftImage(newImageId, argb, width, height, status -> {
                 if (status != WaypointImageProto.STATUS_OK) {
-                    // Refused: the image will never exist server-side.
+                    // A failed save keeps the previous image, not a dangling id.
                     imageId = referenceBeforePaste;
-                    errorMessage = "confluxmap.screen.waypoint.notes.error.upload";
+                    errorMessage = "confluxmap.screen.waypoint.notes.error.save";
                 } else {
                     errorMessage = null;
                 }
@@ -188,14 +182,6 @@ public final class WaypointDescriptionScreen extends ConfluxScreen {
     }
 
     private void complete() {
-        // The status can also arrive while the capture coordinator has the
-        // screen chain closed: a refused id must never publish its reference.
-        final WaypointImageClient images = ConfluxMapClient.get().waypointImages();
-        if (images != null && !imageId.isEmpty() && images.uploadRefused(imageId)) {
-            imageId = fallbackImageId;
-            errorMessage = "confluxmap.screen.waypoint.notes.error.upload";
-            return;
-        }
         try {
             onResult.accept(
                 WaypointDescription.normalize(notes.text()),

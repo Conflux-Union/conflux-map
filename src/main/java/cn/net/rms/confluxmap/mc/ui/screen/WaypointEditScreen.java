@@ -937,7 +937,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         MinecraftAccess.setScreen(
             MinecraftClient.getInstance(),
             new WaypointDescriptionScreen(
-                this, draftDescription, draftImageId, draftImageId, this::applyNotes
+                this, draftDescription, draftImageId, this::applyNotes
             )
         );
     }

@@ -12,8 +12,8 @@ import net.minecraft.client.MinecraftClient;
  * Bridges the notes screen' screenshot button to a real world frame. The
  * editor covers the world, so pressing capture stores the pending state,
  * closes the screen chain, waits for the first tick where the world renders
- * with no screen open, grabs that frame, seeds its texture, uploads it under
- * a fresh image id, and reopens the chain. A 10s timeout restores the pending
+ * with no screen open, grabs that frame, seeds its texture, saves it locally
+ * under a fresh image id, and reopens the chain. A 10s timeout restores the pending
  * state unchanged, so the player never loses their draft.
  */
 public final class WaypointCaptureCoordinator {
@@ -76,7 +76,7 @@ public final class WaypointCaptureCoordinator {
         Screenshots.grabFrame(client, (width, height, argb) -> {
             final UUID imageId = UUID.randomUUID();
             images.seedDraftTexture(imageId.toString(), width, height, argb);
-            images.uploadDraftImage(imageId, argb, width, height, status -> {});
+            images.saveDraftImage(imageId, argb, width, height, status -> {});
             pendingImageId = imageId.toString();
             finish();
         });

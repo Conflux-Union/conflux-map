@@ -79,7 +79,6 @@ public final class WaypointImageClient {
     private final Map<String, QueuedTexture> completed = new ConcurrentHashMap<>();
     private final FetchTracker fetchTracker = new FetchTracker();
     private final Map<String, PendingUpload> pendingUploads = new ConcurrentHashMap<>();
-    private final Set<String> refusedUploads = ConcurrentHashMap.newKeySet();
     private final AtomicLong generation = new AtomicLong();
     private volatile WaypointImageStore store;
     private volatile Path storeDir;
@@ -103,7 +102,6 @@ public final class WaypointImageClient {
         final Path dir = imagesDir.get();
         generation.incrementAndGet();
         fetchTracker.reset();
-        refusedUploads.clear();
         synchronized (completed) {
             completed.clear();
         }
@@ -174,40 +172,6 @@ public final class WaypointImageClient {
                 fetchTracker.complete(imageId);
             }
         }
-    }
-
-    /**
-     * Encodes an in-memory draft screenshot and uploads it chunked. The
-     * callback receives the server status (or -1 when the channel or the
-     * encode cannot serve the upload) on the client main thread; every non-OK
-     * outcome is recorded, and {@link #uploadRefused} lets editors drop the
-     * draft reference instead of publishing a dangling id.
-     */
-    public void uploadDraftImage(
-        final UUID imageId,
-        final int[] argb,
-        final int width,
-        final int height,
-        final IntConsumer onStatus
-    ) {
-        if (!imagesSupported() || argb.length != width * height) {
-            completeAttempt(imageId, onStatus, -1);
-            return;
-        }
-        final long taskGeneration = generation.get();
-        final Path scratch = imagesDir.get();
-        try {
-            worker.execute(() -> encodeAndUpload(
-                taskGeneration, imageId, new ImageScale.Raster(argb, width, height), scratch, onStatus
-            ));
-        } catch (final RejectedExecutionException e) {
-            completeAttempt(imageId, onStatus, -1);
-        }
-    }
-
-    /** True when this imageId's most recent upload attempt failed or was refused. */
-    public boolean uploadRefused(final String imageId) {
-        return refusedUploads.contains(imageId);
     }
 
     /**
@@ -567,16 +531,9 @@ public final class WaypointImageClient {
         });
     }
 
-    /**
-     * Ends one upload: non-OK outcomes are recorded (editors drop the draft
-     * reference rather than publish a dangling id) and the callback fires on
-     * the client main thread.
-     */
+    /** Ends one attempt: drops the pending entry and fires the callback on the client main thread. */
     private void completeAttempt(final UUID imageId, final IntConsumer onStatus, final int status) {
         pendingUploads.remove(imageId.toString());
-        if (status != WaypointImageProto.STATUS_OK) {
-            refusedUploads.add(imageId.toString());
-        }
         client.execute(() -> onStatus.accept(status));
     }
 
