@@ -843,3 +843,71 @@ your radar policy allows. If you also select capability 10, clients will send yo
 
 Detection of Conflux Map clients in general: a HELLO on either channel is the signal. Parse
 `modVersion` from `0x01` if you need the client version.
+
+## 10. `waypoint_images_v1`
+
+An independent companion channel carrying waypoint preview images as opaque
+PNG containers. It shares the shared-waypoint session's trust domain and
+negotiation: the channel only answers clients whose `waypoints_v1`
+negotiated minor reached 7, and it never negotiates on its own. Protocol
+version: **major 1, minor 1**.
+
+Availability: when the negotiated `waypoints_v1` minor is below 7 (old
+server or old client), clients never send and servers never reply — the
+channel is silent by construction.
+
+### Messages
+
+```
+0x01 IMAGE_UPLOAD_BEGIN  (C2S): uuid imageId · u8 formatTag · i32 width · i32 height · i32 totalBytes (1..65536)
+0x02 IMAGE_UPLOAD_CHUNK  (C2S): uuid imageId · i32 seq · u16 byteLen (1..16384) · bytes
+0x03 IMAGE_FETCH         (C2S): uuid imageId
+0x04 IMAGE_UPLOAD_RESULT (S2C): uuid imageId · u8 status
+0x05 IMAGE_DATA          (S2C): uuid imageId · u8 formatTag · i32 byteLen (1..65536) · bytes
+0x06 IMAGE_MISSING       (S2C): uuid imageId
+```
+
+`formatTag`: `1` = PNG (the only defined format). `status`: `0` OK,
+`1` TOO_LARGE, `2` RATE_LIMITED, `3` QUOTA_EXCEEDED,
+`4` DUPLICATE_OWNER_CONFLICT, `5` INVALID_FORMAT.
+
+Upload flow: BEGIN declares the full size and dimensions, CHUNKs follow in
+order (each ≤ 16 KiB); every non-final chunk gets no reply, the completing
+chunk gets RESULT. BEGIN is idempotent — re-declaring an image that already
+exists under the same owner reports OK (safe against reconnect retries); the
+same imageId under a different owner is refused with
+DUPLICATE_OWNER_CONFLICT, so nobody can poison an image another player's
+waypoint references. FETCH answers DATA or MISSING.
+
+### Limits and quotas
+
+- One image: 64 KiB on the wire; the vanilla C2S payload cap bounds a chunk
+  frame at 32 KiB.
+- Per player: 512 KiB of stored bytes (configurable), at most four concurrent
+  pending uploads and 128 KiB of pending bytes.
+- Per world: 2 MiB of stored bytes (configurable).
+- Rates: uploads 10/min per player (whole images, not chunks; configurable),
+  fetches 60/min per player.
+- Malformed payloads strike the same three-strike mute as `waypoints_v1`.
+
+Servers never decode image bytes — the container payload is opaque, which is
+why BEGIN carries the true width/height for the stored header.
+
+### Storage and GC
+
+Server containers live at `<world>/confluxmap/images/<uuid>.img`, a
+`CFXWIMG1` header (version, format, dimensions, owner) followed by the bytes.
+The server waypoint file is the single source of truth for references:
+periodically (and after edits) every non-empty `imageId` in it is collected
+and unreferenced images older than 24 hours are deleted. The grace window
+covers crash-after-upload-before-upsert and in-progress editing. Clients keep
+fetched shared images memory-only and store only their own uploads under
+`<gameDir>/confluxmap/waypoints/<serverId>/images/`.
+
+### Ordering rule
+
+A waypoint payload may reference an imageId before the image bytes arrive
+(EDITOR → other clients): clients render a placeholder and fetch on demand.
+Publishers upload the image before (or with) the waypoint mutation — the
+shipped client uploads at capture/paste time, which satisfies the ordering
+for every downstream path.

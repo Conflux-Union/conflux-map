@@ -334,7 +334,17 @@ public final class WaypointDescriptionScreen extends ConfluxScreen {
     //$$     }
     //$$     return super.keyPressed(input);
     //$$ }
-    //$$
+    //#else
+    @Override
+    public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
+        if (notes.keyPressed(keyCode)) {
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+    //#endif
+
+    //#if MC>=260100
     //$$ @Override
     //$$ public boolean charTyped(final net.minecraft.client.input.CharacterEvent input) {
     //$$     if (notes.insertString(input.codepointAsString())) {
@@ -351,14 +361,6 @@ public final class WaypointDescriptionScreen extends ConfluxScreen {
     //$$     return super.charTyped(input);
     //$$ }
     //#else
-    @Override
-    public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
-        if (notes.keyPressed(keyCode)) {
-            return true;
-        }
-        return super.keyPressed(keyCode, scanCode, modifiers);
-    }
-
     @Override
     public boolean charTyped(final char chr, final int modifiers) {
         if (notes.charTyped(chr, modifiers)) {
