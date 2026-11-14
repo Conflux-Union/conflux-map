@@ -519,7 +519,7 @@ regions through the normal region-page path.
 ## 6. `waypoints_v1`: session and versioning
 
 The shared-waypoint channel is fully independent of `map_sync` (it works even when map
-corrections are off). Protocol version: **major 1, minor 6**.
+corrections are off). Protocol version: **major 1, minor 7**.
 
 Lifecycle:
 
@@ -532,7 +532,7 @@ Lifecycle:
    for the originator plus broadcast deltas (0x08/0x09/0x0C/0x0D) for every other subscribed
    peer. Results are idempotent per `operationId` and deliberately survive reconnects.
 
-Version negotiation: the server negotiates `minor = min(client minor, 6)` and encodes every
+Version negotiation: the server negotiates `minor = min(client minor, 7)` and encodes every
 later frame in the shape of that minor. The minor ladder:
 
 | Negotiated ≥ | Added on the wire |
@@ -543,6 +543,7 @@ later frame in the shape of that minor. The minor ladder:
 | 4 | groups: snapshot group list, waypoint `groupId`, GROUP_UPSERT/GROUP_REMOVE |
 | 5 | group mutations C2S (0x0E–0x11) |
 | 6 | MOVE_BATCH (0x12); CREATE/UPDATE carry an explicit group selection |
+| 7 | waypoint `description` + `imageId` strings (waypoints, CREATE, UPDATE); S2C fragment envelopes |
 
 Server-side limits: HELLO and SUBSCRIBE share a token bucket (burst 8, 60/min per
 connection); mutations are additionally rate-limited by server config (default 30/min) and
@@ -594,6 +595,8 @@ waypoint (negotiated minor in brackets):
     [≥3] utf8 iconItemId       item id, e.g. "minecraft:red_banner"; "" = default icon
     [≥3] utf8 markerLabel      custom label override; "" = none
     [≥4] bool hasGroup [+ uuid groupId]
+    [≥7] utf8 description      multi-line notes, ≤512 code points / ≤2048 UTF-8 bytes
+    [≥7] utf8 imageId          canonical UUID of the preview image, or "" = none
 
 group:
     uuid id · uuid creatorId · utf8 name · i64 createdAtEpochMs · i64 revision
@@ -602,7 +605,7 @@ group:
 ### HELLO (0x01, C2S)
 
 ```
-i32 major = 1 · i32 minor = 6
+i32 major = 1 · i32 minor = 7
 ```
 
 ### STATUS (0x02, S2C)
@@ -631,6 +634,12 @@ u16 waypointCount (≤ 512) × waypoint
 [≥4] u16 groupCount (≤ 64) × group
 ```
 
+A snapshot whose encoded size exceeds 512 KiB is split into transport-level fragment
+envelopes (minor ≥ 7 only; below that a full snapshot always fits the S2C cap). Each
+envelope is `[0x00] u8 seq · u8 count · bytes[≤ 512 KiB]` on the same channel; `0x00` is
+never a valid legacy message type id, so unfragmented frames are unchanged. The receiver
+concatenates the fragments in order and decodes the result as one message.
+
 ### CREATE (0x04, C2S) / UPDATE (0x0B, C2S)
 
 ```
@@ -638,6 +647,7 @@ uuid operationId · [UPDATE only: uuid id] · i64 expectedRevision
 utf8 name · utf8 dimensionId · f64 x · f64 y · f64 z · i32 colorArgb · u8 type
 [≥3] utf8 iconItemId · utf8 markerLabel
 [≥6] bool hasGroup [+ uuid groupId]     explicit target group; false = ungroup
+[≥7] utf8 description · utf8 imageId
 ```
 
 ### DELETE (0x05, C2S) / LOCK (0x06, C2S)

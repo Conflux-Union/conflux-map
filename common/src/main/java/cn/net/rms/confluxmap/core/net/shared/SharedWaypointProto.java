@@ -7,11 +7,13 @@ public final class SharedWaypointProto {
 
     public static final String CHANNEL_ID = "confluxmap:waypoints_v1";
     public static final int PROTO_MAJOR = 1;
-    public static final int PROTO_MINOR = 6;
+    public static final int PROTO_MINOR = 7;
     /** First wire minor carrying client-originated group mutations. */
     public static final int PROTO_MINOR_GROUP_MUTATIONS = 5;
     /** First wire minor carrying atomic batch group moves and create/update group assignment. */
     public static final int PROTO_MINOR_BATCH_MOVE = 6;
+    /** First wire minor carrying waypoint descriptions, preview-image references, and S2C fragment envelopes. */
+    public static final int PROTO_MINOR_WAYPOINT_DESCRIPTION = 7;
 
     public static final int MSG_HELLO_C2S = 0x01;
     public static final int MSG_STATUS_S2C = 0x02;
@@ -35,6 +37,8 @@ public final class SharedWaypointProto {
     public static final int MAX_C2S_PAYLOAD = 8 * 1024;
     public static final int MAX_S2C_PAYLOAD = 1 << 20;
     public static final int MAX_UTF8_BYTES = 256;
+    /** Description cap: a maxed CREATE frame stays well inside the C2S cap. */
+    public static final int MAX_DESCRIPTION_UTF8_BYTES = 2048;
     public static final int MAX_SNAPSHOT_WAYPOINTS = 512;
     public static final int MAX_SNAPSHOT_GROUPS = 64;
     /** Batch entries: 2 uuids + revision + flag fits 128 entries inside the C2S cap. */

@@ -254,9 +254,8 @@ public final class WaypointRenderCatalog {
                     waypoint.colorArgb(),
                     waypoint.iconItemId(),
                     waypoint.markerLabel(),
-                    // Wired to SharedWaypoint's minor-7 protocol fields in that change.
-                    "",
-                    "",
+                    waypoint.description(),
+                    waypoint.imageId(),
                     waypoint.type(),
                     WaypointRenderEntry.Source.SHARED,
                     sharedCrossDimensionVisible.test(waypoint.id()),

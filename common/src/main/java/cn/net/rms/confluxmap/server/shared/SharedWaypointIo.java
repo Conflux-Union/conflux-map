@@ -76,6 +76,8 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
         String type;
         String iconItemId;
         String markerLabel;
+        String description;
+        String imageId;
         long createdAtEpochMs;
         long revision;
         String groupId;
@@ -286,6 +288,8 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
                 Waypoint.Type.valueOf(entry.type),
                 entry.iconItemId == null ? "" : entry.iconItemId,
                 entry.markerLabel == null ? "" : entry.markerLabel,
+                entry.description == null ? "" : entry.description,
+                entry.imageId == null ? "" : entry.imageId,
                 entry.createdAtEpochMs, entry.revision, groupId
             );
         } catch (final IllegalArgumentException e) {
@@ -370,6 +374,8 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
         entry.type = waypoint.type().name();
         entry.iconItemId = waypoint.iconItemId();
         entry.markerLabel = waypoint.markerLabel();
+        entry.description = waypoint.description();
+        entry.imageId = waypoint.imageId();
         entry.createdAtEpochMs = waypoint.createdAtEpochMs();
         entry.revision = waypoint.revision();
         entry.groupId = waypoint.groupId() == null ? null : waypoint.groupId().toString();

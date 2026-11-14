@@ -77,7 +77,7 @@ class PublicApiConsumerViewTest {
         );
         mutable.add(new SharedWaypointApi.ApiSharedWaypoint(
             UUID.randomUUID(), "Trirrin", "base", "minecraft:overworld",
-            1, 64, 2, 0xFFF1C40F, WaypointApi.WaypointType.NORMAL, "", "", 0L
+            1, 64, 2, 0xFFF1C40F, WaypointApi.WaypointType.NORMAL, "", "", "", "", 0L
         ));
         assertTrue(change.waypoints().isEmpty());
 

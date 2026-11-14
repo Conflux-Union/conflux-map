@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.PlayNetworking;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointCodec;
+import cn.net.rms.confluxmap.core.net.shared.SharedWaypointFraming;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointMessage;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProtocolException;
@@ -220,6 +221,9 @@ public final class SharedWaypointNetworking {
             );
             return;
         }
-        PlayNetworking.sendServer(player, CHANNEL, payload);
+        final int negotiatedMinor = sessions.negotiatedMinor(player.getUuid());
+        for (final byte[] frame : SharedWaypointFraming.outgoing(payload, negotiatedMinor)) {
+            PlayNetworking.sendServer(player, CHANNEL, frame);
+        }
     }
 }
