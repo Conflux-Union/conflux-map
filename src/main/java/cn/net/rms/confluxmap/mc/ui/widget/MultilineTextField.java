@@ -174,10 +174,14 @@ public final class MultilineTextField {
         if (pixelX <= 0) {
             return 0;
         }
-        for (int column = 0; column < line.length(); column++) {
-            if (font.getWidth(line.substring(0, column + 1)) > pixelX) {
-                return column;
+        // Walk code point boundaries so a click can never split a surrogate pair.
+        int boundary = 0;
+        while (boundary < line.length()) {
+            final int next = State.codePointWidthAt(line, boundary) + boundary;
+            if (font.getWidth(line.substring(0, next)) > pixelX) {
+                return boundary;
             }
+            boundary = next;
         }
         return line.length();
     }
@@ -325,7 +329,7 @@ public final class MultilineTextField {
 
         public void moveLeft() {
             if (cursorColumn > 0) {
-                cursorColumn--;
+                cursorColumn -= codePointWidthBefore(lines.get(cursorLine), cursorColumn);
             } else if (cursorLine > 0) {
                 cursorLine--;
                 cursorColumn = lines.get(cursorLine).length();
@@ -333,8 +337,9 @@ public final class MultilineTextField {
         }
 
         public void moveRight() {
-            if (cursorColumn < lines.get(cursorLine).length()) {
-                cursorColumn++;
+            final String line = lines.get(cursorLine);
+            if (cursorColumn < line.length()) {
+                cursorColumn += codePointWidthAt(line, cursorColumn);
             } else if (cursorLine < lines.size() - 1) {
                 cursorLine++;
                 cursorColumn = 0;

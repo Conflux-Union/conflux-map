@@ -128,4 +128,32 @@ class MultilineTextFieldStateTest {
         state.delete();
         assertEquals("", state.text());
     }
+
+    @Test
+    void arrowKeysStepOverWholeCodePoints() {
+        state.insert('A', WaypointDescription.MAX_CODE_POINTS);
+        state.insert(0xD83D, WaypointDescription.MAX_CODE_POINTS);
+        state.insert(0xDE00, WaypointDescription.MAX_CODE_POINTS);
+        state.insert('B', WaypointDescription.MAX_CODE_POINTS);
+        state.moveLeft();
+        state.moveLeft();
+        assertEquals(1, state.cursorColumn());
+        state.moveLeft();
+        assertEquals(0, state.cursorColumn());
+        state.moveRight();
+        state.moveRight();
+        assertEquals(3, state.cursorColumn());
+    }
+
+    @Test
+    void backspaceAfterTwoLeftsNeverSplitsThePair() {
+        state.insert(0xD83D, WaypointDescription.MAX_CODE_POINTS);
+        state.insert(0xDE00, WaypointDescription.MAX_CODE_POINTS);
+        state.insert('B', WaypointDescription.MAX_CODE_POINTS);
+        state.moveLeft();
+        // A mid-pair cursor is what let backspace corrupt the buffer.
+        state.moveLeft();
+        assertEquals(0, state.cursorColumn());
+        assertEquals("😀B", state.text());
+    }
 }
