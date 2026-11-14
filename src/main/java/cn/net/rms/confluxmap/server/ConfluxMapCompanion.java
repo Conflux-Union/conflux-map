@@ -11,6 +11,7 @@ import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointIo;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointNetworking;
+import cn.net.rms.confluxmap.server.shared.WaypointImageNetworking;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointService;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointStore;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointValidator;
@@ -45,6 +46,7 @@ public final class ConfluxMapCompanion {
     private final WorldIds worldIds;
     private final ServerNetworking networking;
     private final SharedWaypointNetworking sharedWaypointNetworking;
+    private final WaypointImageNetworking waypointImageNetworking;
     private final UpdateCheckService updateCheck;
     private final CompanionRuntimeState runtime = new CompanionRuntimeState();
     private volatile ServerConfig config;
@@ -53,6 +55,8 @@ public final class ConfluxMapCompanion {
     private volatile DatapackLangService datapackLangs;
     private volatile ChunkLoadStateService chunkLoadStates;
     private volatile SharedWaypointService sharedWaypoints;
+    /** World save root of the currently loaded shared-waypoint state, null between worlds. */
+    private volatile java.nio.file.Path sharedWorldRoot;
     private volatile WebMapServer webMap;
     private volatile FabricWebMapBackend webMapBackend;
     private int webPlayerTicks;
@@ -68,6 +72,7 @@ public final class ConfluxMapCompanion {
         this.config = new ServerConfig();
         this.networking = new ServerNetworking(this);
         this.sharedWaypointNetworking = new SharedWaypointNetworking(this);
+        this.waypointImageNetworking = new WaypointImageNetworking(this, sharedWaypointNetworking);
         this.updateCheck = new UpdateCheckService(
             ConfluxMapMod.getVersion(),
             GithubReleaseFetcher.confluxMapReleases(ConfluxMapMod.getVersion()),
@@ -79,6 +84,7 @@ public final class ConfluxMapCompanion {
         // Fabric global receivers and command callbacks outlive individual integrated worlds.
         networking.register();
         sharedWaypointNetworking.register();
+        waypointImageNetworking.register();
         ConfluxMapCommands.register(this);
         ServerLifecycleEvents.SERVER_STARTING.register(this::onServerStarting);
         ServerLifecycleEvents.SERVER_STARTED.register(this::onServerStarted);
@@ -147,6 +153,7 @@ public final class ConfluxMapCompanion {
             ? new ChunkLoadStateService()
             : null;
         sharedWaypoints = null;
+        sharedWorldRoot = null;
         webMap = null;
         webMapBackend = null;
         webMapPrivacy = null;
@@ -182,6 +189,7 @@ public final class ConfluxMapCompanion {
             currentWebMap.close();
         }
         sharedWaypointNetworking.onServerStopping();
+        waypointImageNetworking.onWorldChanged();
         if (!runtime.isActive()) {
             return;
         }
@@ -194,6 +202,7 @@ public final class ConfluxMapCompanion {
             loadStates.clear();
         }
         sharedWaypoints = null;
+        sharedWorldRoot = null;
         webMap = null;
         ConfluxMapMod.LOGGER.info("[ConfluxMap] companion stopping");
     }
@@ -215,6 +224,7 @@ public final class ConfluxMapCompanion {
         quadraLayouts = Map.of();
         chunkLoadStates = null;
         sharedWaypoints = null;
+        sharedWorldRoot = null;
         webMapBackend = null;
         runtime.deactivate();
         if (wasActive) {
@@ -302,6 +312,15 @@ public final class ConfluxMapCompanion {
         return sharedWaypoints;
     }
 
+    public WaypointImageNetworking waypointImageNetworking() {
+        return waypointImageNetworking;
+    }
+
+    /** Save root the current shared-waypoint state was loaded from, or null between worlds. */
+    public java.nio.file.Path sharedWorldRoot() {
+        return sharedWorldRoot;
+    }
+
     /** Effective capability: both configuration gates are on and world state loaded successfully. */
     public boolean sharedWaypointsEnabled() {
         return isEnabled() && config.shareWaypoints && sharedWaypoints != null;
@@ -371,6 +390,8 @@ public final class ConfluxMapCompanion {
         final SharedWaypointIo io = new SharedWaypointIo(
             server.getSavePath(WorldSavePath.ROOT), instanceId().toString(), ConfluxMapMod.LOGGER
         );
+        sharedWorldRoot = server.getSavePath(WorldSavePath.ROOT);
+        waypointImageNetworking.onWorldChanged();
         try {
             final Map<DimensionId, SharedWaypointValidator.HeightRange> dimensions = new LinkedHashMap<>();
             for (final ServerWorld world : server.getWorlds()) {

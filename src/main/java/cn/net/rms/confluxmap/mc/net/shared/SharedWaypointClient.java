@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.net.shared;
 
+import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.compat.PlayNetworking;
@@ -7,6 +8,7 @@ import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.net.shared.CreateC2S;
 import cn.net.rms.confluxmap.core.net.shared.DeleteC2S;
+import cn.net.rms.confluxmap.core.net.shared.SharedWaypointFraming;
 import cn.net.rms.confluxmap.core.net.shared.MoveBatchC2S;
 import cn.net.rms.confluxmap.core.net.shared.GroupCreateC2S;
 import cn.net.rms.confluxmap.core.net.shared.GroupDeleteC2S;
@@ -117,6 +119,7 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
     private final ConfluxConfig config;
     private final ConfigIo configIo;
     private final SharedWaypointClientState stateMachine = new SharedWaypointClientState();
+    private final SharedWaypointFraming.Reassembler reassembler = new SharedWaypointFraming.Reassembler();
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
     private final Set<SharedWaypointLocationKey> pendingCrossDimensionPreferences =
         new LinkedHashSet<>();
@@ -204,6 +207,11 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
         return stateMachine.negotiatedMinor();
     }
 
+    /** Negotiated waypoints_v1 minor, the gate for the image channel too. */
+    public int negotiatedMinorForImages() {
+        return stateMachine.negotiatedMinor();
+    }
+
     public boolean supportsMarkerStyle() {
         return stateMachine.negotiatedMinor() >= 3;
     }
@@ -267,7 +275,10 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
                 waypoint.colorArgb,
                 publishedType,
                 waypoint.iconItemId,
-                waypoint.markerLabel
+                waypoint.markerLabel,
+                waypoint.description,
+                waypoint.imageId,
+                null
             )
         );
     }
@@ -427,7 +438,8 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
             new CreateC2S(
                 operationId, revision(), draft.name(), draft.dimensionId(),
                 draft.x(), draft.y(), draft.z(), draft.colorArgb(), draft.type(),
-                draft.iconItemId(), draft.markerLabel(), wireGroup
+                draft.iconItemId(), draft.markerLabel(), draft.description(), draft.imageId(),
+                wireGroup
             )
         );
     }
@@ -538,7 +550,8 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
         return new UpdateC2S(
             operationId, original.id(), original.revision(), updated.name, updated.dimensionId,
             updated.x, updated.y, updated.z, updated.colorArgb, updated.type,
-            updated.iconItemId, updated.markerLabel
+            updated.iconItemId, updated.markerLabel, updated.description, updated.imageId,
+            null, false
         );
     }
 
@@ -552,13 +565,15 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
             return new UpdateC2S(
                 operationId, original.id(), original.revision(), draft.name(), draft.dimensionId(),
                 draft.x(), draft.y(), draft.z(), draft.colorArgb(), draft.type(),
-                draft.iconItemId(), draft.markerLabel(), groupId, true
+                draft.iconItemId(), draft.markerLabel(), draft.description(), draft.imageId(),
+                groupId, true
             );
         }
         return new UpdateC2S(
             operationId, original.id(), original.revision(), draft.name(), draft.dimensionId(),
             draft.x(), draft.y(), draft.z(), draft.colorArgb(), draft.type(),
-            draft.iconItemId(), draft.markerLabel()
+            draft.iconItemId(), draft.markerLabel(), draft.description(), draft.imageId(),
+            null, false
         );
     }
 
@@ -575,6 +590,7 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
         pendingOperations.clear();
         pendingCrossDimensionPreferences.clear();
         pendingCrossDimensionYPreferences.clear();
+        reassembler.reset();
         stateMachine.beginConnection(true);
         notifyChanges(before, stateMachine.view());
         if (!send(new HelloC2S(SharedWaypointProto.PROTO_MAJOR, SharedWaypointProto.PROTO_MINOR))) {
@@ -631,16 +647,30 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
             return;
         }
 
+        final byte[] reassembled;
+        try {
+            reassembled = reassembler.offer(payload);
+        } catch (final SharedWaypointProtocolException | RuntimeException e) {
+            ConfluxMapMod.LOGGER.warn(
+                "shared-waypoint: dropping malformed S2C fragment ({})", e.getMessage()
+            );
+            reassembler.reset();
+            return;
+        }
+        if (reassembled == null) {
+            return;
+        }
+
         final SharedWaypointMessage message;
         try {
             message = SharedWaypointCodec.decodeS2C(
-                payload,
+                reassembled,
                 Math.max(0, stateMachine.negotiatedMinor())
             );
         } catch (final SharedWaypointProtocolException | RuntimeException e) {
             ConfluxMapMod.LOGGER.warn(
                 "shared-waypoint: undecodable S2C payload ({} bytes): {}",
-                payload.length,
+                reassembled.length,
                 e.getMessage()
             );
             executeForConnection(currentClient, handler, this::rejectProtocol);
@@ -689,7 +719,30 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
             return;
         }
         notifyChanges(before, stateMachine.view());
+        prefetchImages(message);
         perform(action);
+    }
+
+    /** Hands non-empty image ids of the applied state to the image channel (minor-gated). */
+    private void prefetchImages(final SharedWaypointMessage message) {
+        final ConfluxMapClient root = ConfluxMapClient.get();
+        if (root == null || root.waypointImages() == null) {
+            return;
+        }
+        final List<String> imageIds = new ArrayList<>();
+        if (message instanceof final SnapshotS2C snapshot) {
+            for (final SharedWaypoint waypoint : snapshot.list()) {
+                if (!waypoint.imageId().isEmpty()) {
+                    imageIds.add(waypoint.imageId());
+                }
+            }
+        } else if (message instanceof final UpsertS2C upsert
+            && !upsert.waypoint().imageId().isEmpty()) {
+            imageIds.add(upsert.waypoint().imageId());
+        }
+        if (!imageIds.isEmpty()) {
+            root.waypointImages().ensureFetched(imageIds);
+        }
     }
 
     private void perform(final SharedWaypointClientState.Action action) {

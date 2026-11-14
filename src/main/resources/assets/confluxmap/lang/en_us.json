@@ -244,6 +244,7 @@
   "confluxmap.screen.waypoint.share": "Share Waypoint",
   "confluxmap.screen.waypoint.publish": "Set as Shared Waypoint",
   "confluxmap.screen.waypoint.publish_pending": "Setting…",
+  "confluxmap.screen.waypoint.publish_upload_failed": "Image upload failed; the waypoint was not published",
   "confluxmap.screen.waypoint.already_shared": "Shared Waypoint Already Exists",
   "confluxmap.screen.waypoint.send_chat": "Send to Chat",
   "confluxmap.screen.waypoint.error.name_required": "Enter a waypoint name",
@@ -685,5 +686,17 @@
   "confluxmap.screen.structure_candidates.bounds": "Radius / result count",
   "confluxmap.screen.structure_candidates.waypoint": "Add Waypoint",
   "confluxmap.screen.structure_candidates.invalid": "Enter valid search values",
-  "confluxmap.screen.structure_candidates.not_found": "No possible structures found in this area"
+  "confluxmap.screen.structure_candidates.not_found": "No possible structures found in this area",
+  "confluxmap.screen.waypoint.notes.button": "Notes…",
+  "confluxmap.screen.waypoint.notes.title": "Waypoint notes",
+  "confluxmap.screen.waypoint.notes.screenshot": "Screenshot",
+  "confluxmap.screen.waypoint.notes.paste": "Paste",
+  "confluxmap.screen.waypoint.notes.templates": "Templates…",
+  "confluxmap.screen.waypoint.notes.clear": "Clear",
+  "confluxmap.screen.waypoint.notes.done": "Done",
+  "confluxmap.screen.waypoint.notes.cancel": "Cancel",
+  "confluxmap.screen.waypoint.notes.loading": "Loading…",
+  "confluxmap.screen.waypoint.notes.error.paste": "No image on the clipboard",
+  "confluxmap.screen.waypoint.notes.error.invalid": "Description too long or unsafe",
+  "confluxmap.screen.waypoint.notes.error.save": "Could not save the image locally"
 }

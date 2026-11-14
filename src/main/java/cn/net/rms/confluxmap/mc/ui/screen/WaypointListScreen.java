@@ -157,8 +157,9 @@ public final class WaypointListScreen extends ConfluxScreen {
         WaypointRenderEntry renderEntry() {
             return new WaypointRenderEntry(
                 row.id(), row.name(), row.dimensionId(), row.x(), row.y(), row.z(),
-                row.colorArgb(), row.iconItemId(), row.markerLabel(), row.type(), source,
-                row.crossDimensionVisible(), row.worldLabel()
+                row.colorArgb(), row.iconItemId(), row.markerLabel(),
+                row.description(), row.imageId(),
+                row.type(), source, row.crossDimensionVisible(), row.worldLabel(), null
             );
         }
     }
@@ -202,6 +203,9 @@ public final class WaypointListScreen extends ConfluxScreen {
 
     private int scrollOffset;
     private UUID pendingDeleteId;
+    /** Waypoint row hovered this frame that carries notes; the card draws in {@link #renderAfterWidgets}. */
+    private WaypointRenderEntry hoveredNotesEntry;
+
     /** Group filter of the active tab; null means "All", so it survives tab switches per tab. */
     private GroupRef selectedLocalGroupFilter;
     private GroupRef selectedSharedGroupFilter;
@@ -1872,6 +1876,7 @@ public final class WaypointListScreen extends ConfluxScreen {
 
         final boolean compact = compactRows();
         final boolean searchActive = isSearchActive();
+        hoveredNotesEntry = null;
         for (final ListRow row : rows) {
             final boolean hovered = mouseX >= contentLeft() && mouseX <= contentRight()
                 && mouseY >= row.y() && mouseY < row.y() + ROW_HEIGHT;
@@ -1880,6 +1885,11 @@ public final class WaypointListScreen extends ConfluxScreen {
                 continue;
             }
             final RowInfo info = row.waypoint();
+            if (hovered
+                && (!info.renderEntry().description().isEmpty()
+                    || !info.renderEntry().imageId().isEmpty())) {
+                hoveredNotesEntry = info.renderEntry();
+            }
             GuiShapes.fillRect(
                 matrices,
                 contentLeft(),
@@ -2019,6 +2029,16 @@ public final class WaypointListScreen extends ConfluxScreen {
         renderDimensionDropdown(draw, mouseX, mouseY);
         renderGroupDropdown(draw, mouseX, mouseY);
         renderActionTooltip(draw, mouseX, mouseY);
+        // An open dropdown overlays the rows it covers; the card must not fight it.
+        if (hoveredNotesEntry != null
+            && dimensionDropdownRenderGeometry() == null
+            && groupDropdownRenderGeometry() == null) {
+            WaypointNotesCard.draw(
+                draw, this.textRenderer,
+                hoveredNotesEntry.description(), hoveredNotesEntry.imageId(),
+                mouseX, mouseY, width, height
+            );
+        }
     }
 
     private void renderActionTooltip(final GuiDraw draw, final int mouseX, final int mouseY) {

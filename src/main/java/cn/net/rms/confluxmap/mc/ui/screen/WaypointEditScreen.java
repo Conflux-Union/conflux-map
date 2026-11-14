@@ -3,9 +3,11 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.net.image.WaypointImageProto;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import cn.net.rms.confluxmap.core.waypoint.WaypointDescription;
 import cn.net.rms.confluxmap.core.waypoint.WaypointMarkerStyle;
 import cn.net.rms.confluxmap.core.waypoint.WaypointSet;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
@@ -16,6 +18,7 @@ import cn.net.rms.confluxmap.core.waypoint.list.SharedWaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointRow;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.mc.net.waypointimage.WaypointImageClient;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
@@ -91,6 +94,11 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private final boolean openedFromHotkey;
     /** Unified-template row of the waypoint being edited; the model routes updates by id. */
     private final WaypointRow editingRow;
+    private String draftDescription;
+    private String draftImageId;
+    /** The image id the row already carries; an unchanged id skips the publish upload. */
+    private final String publishedImageId;
+    private boolean publicUploadInFlight;
 
     private TextFieldWidget nameField;
     private TextFieldWidget markerLabelField;
@@ -163,6 +171,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
         this.temporary = type == Waypoint.Type.TEMPORARY;
         this.openedFromHotkey = openedFromHotkey;
         this.editingRow = editingRow;
+        this.draftDescription = editingRow == null ? "" : editingRow.description();
+        this.draftImageId = editingRow == null ? "" : editingRow.imageId();
+        this.publishedImageId = this.draftImageId;
         final ConfluxMapClient app = ConfluxMapClient.get();
         this.sharedWaypoints = app.sharedWaypoints();
         this.localModel = app.localWaypointListModel();
@@ -323,6 +334,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
             waypoint.id(), waypoint.name(), "", waypoint.dimensionId(),
             waypoint.x(), waypoint.y(), waypoint.z(), waypoint.colorArgb(), waypoint.type(),
             waypoint.iconItemId(), waypoint.markerLabel(),
+            waypoint.description(), waypoint.imageId(),
             waypoint.groupId() == null ? GroupRef.UNGROUPED_KEY : waypoint.groupId().toString(),
             false, false,
             app.config().isSharedWaypointCrossDimensionVisible(waypoint.id()),
@@ -335,7 +347,8 @@ public final class WaypointEditScreen extends ConfluxScreen {
         return new WaypointRow(
             waypoint.id, waypoint.name, "", waypoint.dimensionId,
             waypoint.x, waypoint.y, waypoint.z, waypoint.colorArgb, waypoint.type,
-            waypoint.iconItemId, waypoint.markerLabel, waypoint.group,
+            waypoint.iconItemId, waypoint.markerLabel,
+            waypoint.description, waypoint.imageId, waypoint.group,
             !waypoint.visible, false, waypoint.crossDimensionVisible, ""
         );
     }
@@ -398,6 +411,14 @@ public final class WaypointEditScreen extends ConfluxScreen {
         nameField.setMaxLength(64);
         nameField.setText(draftName);
         addDrawableChild(nameField);
+        final WaypointEditLayout.NotesButtonBounds notesBounds =
+            WaypointEditLayout.notesButtonBounds(width);
+        addDrawableChild(Widgets.button(
+            notesBounds.x(), notesBounds.y(),
+            notesBounds.width(), notesBounds.height(),
+            Texts.translatable("confluxmap.screen.waypoint.notes.button"),
+            button -> openNotesScreen()
+        ));
         if (openedFromHotkey) {
             deferInitialFocusUntilNextTick(nameField);
         } else {
@@ -915,6 +936,24 @@ public final class WaypointEditScreen extends ConfluxScreen {
         }
     }
 
+    private void openNotesScreen() {
+        // Snapshot the widget text like every other sub-screen round trip, or
+        // returning from the notes screen re-inits from the stale draft.
+        captureDraft();
+        MinecraftAccess.setScreen(
+            MinecraftClient.getInstance(),
+            new WaypointDescriptionScreen(
+                this, draftDescription, draftImageId, this::applyNotes
+            )
+        );
+    }
+
+    /** Notes-screen completion: stores the normalized pair into the draft. */
+    void applyNotes(final String description, final String imageId) {
+        draftDescription = description;
+        draftImageId = imageId;
+    }
+
     private void captureDraft() {
         draftName = nameField.getText();
         draftX = xField.getText();
@@ -1005,10 +1044,15 @@ public final class WaypointEditScreen extends ConfluxScreen {
         waypoint.crossDimensionY = crossDimensionY;
         waypoint.iconItemId = iconItemId;
         waypoint.markerLabel = markerLabel;
+        waypoint.description = WaypointDescription.normalize(draftDescription);
+        waypoint.imageId = WaypointDescription.normalizeImageId(draftImageId);
         return waypoint;
     }
 
     private void onDone() {
+        if (publicUploadInFlight) {
+            return;
+        }
         if (createTarget == CreateTarget.LOCAL) {
             if (!localWritePermission().granted()) {
                 return;
@@ -1058,6 +1102,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
                 ? new EditDraft(
                     values.name(), dimensionId, values.x(), values.y(), values.z(),
                     colorSelection.selected(), type, iconItemId, markerLabel,
+                    draftDescription, draftImageId,
                     crossDimensionVisible, crossDimensionY, groupKey)
                 : null;
             MinecraftAccess.setScreen(
@@ -1069,17 +1114,15 @@ public final class WaypointEditScreen extends ConfluxScreen {
         final EditDraft draft = new EditDraft(
             values.name(), dimensionId, values.x(), values.y(), values.z(),
             colorSelection.selected(), draftType(), iconItemId, markerLabel,
+            draftDescription, draftImageId,
             crossDimensionVisible, crossDimensionY, groupKey
         );
         if (createTarget == CreateTarget.PUBLIC) {
-            if (!sharedModel.updateWaypoint(editingRow, draft)) {
-                final WaypointListModel.Permission permission = publicWritePermission();
-                errorKey = permission.granted()
-                    ? "confluxmap.screen.waypoint.public_unavailable"
-                    : permission.reasonKey();
+            if (WaypointImageClient.needsUpload(draftImageId, publishedImageId)) {
+                beginPublishUpload(draft);
                 return;
             }
-            requestClose(parent);
+            applyPublicEdit(draft);
             return;
         }
         if (explicitLocalStore) {
@@ -1107,6 +1150,45 @@ public final class WaypointEditScreen extends ConfluxScreen {
         // An applied=false with permission granted means the target vanished mid-edit;
         // closing mirrors the store's historical silent no-op update.
         requestClose(parent);
+    }
+
+    private void applyPublicEdit(final EditDraft draft) {
+        if (!sharedModel.updateWaypoint(editingRow, draft)) {
+            final WaypointListModel.Permission permission = publicWritePermission();
+            errorKey = permission.granted()
+                ? "confluxmap.screen.waypoint.public_unavailable"
+                : permission.reasonKey();
+            return;
+        }
+        requestClose(parent);
+    }
+
+    private void beginPublishUpload(final EditDraft draft) {
+        final WaypointImageClient images = ConfluxMapClient.get().waypointImages();
+        if (images == null || !images.channelSupported()) {
+            // Server below the description/image channel: save without an image.
+            applyPublicEdit(draft);
+            return;
+        }
+        publicUploadInFlight = true;
+        images.publishImage(draft.imageId(), status -> {
+            if (!publicUploadInFlight) {
+                return;
+            }
+            publicUploadInFlight = false;
+            if (status == WaypointImageProto.STATUS_OK) {
+                applyPublicEdit(draft);
+            } else {
+                errorKey = "confluxmap.screen.waypoint.publish_upload_failed";
+            }
+        });
+    }
+
+    @Override
+    public void removed() {
+        super.removed();
+        // A late upload callback must never commit after the screen is gone.
+        publicUploadInFlight = false;
     }
 
     private void onCancel() {
@@ -1312,8 +1394,16 @@ public final class WaypointEditScreen extends ConfluxScreen {
         );
     }
 
-    /** The draft's type: the creation type, or TEMPORARY while the toggle is on. */
     private Waypoint.Type draftType() {
-        return temporary ? Waypoint.Type.TEMPORARY : type;
+        return resolveDraftType(type, temporary);
+    }
+
+    /** The draft's type: TEMPORARY while the toggle is on, else the base type;
+     *  a temporary base falls back to NORMAL so the toggle can convert back. */
+    static Waypoint.Type resolveDraftType(final Waypoint.Type baseType, final boolean temporary) {
+        if (temporary) {
+            return Waypoint.Type.TEMPORARY;
+        }
+        return baseType == Waypoint.Type.TEMPORARY ? Waypoint.Type.NORMAL : baseType;
     }
 }

@@ -71,6 +71,8 @@ final class ApiSharedWaypoints implements SharedWaypointApi {
             ApiMappers.fromCore(waypoint.type()),
             waypoint.iconItemId(),
             waypoint.markerLabel(),
+            waypoint.description(),
+            waypoint.imageId(),
             waypoint.createdAtEpochMs()
         );
     }

@@ -215,6 +215,51 @@ final class ConfluxMapApiImplTest {
     }
 
     @Test
+    void waypointEditCarriesDescriptionAndImageIdThroughAddUpdateAndList() {
+        beginSession(WORLD, OVERWORLD);
+        final WaypointApi.WaypointMutation added = api.waypoints().add(
+            WaypointApi.WaypointEdit.builder()
+                .name("Noted").position(1, 64, 2)
+                .description("产物:\n钻石 ×3  \r\n获取方式:挖矿")
+                .imageId("0123ABCD-4567-789A-BCDE-F0123456789A")
+                .build()
+        ).join();
+        assertEquals(WaypointApi.WaypointMutation.Result.APPLIED, added.result());
+        assertEquals("产物:\n钻石 ×3\n获取方式:挖矿", added.waypoint().description());
+        assertEquals("0123abcd-4567-789a-bcde-f0123456789a", added.waypoint().imageId());
+        final UUID id = added.waypoint().id();
+
+        final WaypointApi.WaypointMutation renamed = api.waypoints().update(
+            id, editNamedOnly("Renamed")
+        ).join();
+        assertEquals(WaypointApi.WaypointMutation.Result.APPLIED, renamed.result());
+        assertEquals("产物:\n钻石 ×3\n获取方式:挖矿", renamed.waypoint().description());
+        assertEquals("0123abcd-4567-789a-bcde-f0123456789a", renamed.waypoint().imageId());
+
+        final WaypointApi.WaypointMutation cleared = api.waypoints().update(
+            id, WaypointApi.WaypointEdit.builder().description("").imageId("").build()
+        ).join();
+        assertEquals(WaypointApi.WaypointMutation.Result.APPLIED, cleared.result());
+        assertEquals("", cleared.waypoint().description());
+        assertEquals("", cleared.waypoint().imageId());
+
+        assertEquals(
+            WaypointApi.WaypointMutation.Result.INVALID,
+            api.waypoints().update(
+                id, WaypointApi.WaypointEdit.builder().description("bad§c").build()
+            ).join().result()
+        );
+        assertEquals(
+            WaypointApi.WaypointMutation.Result.INVALID,
+            api.waypoints().update(
+                id, WaypointApi.WaypointEdit.builder().imageId("not-a-uuid").build()
+            ).join().result()
+        );
+        assertEquals("", api.waypoints().get(id).orElseThrow().description());
+        assertEquals("", api.waypoints().get(id).orElseThrow().imageId());
+    }
+
+    @Test
     void waypointAddWithoutSessionReportsNoSession() {
         final WaypointApi.WaypointMutation result = api.waypoints().add(
             edit("Nowhere", "minecraft:overworld", 0, 64, 0)

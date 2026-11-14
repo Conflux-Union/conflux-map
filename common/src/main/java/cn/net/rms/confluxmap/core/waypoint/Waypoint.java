@@ -40,6 +40,10 @@ public final class Waypoint {
     public Type type;
     public String iconItemId = "";
     public String markerLabel = "";
+    /** Multi-line notes; {@link WaypointDescription} normalizes every write path. */
+    public String description = "";
+    /** Canonical UUID of the preview image on the owning side, or {@code ""} for none. */
+    public String imageId = "";
     public final long createdAtEpochMs;
 
     public Waypoint(
@@ -113,6 +117,8 @@ public final class Waypoint {
         );
         copy.iconItemId = iconItemId;
         copy.markerLabel = markerLabel;
+        copy.description = description;
+        copy.imageId = imageId;
         copy.crossDimensionY = crossDimensionY;
         return copy;
     }

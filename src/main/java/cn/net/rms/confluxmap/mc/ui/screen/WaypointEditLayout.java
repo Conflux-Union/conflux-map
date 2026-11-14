@@ -31,6 +31,21 @@ final class WaypointEditLayout {
     static final int FORM_WIDTH = 228;
 
     static final int TITLE_Y = 8;
+    /** "Notes" corner button: 40x20, tucked into the title row's right margin. */
+    static final int NOTES_BUTTON_WIDTH = 40;
+    static final int NOTES_BUTTON_HEIGHT = 20;
+
+    /**
+     * Bounds of the title-row "Notes" button: right-aligned inside the 320px
+     * minimum screen width with a 6px margin, vertically on the title line.
+     */
+    static NotesButtonBounds notesButtonBounds(final int screenWidth) {
+        final int left = screenWidth / 2 + FORM_WIDTH / 2 - NOTES_BUTTON_WIDTH - 6;
+        return new NotesButtonBounds(left, TITLE_Y, NOTES_BUTTON_WIDTH, NOTES_BUTTON_HEIGHT);
+    }
+
+    record NotesButtonBounds(int x, int y, int width, int height) {
+    }
     /** First caption top: keeps the same clearance below the title as the title has to the edge. */
     static final int CONTENT_TOP = 24;
 

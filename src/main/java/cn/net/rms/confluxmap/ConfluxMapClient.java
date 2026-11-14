@@ -65,6 +65,8 @@ import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.ChunkLoadStateClient;
 import cn.net.rms.confluxmap.mc.net.MapSyncClient;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.mc.net.waypointimage.WaypointImageClient;
+import cn.net.rms.confluxmap.mc.ui.screen.WaypointCaptureCoordinator;
 import cn.net.rms.confluxmap.mc.platform.UnsupportedPlatformWarningNotifier;
 import cn.net.rms.confluxmap.mc.portal.PortalScanHandler;
 import cn.net.rms.confluxmap.mc.portal.PortalScanService;
@@ -111,6 +113,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.OptionalInt;
+import java.util.Set;
 import java.util.UUID;
 
 /** Composition root: builds and wires every client-side service. */
@@ -146,6 +149,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private FullscreenMapViewState fullscreenMapViewState;
     private LayerSelector layerSelector;
     private WaypointService waypointService;
+    private WaypointImageClient waypointImages;
     private AnnotationService annotationService;
     private CrossWorldWaypointService crossWorldWaypoints;
     private WaypointRenderCatalog waypointRenderCatalog;
@@ -325,6 +329,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
             )
         );
         ClientTickEvents.END_CLIENT_TICK.register(ignored -> mapExportService.tick());
+        ClientTickEvents.END_CLIENT_TICK.register(ignored -> {
+            waypointImages.poll();
+            WaypointCaptureCoordinator.tick(client);
+        });
         xaeroImportService = new XaeroImportService(
             mapWorlds, regionCache, tileService, cacheRoot, new XaeroSnapshotBaker(client), ConfluxMapMod.LOGGER
         );
@@ -338,8 +346,19 @@ public final class ConfluxMapClient implements ClientModInitializer {
         clientNetworking.register();
         sharedWaypoints = new SharedWaypointClient(client, config, configIo);
         sharedWaypoints.register();
+        waypointImages = new WaypointImageClient(
+            client,
+            () -> {
+                final SessionGuard.Session session = sessionGuard.current();
+                return session.active()
+                    ? waypointRoot.resolve(session.world().serverId()).resolve("images")
+                    : null;
+            },
+            () -> sharedWaypoints.negotiatedMinorForImages(),
+            this::localReferencedImageIds
+        );
+        waypointImages.register();
         groundTeleportService = new ClientGroundTeleportService(client, config, this::resolveUnknownLanding);
-
         predictionPaletteBuilder = new PredictionPaletteBuilder(client, predictionState, spriteColorSampler);
         tileTextureManager = new TileTextureManager(config, tileService, predictionTileService, daylightModel);
         fullscreenMapBrowseService = new FullscreenMapBrowseService(
@@ -437,6 +456,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
         // RegionCacheService owns the map-world rotation and final-flush boundary as one transition.
         sessionTracker.addListener(regionCache::onSessionChanged);
+        sessionTracker.addListener(session -> waypointImages.onSessionChanged());
         sessionTracker.addListener(chunkCapture::onSessionChanged);
         sessionTracker.addListener(tileService::onSessionChanged);
         sessionTracker.addListener(mcaBackfillService::onSessionChanged);
@@ -814,6 +834,23 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public SharedWaypointListModel sharedWaypointListModel() {
         return sharedWaypointListModel;
+    }
+
+    public WaypointImageClient waypointImages() {
+        return waypointImages;
+    }
+
+    /**
+     * Image ids the local waypoint store references, for the client-side sweep.
+     * Null means the store is missing, stale, or not loaded yet: the sweep is
+     * skipped this session.
+     */
+    private Set<String> localReferencedImageIds() {
+        final SessionGuard.Session session = sessionGuard.current();
+        if (!session.active()) {
+            return null;
+        }
+        return WaypointImageClient.referencedIdsForSweep(waypointService.current(), session.world());
     }
 
     public SharedWaypointClient sharedWaypoints() {
