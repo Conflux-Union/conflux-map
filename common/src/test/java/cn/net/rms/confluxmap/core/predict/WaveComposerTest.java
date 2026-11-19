@@ -199,16 +199,16 @@ class WaveComposerTest {
             assertTrue(completed[i], "member " + i + " must complete");
             final long[] stages = wave.overworldStageNanos(i);
             assertNotNull(stages, "a timing wave must expose member stage walls");
-            assertEquals(LodSampling.OVERWORLD_STAGE_COUNT, stages.length);
-            assertTrue(stages[LodSampling.OverworldStage.H_LATTICE.ordinal()] > 0L,
+            assertEquals(OverworldStages.OVERWORLD_STAGE_COUNT, stages.length);
+            assertTrue(stages[OverworldStages.OverworldStage.H_LATTICE.ordinal()] > 0L,
                 "the batched lattice stage must credit member " + i);
-            assertTrue(stages[LodSampling.OverworldStage.ANCHOR_BIOMES.ordinal()] > 0L,
+            assertTrue(stages[OverworldStages.OverworldStage.ANCHOR_BIOMES.ordinal()] > 0L,
                 "the batched anchor stage must credit member " + i);
-            assertTrue(stages[LodSampling.OverworldStage.BAND.ordinal()] > 0L,
+            assertTrue(stages[OverworldStages.OverworldStage.BAND.ordinal()] > 0L,
                 "the per-tile band stage must credit member " + i);
-            assertTrue(stages[LodSampling.OverworldStage.CELLS.ordinal()] > 0L,
+            assertTrue(stages[OverworldStages.OverworldStage.CELLS.ordinal()] > 0L,
                 "the per-tile cells stage must credit member " + i);
-            assertTrue(stages[LodSampling.OverworldStage.COMPOSE.ordinal()] > 0L,
+            assertTrue(stages[OverworldStages.OverworldStage.COMPOSE.ordinal()] > 0L,
                 "the compose stage must credit member " + i);
         }
     }
@@ -233,11 +233,11 @@ class WaveComposerTest {
         assertTrue(single.runMember(0), "the timing single wave must succeed");
         final long[] stages = single.overworldStageNanos(0);
         assertNotNull(stages, "a timing single wave must fill the legacy stage vector");
-        assertEquals(LodSampling.OVERWORLD_STAGE_COUNT, stages.length);
-        assertTrue(stages[LodSampling.OverworldStage.H_LATTICE.ordinal()] > 0L);
-        assertTrue(stages[LodSampling.OverworldStage.BAND.ordinal()] > 0L);
-        assertTrue(stages[LodSampling.OverworldStage.CELLS.ordinal()] > 0L);
-        assertTrue(stages[LodSampling.OverworldStage.COMPOSE.ordinal()] > 0L);
+        assertEquals(OverworldStages.OVERWORLD_STAGE_COUNT, stages.length);
+        assertTrue(stages[OverworldStages.OverworldStage.H_LATTICE.ordinal()] > 0L);
+        assertTrue(stages[OverworldStages.OverworldStage.BAND.ordinal()] > 0L);
+        assertTrue(stages[OverworldStages.OverworldStage.CELLS.ordinal()] > 0L);
+        assertTrue(stages[OverworldStages.OverworldStage.COMPOSE.ordinal()] > 0L);
     }
 
     /**

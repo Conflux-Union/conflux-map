@@ -14,8 +14,8 @@ import org.apache.logging.log4j.Logger;
  * barrier first asks {@code expired} (the service's generation and session token) and dissolves
  * the whole wave on mismatch before any further dispatch; a member whose stage throws dissolves
  * the wave so its mates observe termination at their next barrier instead of waiting. Batchable
- * stages ({@link LodSampling.OverworldStage#H_LATTICE}, {@link
- * LodSampling.OverworldStage#ANCHOR_BIOMES}) dispatch once through {@link BatchDispatch} when
+ * stages ({@link OverworldStages.OverworldStage#H_LATTICE}, {@link
+ * OverworldStages.OverworldStage#ANCHOR_BIOMES}) dispatch once through {@link BatchDispatch} when
  * construction provides the seam, per tile otherwise - a null seam (CPU backend, or an engine
  * the admission gate found unavailable or refusal-latched) keeps every stage per tile on every
  * member; a batch bitmap failure or whole-batch refusal re-runs that stage for the affected
@@ -74,9 +74,9 @@ final class WaveComposer {
      * leader applying batch credits or per-tile repairs for it.
      */
     private final CountingSampler[] accounting;
-    /** Per-member wall nanos per {@link LodSampling.OverworldStage} (debug timing only). */
+    /** Per-member wall nanos per {@link OverworldStages.OverworldStage} (debug timing only). */
     private final long[][] overworldStages;
-    private final LodSampling.OverworldStageState[] members;
+    private final OverworldStages.OverworldStageState[] members;
     private final Phaser barriers;
     /** Members whose tile is already decided (stage failure or precheck bypass); they still attend barriers. */
     private final boolean[] dropped;
@@ -107,14 +107,14 @@ final class WaveComposer {
                 accounting[index] = new CountingSampler(sampler);
             }
         }
-        this.overworldStages = timing ? new long[waveSize][LodSampling.OVERWORLD_STAGE_COUNT] : null;
+        this.overworldStages = timing ? new long[waveSize][OverworldStages.OVERWORLD_STAGE_COUNT] : null;
         this.barriers = new Phaser(waveSize);
         this.dropped = new boolean[waveSize];
-        this.members = new LodSampling.OverworldStageState[waveSize];
+        this.members = new OverworldStages.OverworldStageState[waveSize];
         for (int index = 0; index < waveSize; index++) {
-            members[index] = new LodSampling.OverworldStageState(
+            members[index] = new OverworldStages.OverworldStageState(
                 lod, tileOriginX[index], tileOriginZ[index],
-                LodSampling.newOverworldGrid(lod, tileOriginX[index], tileOriginZ[index])
+                OverworldStages.newOverworldGrid(lod, tileOriginX[index], tileOriginZ[index])
             );
         }
     }
@@ -129,15 +129,15 @@ final class WaveComposer {
             return runSingleMember();
         }
         try {
-            for (final LodSampling.OverworldStage stage : LodSampling.OverworldStage.values()) {
+            for (final OverworldStages.OverworldStage stage : OverworldStages.OverworldStage.values()) {
                 if (!reunite()) {
                     return false;
                 }
-                if (batch != null && stage == LodSampling.OverworldStage.H_LATTICE) {
+                if (batch != null && stage == OverworldStages.OverworldStage.H_LATTICE) {
                     if (index == LEADER) {
                         dispatchBatchStage(stage);
                     }
-                } else if (batch != null && stage == LodSampling.OverworldStage.ANCHOR_BIOMES) {
+                } else if (batch != null && stage == OverworldStages.OverworldStage.ANCHOR_BIOMES) {
                     if (index == LEADER) {
                         dispatchBatchStage(stage);
                     }
@@ -175,7 +175,7 @@ final class WaveComposer {
     }
 
     /**
-     * The member's wall nanos per {@link LodSampling.OverworldStage} when the wave was built
+     * The member's wall nanos per {@link OverworldStages.OverworldStage} when the wave was built
      * with timing on; null otherwise. Same quiescence contract as {@link #stageNanos(int)}.
      * Batched stages carry an even share of the batch's wall per member; a member whose stage
      * was repaired per tile carries its own repair wall instead.
@@ -184,9 +184,9 @@ final class WaveComposer {
         return overworldStages != null ? overworldStages[index] : null;
     }
 
-    private boolean runTimedStage(final int index, final LodSampling.OverworldStage stage) {
+    private boolean runTimedStage(final int index, final OverworldStages.OverworldStage stage) {
         final long start = overworldStages != null ? System.nanoTime() : 0L;
-        final boolean ok = LodSampling.runOverworldStage(stage, members[index], samplerFor(index));
+        final boolean ok = OverworldStages.runOverworldStage(stage, members[index], samplerFor(index));
         if (overworldStages != null) {
             overworldStages[index][stage.ordinal()] += System.nanoTime() - start;
         }
@@ -234,7 +234,7 @@ final class WaveComposer {
     }
 
     private boolean runSingleMember() {
-        final LodSampling.OverworldStageState member = members[LEADER];
+        final OverworldStages.OverworldStageState member = members[LEADER];
         try {
             legacyGrid = LodSampling.sample(
                 samplerFor(LEADER), false, member.lod, member.tileOriginX, member.tileOriginZ,
@@ -256,22 +256,22 @@ final class WaveComposer {
      * expiry observed after dispatch discards the results at distribution instead of applying
      * them.
      */
-    private void dispatchBatchStage(final LodSampling.OverworldStage stage) {
+    private void dispatchBatchStage(final OverworldStages.OverworldStage stage) {
         if (expired.getAsBoolean() || dissolved) {
             dissolve();
             return;
         }
         final int size = members.length;
-        final LodSampling.StageQuery[] queries = new LodSampling.StageQuery[size];
+        final OverworldStages.StageQuery[] queries = new OverworldStages.StageQuery[size];
         final int[] eligible = new int[size];
         int count = 0;
         for (int index = 0; index < size; index++) {
             if (dropped[index]) {
                 continue;
             }
-            final LodSampling.StageQuery query = stage == LodSampling.OverworldStage.H_LATTICE
-                ? LodSampling.planLatticeQuery(members[index], sampler)
-                : LodSampling.planAnchorBiomeQuery(members[index]);
+            final OverworldStages.StageQuery query = stage == OverworldStages.OverworldStage.H_LATTICE
+                ? OverworldStages.planLatticeQuery(members[index], sampler)
+                : OverworldStages.planAnchorBiomeQuery(members[index]);
             if (query != null) {
                 eligible[count] = index;
                 queries[count] = query;
@@ -297,7 +297,7 @@ final class WaveComposer {
         }
         final int[] packedTerrain = new int[totalCells];
         final int[] out = new int[totalCells];
-        if (stage == LodSampling.OverworldStage.ANCHOR_BIOMES) {
+        if (stage == OverworldStages.OverworldStage.ANCHOR_BIOMES) {
             int offset = 0;
             for (int k = 0; k < count; k++) {
                 System.arraycopy(queries[k].terrainY, 0, packedTerrain, offset, queries[k].w * queries[k].h);
@@ -312,7 +312,7 @@ final class WaveComposer {
             return;
         }
         final long batchStartNanos = accounting != null ? System.nanoTime() : 0L;
-        final int attempted = stage == LodSampling.OverworldStage.H_LATTICE
+        final int attempted = stage == OverworldStages.OverworldStage.H_LATTICE
             ? batch.overviewHeightsCoarseBatch(blockX, blockZ, w, h, stride, count, out, failMask)
             : batch.surfaceBiomesBatch(blockX, blockZ, w, h, stride, packedTerrain, count, out, failMask);
         final long batchNanos = accounting != null ? System.nanoTime() - batchStartNanos : 0L;
@@ -332,8 +332,8 @@ final class WaveComposer {
             final int member = eligible[k];
             if ((failMask[0] >>> k & 1) != 0) {
                 runPerTileStage(stage, member);
-            } else if (stage == LodSampling.OverworldStage.H_LATTICE) {
-                LodSampling.applyLatticeQuery(
+            } else if (stage == OverworldStages.OverworldStage.H_LATTICE) {
+                OverworldStages.applyLatticeQuery(
                     members[member], sampler, Arrays.copyOfRange(out, offset, offset + cells)
                 );
                 if (accounting != null) {
@@ -347,7 +347,7 @@ final class WaveComposer {
                     overworldStages[member][stage.ordinal()] += batchNanos / count;
                 }
             } else {
-                LodSampling.applyAnchorBiomeQuery(
+                OverworldStages.applyAnchorBiomeQuery(
                     members[member], Arrays.copyOfRange(out, offset, offset + cells)
                 );
                 if (accounting != null) {
@@ -361,7 +361,7 @@ final class WaveComposer {
         }
     }
 
-    private void runPerTileStage(final LodSampling.OverworldStage stage, final int member) {
+    private void runPerTileStage(final OverworldStages.OverworldStage stage, final int member) {
         if (!runTimedStage(member, stage)) {
             dropped[member] = true;
         }

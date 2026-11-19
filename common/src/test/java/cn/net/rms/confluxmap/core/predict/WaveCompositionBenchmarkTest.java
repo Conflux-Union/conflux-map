@@ -69,7 +69,7 @@ import org.junit.jupiter.api.Test;
  * predating the export degrades the columns to "-".
  *
  * <p>With timing instrumentation on, every round also totals the per-tile six-stage wall
- * vectors ({@link LodSampling.OverworldStage}, including wave members' even shares of batched
+ * vectors ({@link OverworldStages.OverworldStage}, including wave members' even shares of batched
  * stages) and reports them per cell alongside the poll-granular first-tile latency and the cold
  * warmup sample. Stage columns are cumulative worker time - concurrent workers make those sums
  * larger than the wall they run inside, so they are never shown as fractions of wall. The
@@ -311,7 +311,7 @@ class WaveCompositionBenchmarkTest {
 
     private static long[] stageTotals(final PredictionTileService service, final Set<TileKey> expected) {
         final Map<TileKey, long[]> vectors = service.tileOverworldStageNanosForTest();
-        final long[] totals = new long[LodSampling.OVERWORLD_STAGE_COUNT];
+        final long[] totals = new long[OverworldStages.OVERWORLD_STAGE_COUNT];
         for (final TileKey key : expected) {
             final long[] vector = vectors.get(key);
             assertTrue(vector != null,
@@ -615,9 +615,9 @@ class WaveCompositionBenchmarkTest {
     }
 
     private static String[] stageNames() {
-        final String[] names = new String[LodSampling.OVERWORLD_STAGE_COUNT];
+        final String[] names = new String[OverworldStages.OVERWORLD_STAGE_COUNT];
         for (int i = 0; i < names.length; i++) {
-            names[i] = switch (LodSampling.OverworldStage.values()[i]) {
+            names[i] = switch (OverworldStages.OverworldStage.values()[i]) {
                 case H_LATTICE -> "hLattice";
                 case ANCHOR_BIOMES -> "anchorBio";
                 case BAND -> "band";
