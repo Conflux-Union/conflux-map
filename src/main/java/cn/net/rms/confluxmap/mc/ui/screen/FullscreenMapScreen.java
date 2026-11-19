@@ -3511,17 +3511,21 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final FullscreenMapLocationMenu.Target target,
         final WaypointRenderEntry waypoint,
         final UUID playerId,
+        final StructureIndex.Marker structure,
         final Screen returnTo
     ) {
-        locationMenu.runLocationAction(action, target, waypoint, playerId, returnTo);
+        locationMenu.runLocationAction(action, target, waypoint, playerId, structure, returnTo);
     }
 
     List<FullscreenMapLocationMenu.ButtonSpec> locationMenuButtonSpecs(
         final FullscreenMapLocationMenu.Target target,
         final WaypointRenderEntry waypoint,
         final UUID playerId,
-        final boolean deletePending
+        final boolean deletePending,
+        final StructureIndex.Marker structure
     ) {
-        return locationMenu.locationMenuButtonSpecs(target, waypoint, playerId, deletePending);
+        return locationMenu.locationMenuButtonSpecs(
+            target, waypoint, playerId, deletePending, structure
+        );
     }
 }

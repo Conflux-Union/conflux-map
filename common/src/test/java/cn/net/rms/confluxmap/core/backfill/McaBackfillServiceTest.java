@@ -71,7 +71,7 @@ class McaBackfillServiceTest {
         final AtomicLong mtime = new AtomicLong(MTIME);
         final AtomicInteger scanCount = new AtomicInteger();
         final CountDownLatch scanStarted = new CountDownLatch(1);
-        /** File-stat probes from the viewport patrol; the throttle test's observation point. */
+        /** File-stat probes: both the render-thread patrol and the scan-pool acceptance re-stat. */
         final AtomicInteger mtimeProbes = new AtomicInteger();
         final AtomicReference<CountDownLatch> scanGate = new AtomicReference<>();
         /** Thread the latest scan ran on; the scan-pool test's observation point. */
@@ -323,6 +323,9 @@ class McaBackfillServiceTest {
     @Test
     void patrolOffersAreThrottledToTheInterval() throws Exception {
         service.reportViewport(DimensionId.OVERWORLD, 0, 0, 0, 0, 0);
+        // Sample only after the scan lands: the scan-pool acceptance re-stat also probes
+        // mtimeMs and would race into the throttle assertion below.
+        awaitChunkSource(mapWorlds.current(), 0, 0, SampleSource.REAL_SCAN);
         final int probesAfterFirst = scanner.mtimeProbes.get();
         assertTrue(probesAfterFirst > 0, "the first push patrols");
 

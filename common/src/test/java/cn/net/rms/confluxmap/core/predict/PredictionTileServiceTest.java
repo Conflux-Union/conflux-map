@@ -2571,10 +2571,10 @@ class PredictionTileServiceTest {
     @Test
     void overworldStageBreakdownListsNonzeroStagesInEnumOrder() {
         assertEquals("", PredictionTileService.formatOverworldStageBreakdown(
-            new long[LodSampling.OVERWORLD_STAGE_COUNT]), "nothing sampled");
+            new long[OverworldStages.OVERWORLD_STAGE_COUNT]), "nothing sampled");
         assertEquals("(h_lattice=1.2 cells=3.4)", PredictionTileService.formatOverworldStageBreakdown(
-            stageVector(LodSampling.OverworldStage.H_LATTICE, 1_200_000L,
-                LodSampling.OverworldStage.CELLS, 3_400_000L)));
+            stageVector(OverworldStages.OverworldStage.H_LATTICE, 1_200_000L,
+                OverworldStages.OverworldStage.CELLS, 3_400_000L)));
     }
 
     /**
@@ -2878,9 +2878,9 @@ class PredictionTileServiceTest {
             new GpuBackend.GpuStats(auto, "review-device", 4, 2, true)));
     }
 
-    private static long[] stageVector(final LodSampling.OverworldStage first, final long firstNanos,
-        final LodSampling.OverworldStage second, final long secondNanos) {
-        final long[] stages = new long[LodSampling.OVERWORLD_STAGE_COUNT];
+    private static long[] stageVector(final OverworldStages.OverworldStage first, final long firstNanos,
+        final OverworldStages.OverworldStage second, final long secondNanos) {
+        final long[] stages = new long[OverworldStages.OVERWORLD_STAGE_COUNT];
         stages[first.ordinal()] = firstNanos;
         stages[second.ordinal()] = secondNanos;
         return stages;

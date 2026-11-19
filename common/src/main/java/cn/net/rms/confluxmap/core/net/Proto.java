@@ -24,18 +24,13 @@ public final class Proto {
     /**
      * Protocol version this build speaks. Mismatched minors are tolerated; majors are not.
      * Major 4 keeps major 3's exact authoritative snapshots but delta-encodes heights and
-     * compresses each patch body before framing. Major 3 carried raw evaluated/difference masks
-     * and homogeneous value planes. Major 2 used tolerant incremental residuals.
-     * Minor 1 added the per-dim generator preset in spare bits of HELLO_POLICY's dim flag byte.
-     * Minor 2 added FLAT_BASELINE (0x07); pre-minor-2 clients log and ignore it.
-     * Minor 3 added server-authoritative chunk load-state subscriptions (0x08/0x09).
-     * Minor 4 added the server entity-radar policy and progressive coarse correction patches.
-     * Minor 5 added event-driven correction invalidation subscriptions (0x0A/0x0B).
-     * Minor 6 added chunk-range correction pages (0x0C-0x0F), capability-gated in policy flags.
-     * Negotiation-aware peers select released wire profiles with 0x10. Current peers advertise
-     * independent capabilities in the unchanged HELLO frame and receive the extensible 0x12
-     * selection. Capability-aware clients receive the server chunk-send radius in 0x11, while
-     * released peers continue to use their existing policy fingerprint.
+     * compresses each patch body before framing; major 3 carried raw masks and value planes,
+     * major 2 tolerant incremental residuals. Minors 1-6 (per-dim preset bits, FLAT_BASELINE,
+     * load-state, radar policy with coarse patches, invalidation subscriptions, region pages)
+     * predate the current negotiation machinery: negotiation-aware peers select released wire
+     * profiles with 0x10, current peers advertise independent capabilities in the unchanged HELLO
+     * frame and receive the extensible 0x12 selection, capability-aware clients receive the
+     * server chunk-send radius in 0x11.
      *
      * <p>Additive S2C message ids (0x11 through 0x19) intentionally leave the minor at 0: legacy
      * {@code wire:} tokens match {@code major.minor} exactly, so a minor bump would knock every

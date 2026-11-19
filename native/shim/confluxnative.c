@@ -40,12 +40,15 @@
 #include <string.h>
 #include <limits.h>
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 
 #include "finders.h"
 #include "features/end_city.h"
 #include "terrain_features.h"
+#include "loot/loot_tables.h"
+#include "loot/loot_functions.h"
 
 #ifdef CUBIOMES_ENABLE_GPU
 #include "gpu.h"
@@ -129,6 +132,18 @@ static uint64_t cfxGetBatchMarshalNanos(void)
 /* Largest w*h (or region count) accepted by any batch query. */
 #define CFX_MAX_CELLS (1 << 20)
 
+/* Per-handle loot table memo for cfxRollChestLoot. The largest supported
+ * structure type spans four distinct tables (bastion), so the eight slots
+ * never evict in practice; the ring is there for degenerate callers. */
+#define CFX_LOOT_CACHE_SLOTS 8
+
+/* Piece-list upper bound for the cfxStructureChests walk: END_CITY_PIECES_MAX
+ * (421) is the fork's end-city figure, fortress.h/stronghold.h call ~400
+ * "sufficient in practice", and getFortressPieces ignores its own n - so the
+ * buffer must outsize every real list, never rely on truncation. The loot
+ * harness (native/test_chest_loot.c) proves 1024. */
+#define CFX_CHEST_PIECE_CAP 1024
+
 #ifndef CUBIOMES_ENABLE_GPU
 /* Snapshot shape of the no-engine cfxGetGpuMetrics below; keep in sync with
  * gpu.h, whose slot constants the GPU builds use instead. */
@@ -174,6 +189,17 @@ typedef struct {
     int *overviewMemoBiomes[2];
     size_t overviewMemoCap[2];
     int overviewMemoNext;
+    /* Loot table memo for cfxRollChestLoot. init_loot_table_name builds the
+     * whole pool/entry machinery per (table, version) and returns pointers to
+     * static singletons that free_loot_table aborts on, so table pointers are
+     * stored as-is and never freed; only the key strings belong to this
+     * context. */
+    struct {
+        char *name;
+        LootTableContext *table;
+    } lootCache[CFX_LOOT_CACHE_SLOTS];
+    int lootCacheCount;
+    int lootCacheNext;
 } CfxContext;
 
 static CfxContext *cfxHandle(jlong handle) {
@@ -738,6 +764,8 @@ JNIEXPORT void JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         int slot;
         for (slot = 0; slot < CFX_OVERVIEW_MEMO_SLOTS; slot++)
             free(ctx->overviewMemoBiomes[slot]);
+        for (slot = 0; slot < ctx->lootCacheCount; slot++)
+            free(ctx->lootCache[slot].name);
         free(ctx);
     }
 }
@@ -3362,6 +3390,32 @@ static int cfxStructureBiome(CfxContext *ctx, int structType, int blockX, int bl
     );
 }
 
+/* The biome id fed into getVariant and getStructureSaltConfig: the
+ * variant-sensitive types sample one (the fork's salts, variants and piece
+ * paths for them depend on it), everything else passes -1 like the fork's own
+ * loot tests. Abandoned_Camp's per-biome salt doubles as the gate that keeps
+ * the piece path's 18-biome switch exhaustive, so the sample must precede it. */
+static int cfxStructureVariantBiome(CfxContext *ctx, int structType, int blockX, int blockZ) {
+    if (structType == Abandoned_Camp) {
+        /* Camps key the per-biome salt off the fork's own viability sample
+         * (isViableStructurePos's L_jigsaw path; the camp variant leaves
+         * x/sx/z/sz 0): the chunk-center point sample the other types use
+         * can leave the 18 camp biomes on water cells, turning real camps
+         * into -1. */
+        StructureVariant sv;
+        getVariant(&sv, structType, ctx->mc, ctx->g.seed, blockX, blockZ, -1);
+        return getBiomeAt(&ctx->g, 4,
+            ((blockX >> 4) * 32 + 2 * sv.x + sv.sx - 1) / 2 >> 2,
+            sv.y >> 2,
+            ((blockZ >> 4) * 32 + 2 * sv.z + sv.sz - 1) / 2 >> 2);
+    }
+    if (structType == Village || structType == Shipwreck
+        || structType == Ruined_Portal || structType == Ruined_Portal_N) {
+        return cfxStructureBiome(ctx, structType, blockX, blockZ);
+    }
+    return -1;
+}
+
 static int cfxStructureVariant(CfxContext *ctx, int structType, int blockX, int blockZ) {
     if (structType == End_City) {
         Piece pieces[END_CITY_PIECES_MAX];
@@ -3376,11 +3430,7 @@ static int cfxStructureVariant(CfxContext *ctx, int structType, int blockX, int 
         return 0;
     }
 
-    int biome = -1;
-    if (structType == Village || structType == Shipwreck
-        || structType == Ruined_Portal || structType == Ruined_Portal_N) {
-        biome = cfxStructureBiome(ctx, structType, blockX, blockZ);
-    }
+    const int biome = cfxStructureVariantBiome(ctx, structType, blockX, blockZ);
     StructureVariant variant;
     if (!getVariant(
         &variant, structType, ctx->mc, ctx->g.seed, blockX, blockZ, biome
@@ -3647,6 +3697,296 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         return 0;
     }
     return cfxIsViableStructure(ctx, structType, blockX, blockZ) != 0 ? 1 : 0;
+}
+
+/* The cfxRollChestLoot table memo: init_loot_table_name is the expensive
+ * part, so a per-handle hit skips it. Tables the library cannot serve at this
+ * context's version return NULL and are never cached. */
+static LootTableContext *cfxLootTableFor(CfxContext *ctx, const char *name) {
+    int slot;
+    for (slot = 0; slot < ctx->lootCacheCount; slot++) {
+        if (strcmp(ctx->lootCache[slot].name, name) == 0) {
+            return ctx->lootCache[slot].table;
+        }
+    }
+    LootTableContext *table = NULL;
+    if (!init_loot_table_name(&table, name, ctx->mc)) {
+        return NULL;
+    }
+    char *key = strdup(name);
+    if (key == NULL) {
+        return table; /* the memo is an optimization; serve uncached */
+    }
+    if (ctx->lootCacheCount < CFX_LOOT_CACHE_SLOTS) {
+        slot = ctx->lootCacheCount++;
+    } else {
+        slot = ctx->lootCacheNext++ % CFX_LOOT_CACHE_SLOTS;
+        free(ctx->lootCache[slot].name);
+    }
+    ctx->lootCache[slot].name = key;
+    ctx->lootCache[slot].table = table;
+    return table;
+}
+
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxStructureChests(
+    JNIEnv *env, jclass clazz, jlong handle, jint structType, jint blockX, jint blockZ,
+    jint maxChests, jintArray outPositions, jlongArray outSeeds, jobjectArray outTables
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL) {
+        return -2;
+    }
+    if (structType < 0 || structType >= FEATURE_NUM) {
+        return -1;
+    }
+    jint effectiveCap = maxChests;
+    const jint positionCap = (*env)->GetArrayLength(env, outPositions) / 3;
+    if (effectiveCap > positionCap) {
+        effectiveCap = positionCap;
+    }
+    const jint seedCap = (*env)->GetArrayLength(env, outSeeds);
+    if (effectiveCap > seedCap) {
+        effectiveCap = seedCap;
+    }
+    const jint tableCap = (*env)->GetArrayLength(env, outTables);
+    if (effectiveCap > tableCap) {
+        effectiveCap = tableCap;
+    }
+    if (effectiveCap <= 0) {
+        return 0;
+    }
+
+    /* Same biome + variant resolution as the viable/nearest path; the salts
+     * and piece paths of the supported types depend on it. */
+    const int biome = cfxStructureVariantBiome(ctx, structType, blockX, blockZ);
+    StructureSaltConfig saltConfig;
+    if (!getStructureSaltConfig(structType, ctx->mc, biome, &saltConfig)) {
+        return -1;
+    }
+    StructureVariant variant;
+    StructureVariant *svp = NULL;
+    if (getVariant(&variant, structType, ctx->mc, ctx->g.seed, blockX, blockZ, biome)) {
+        svp = &variant;
+    }
+
+    Piece *pieces = malloc(sizeof(Piece) * CFX_CHEST_PIECE_CAP);
+    if (pieces == NULL) {
+        return -2;
+    }
+    /* The fork leaves piece->pos unset for bastion and camp pieces; zeroing
+     * the buffer makes their marshalled chest Y a defined 0, not stale heap. */
+    memset(pieces, 0, sizeof(Piece) * CFX_CHEST_PIECE_CAP);
+    const int pieceCount = getStructurePieces(
+        pieces, CFX_CHEST_PIECE_CAP, structType, saltConfig, svp,
+        ctx->mc, ctx->g.seed, blockX, blockZ
+    );
+    if (pieceCount < 0) {
+        free(pieces);
+        return -1;
+    }
+
+    int total = 0;
+    int status = 0;
+    for (int p = 0; p < pieceCount && status == 0; p++) {
+        const Piece *piece = &pieces[p];
+        /* chestPoses/lootSeeds/lootTables are [4]; a fork regression writing a
+         * larger chestCount must not walk past them. */
+        int chestCount = piece->chestCount;
+        if (chestCount > 4) {
+            chestCount = 4;
+        }
+        for (int c = 0; c < chestCount && status == 0; c++) {
+            if (total < effectiveCap) {
+                /* The fork models chests in 2D plus the owning piece's Y, so
+                 * the marshalled triple is (chestPose.x, piece.pos.y,
+                 * chestPose.z). */
+                const jint triple[3] = {
+                    piece->chestPoses[c].x, piece->pos.y, piece->chestPoses[c].z
+                };
+                const jlong seed = (jlong) piece->lootSeeds[c];
+                jstring table = (*env)->NewStringUTF(
+                    env, piece->lootTables[c] != NULL ? piece->lootTables[c] : ""
+                );
+                if (table == NULL) {
+                    status = -2;
+                    break;
+                }
+                (*env)->SetIntArrayRegion(env, outPositions, 3 * total, 3, triple);
+                (*env)->SetLongArrayRegion(env, outSeeds, total, 1, &seed);
+                (*env)->SetObjectArrayElement(env, outTables, total, table);
+                (*env)->DeleteLocalRef(env, table);
+            }
+            total++;
+        }
+    }
+    free(pieces);
+    return status != 0 ? status : total;
+}
+
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxRollChestLoot(
+    JNIEnv *env, jclass clazz, jlong handle, jstring lootTable, jlong lootSeed, jint maxStacks,
+    jintArray outCounts, jintArray outItemCounts, jobjectArray outItemNames, jobjectArray outEffects,
+    jobjectArray outEnchantNames, jintArray outEnchantLevels, jint maxEnchants
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL) {
+        return -2;
+    }
+    if (outItemCounts == NULL) {
+        return -2;
+    }
+    const jint itemCountCap = (*env)->GetArrayLength(env, outItemCounts);
+    jint stacksCap = maxStacks;
+    const jint countsCap = (*env)->GetArrayLength(env, outCounts) - 1;
+    if (stacksCap > countsCap) {
+        stacksCap = countsCap;
+    }
+    const jint nameCap = (*env)->GetArrayLength(env, outItemNames);
+    if (stacksCap > nameCap) {
+        stacksCap = nameCap;
+    }
+    const jint effectCap = (*env)->GetArrayLength(env, outEffects);
+    if (stacksCap > effectCap) {
+        stacksCap = effectCap;
+    }
+    if (stacksCap <= 0) {
+        return 0;
+    }
+    jint enchCap = maxEnchants;
+    const jint enchNameCap = (*env)->GetArrayLength(env, outEnchantNames);
+    if (enchCap > enchNameCap) {
+        enchCap = enchNameCap;
+    }
+    const jint enchLevelCap = (*env)->GetArrayLength(env, outEnchantLevels);
+    if (enchCap > enchLevelCap) {
+        enchCap = enchLevelCap;
+    }
+    if (enchCap < 0) {
+        enchCap = 0;
+    }
+    if (lootTable == NULL) {
+        return -1;
+    }
+
+    const char *tableName = (*env)->GetStringUTFChars(env, lootTable, NULL);
+    if (tableName == NULL) {
+        return -2;
+    }
+    LootTableContext *ltc = cfxLootTableFor(ctx, tableName);
+    (*env)->ReleaseStringUTFChars(env, lootTable, tableName);
+    if (ltc == NULL) {
+        return -1;
+    }
+
+    set_loot_seed(ltc, (uint64_t) lootSeed);
+    generate_loot(ltc);
+
+    /* generated_items/enchantments sizes come off the fork's structs, so a
+     * capacity bump there cannot overflow the shim's walks. */
+    const int stackStorage =
+        (int) (sizeof ltc->generated_items / sizeof ltc->generated_items[0]);
+    int stacks = ltc->generated_item_count;
+    if (stacks < 0) {
+        stacks = 0;
+    }
+    if (stacks > stackStorage) {
+        stacks = stackStorage;
+    }
+    const jint stackCount = (jint) stacks;
+    const jint written = stackCount < stacksCap ? stackCount : stacksCap;
+
+    /* A legitimate roll can produce zero stacks; never hand malloc a zero
+     * size (some libcs return NULL there and the fault path would lie). */
+    jint *counts = malloc(sizeof(jint) * (size_t) (written > 0 ? written : 1));
+    jint *itemCounts =
+        malloc(sizeof(jint) * (size_t) (written > 0 ? written : 1));
+    jint *levels = malloc(sizeof(jint) * (size_t) (enchCap > 0 ? enchCap : 1));
+    if (counts == NULL || itemCounts == NULL || levels == NULL) {
+        free(counts);
+        free(itemCounts);
+        free(levels);
+        return -2;
+    }
+
+    int status = 0;
+    int enchWritten = 0;
+    for (int i = 0; i < written && status == 0; i++) {
+        const ItemStack *stack = &ltc->generated_items[i];
+        if (i < itemCountCap) {
+            itemCounts[i] = (jint) stack->count;
+        }
+
+        const char *itemName = get_item_name(ltc, stack->item);
+        jstring itemStr = (*env)->NewStringUTF(env, itemName != NULL ? itemName : "");
+        if (itemStr == NULL) {
+            status = -2;
+            break;
+        }
+        (*env)->SetObjectArrayElement(env, outItemNames, i, itemStr);
+        (*env)->DeleteLocalRef(env, itemStr);
+
+        /* generate_loot_pool marks effect-less stacks {-1, -1}; only
+         * set_effect/set_potion fill the field, always with an EFFECT_* id,
+         * so MOB_EFFECTS is the name table. */
+        char effectBuf[64];
+        if (stack->mob_effect.effect >= 0 && stack->mob_effect.effect < EFFECT_NUM) {
+            snprintf(effectBuf, sizeof(effectBuf), "%s %d",
+                MOB_EFFECTS[stack->mob_effect.effect].effect_name,
+                stack->mob_effect.duration);
+        } else {
+            effectBuf[0] = '\0';
+        }
+        jstring effectStr = (*env)->NewStringUTF(env, effectBuf);
+        if (effectStr == NULL) {
+            status = -2;
+            break;
+        }
+        (*env)->SetObjectArrayElement(env, outEffects, i, effectStr);
+        (*env)->DeleteLocalRef(env, effectStr);
+
+        int enchCount = stack->enchantment_count;
+        if (enchCount < 0) {
+            enchCount = 0;
+        }
+        if (enchCount > (int) (sizeof stack->enchantments / sizeof stack->enchantments[0])) {
+            enchCount = (int) (sizeof stack->enchantments / sizeof stack->enchantments[0]);
+        }
+        counts[i] = (jint) enchCount; /* the walked count, so reported slots never exceed storage */
+        for (int e = 0; e < enchCount && enchWritten < enchCap; e++) {
+            const int enchantment = stack->enchantments[e].enchantment;
+            const char *enchName = NULL;
+            /* get_enchantment_name indexes ENCHANT_NAMES[64] unguarded; this
+             * range check keeps a fork enum growth from reading past it. */
+            if (enchantment >= 0 && enchantment < 64) {
+                enchName = get_enchantment_name((Enchantment) enchantment);
+            }
+            jstring enchStr = (*env)->NewStringUTF(env, enchName != NULL ? enchName : "");
+            if (enchStr == NULL) {
+                status = -2;
+                break;
+            }
+            (*env)->SetObjectArrayElement(env, outEnchantNames, enchWritten, enchStr);
+            (*env)->DeleteLocalRef(env, enchStr);
+            levels[enchWritten] = (jint) stack->enchantments[e].level;
+            enchWritten++;
+        }
+    }
+
+    if (status == 0) {
+        (*env)->SetIntArrayRegion(env, outCounts, 0, 1, &stackCount);
+        (*env)->SetIntArrayRegion(env, outCounts, 1, written, counts);
+        if (itemCountCap > 0) {
+            const jint itemCountWritten = written < itemCountCap ? written : itemCountCap;
+            (*env)->SetIntArrayRegion(env, outItemCounts, 0, itemCountWritten, itemCounts);
+        }
+        (*env)->SetIntArrayRegion(env, outEnchantLevels, 0, enchWritten, levels);
+    }
+    free(counts);
+    free(itemCounts);
+    free(levels);
+    return status != 0 ? status : stackCount;
 }
 
 /*

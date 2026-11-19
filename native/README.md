@@ -27,8 +27,14 @@ for what it predicts; this file is only the build/maintenance side.
   `features/end_city`, `features/fortress`, `features/abandoned_camp`,
   `features/stronghold`, `util`, `rng.h`, `tables/`, plus the fork's GPU
   executor `gpu.c`/`opencl_host.c` with headers `gpu.h`/`gpu_cl_kernels.h`/
-  `opencl_host.h`) - other upstream utilities
-  this project never calls (`quadbase.c/h`, `carver.c/h`, the loot library)
+  `opencl_host.h`). The loot library (`loot/` - hand-written roll machinery plus
+  the generated per-version table implementations under `loot/loot_tables/`,
+  MIT-licensed like the rest, see `loot/LICENSE_loot_library.h.txt`) compiles
+  with them since the chest-loot preview feature: the JNI shim's chest
+  operations roll chest contents from the loot seeds the piece paths emit, and
+  `native/test_chest_loot.c` pins the fork's known-answer case plus a
+  per-structure-type smoke matrix. Other upstream utilities
+  this project never calls (`quadbase.c/h`, `carver.c/h`)
   ship in the submodule but are not compiled. To change
   cubiomes, commit on the fork and bump the
   submodule pin (`git -C native/cubiomes checkout <commit> && git add native/cubiomes`);
@@ -76,7 +82,7 @@ dead-section elimination and WASM SIMD. The Web Worker first paints the cheap
 terrain overview, then refines LOD 0-1 with the sparse exact residual grid while
 keeping prediction work off the page's rendering thread.
 
-`buildNativesHost` (root `build.gradle`) compiles `build/natives/host/linux-x86_64/` with
+`buildNativesHost` (`native/native.gradle`) compiles `build/natives/host/linux-x86_64/` with
 the host `cc` - this is what CI and local contributors on Linux x86_64 run for local development
 and testing without touching prebuilt releases. It is intentionally **not** wired into general
 `build`/`check` lifecycle tasks:
@@ -92,6 +98,7 @@ have no `cc`/`gcc`, and `-Wl,--no-undefined` is GNU-ld only):
 ```
 ./gradlew verifyNative       # testNativePurity + testNativeMatrix (300 cases)
 ./gradlew verifyNativeSmoke  # testNativePuritySmoke + testNativeMatrixSmoke (12 cases)
+./gradlew testNativeChestLoot  # native/test_chest_loot.c, loot known answer + per-type roll matrix
 ./gradlew benchNative        # native/bench_single.c, per-LOD single-core solve time
 ```
 

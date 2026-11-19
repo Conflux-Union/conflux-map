@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.render.RenderTargetState;
 import com.mojang.blaze3d.systems.RenderSystem;
+import java.util.ArrayList;
 import java.util.List;
 //#if MC>=12108
 //$$ import org.joml.Matrix3x2fStack;
@@ -319,13 +320,27 @@ public final class GuiDraw {
         final int mouseX,
         final int mouseY
     ) {
-        final List<OrderedText> lines = renderer.wrapLines(text, Math.max(200, screen.width / 2));
+        drawTooltip(screen, renderer, List.of(text), mouseX, mouseY);
+    }
+
+    /** One tooltip line per entry; each line still word-wraps at the shared width. */
+    public void drawTooltip(
+        final Screen screen,
+        final TextRenderer renderer,
+        final List<Text> lines,
+        final int mouseX,
+        final int mouseY
+    ) {
+        final List<OrderedText> wrapped = new ArrayList<>();
+        for (final Text line : lines) {
+            wrapped.addAll(renderer.wrapLines(line, Math.max(200, screen.width / 2)));
+        }
         //#if MC>=12108
-        //$$ context.drawTooltip(lines, mouseX, mouseY);
+        //$$ context.drawTooltip(wrapped, mouseX, mouseY);
         //#elseif MC>=12000
-        //$$ context.drawOrderedTooltip(renderer, lines, mouseX, mouseY);
+        //$$ context.drawOrderedTooltip(renderer, wrapped, mouseX, mouseY);
         //#else
-        screen.renderOrderedTooltip(matrices, lines, mouseX, mouseY);
+        screen.renderOrderedTooltip(matrices, wrapped, mouseX, mouseY);
         //#endif
     }
 
@@ -501,6 +516,84 @@ public final class GuiDraw {
         //$$ return result;
         //#else
         return renderer.drawWithShadow(matrices, text, x, y, revealed(color));
+        //#endif
+    }
+
+    /** Like {@link #drawTextWithShadow(TextRenderer, String, float, float, int)} without the shadow. */
+    public int drawText(
+        final TextRenderer renderer,
+        final String text,
+        final float x,
+        final float y,
+        final int color
+    ) {
+        //#if MC>=260100
+        //$$ withTextPose(x, y, () -> context.text(renderer, text, 0, 0, revealed(color), false));
+        //$$ return (int) x + renderer.width(text);
+        //#elseif MC>=12108
+        //$$ withTextPose(x, y, () -> context.drawText(renderer, text, 0, 0, revealed(color), false));
+        //$$ return (int) x + renderer.getWidth(text);
+        //#elseif MC>=12103
+        //$$ final int[] result = {0};
+        //$$ context.draw(vertexConsumers -> result[0] = renderer.draw(
+        //$$     text, x, y, revealed(color), false, matrices().peek().getPositionMatrix(),
+        //$$     vertexConsumers, TextLayerType.NORMAL, 0, 15728880
+        //$$ ));
+        //$$ return result[0];
+        //#elseif MC>=12000
+        //$$ final int result = renderer.draw(
+        //$$     text, x, y, revealed(color), false, matrices().peek().getPositionMatrix(),
+        //$$     context.getVertexConsumers(), TextLayerType.NORMAL, 0, 15728880,
+        //$$     renderer.isRightToLeft()
+        //$$ );
+        //$$ context.draw();
+        //$$ return result;
+        //#else
+        return renderer.draw(matrices, text, x, y, revealed(color));
+        //#endif
+    }
+
+    /**
+     * Draws shadowed text above the item plane like vanilla's slot-count overlay: item models
+     * keep their own GUI depth through 1.21.5 (vanilla's drawStackCount lifts z=200 there), so
+     * flat text would vanish inside an icon. From 1.21.6 the render-state pipeline needs no lift.
+     */
+    public int drawTextOverIcons(
+        final TextRenderer renderer,
+        final String text,
+        final float x,
+        final float y,
+        final int color
+    ) {
+        //#if MC>=12106
+        //$$ return drawTextWithShadow(renderer, text, x, y, color);
+        //#elseif MC>=12103
+        //$$ final int[] result = {0};
+        //$$ matrices.push();
+        //$$ matrices.translate(0, 0, 200);
+        //$$ context.draw(vertexConsumers -> result[0] = renderer.draw(
+        //$$     text, x, y, revealed(color), true, matrices().peek().getPositionMatrix(),
+        //$$     vertexConsumers, TextLayerType.NORMAL, 0, 15728880
+        //$$ ));
+        //$$ matrices.pop();
+        //$$ return result[0];
+        //#elseif MC>=12000
+        //$$ matrices.push();
+        //$$ matrices.translate(0, 0, 200);
+        //$$ final int result = renderer.draw(
+        //$$     text, x, y, revealed(color), true, matrices().peek().getPositionMatrix(),
+        //$$     context.getVertexConsumers(), TextLayerType.NORMAL, 0, 15728880,
+        //$$     renderer.isRightToLeft()
+        //$$ );
+        //$$ matrices.pop();
+        //$$ context.draw();
+        //$$ return result;
+        //#else
+        matrices.push();
+        matrices.translate(0, 0, 200);
+        final int result = renderer.drawWithShadow(matrices, text, x, y, revealed(color));
+        matrices.pop();
+        return result;
         //#endif
     }
 }

@@ -1,9 +1,7 @@
 package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.core.color.DaylightModel;
-import cn.net.rms.confluxmap.core.color.LightTint;
 import cn.net.rms.confluxmap.core.color.MapColorStyle;
-import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.color.XaeroMapStyle;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
@@ -356,91 +354,6 @@ public final class PredictionTileService {
 
     public PredictionViewMode viewMode() {
         return viewMode;
-    }
-
-    private AppliedLighting applyLayerLighting(
-        final TileKey key,
-        final int[] pixels,
-        final byte[] blockLight,
-        final MapColorStyle style
-    ) {
-        if (BiomeTileKeys.isBiome(key)) {
-            return AppliedLighting.NONE;
-        }
-        final String realLayer = BiomeTileKeys.baseLayerId(key);
-        final MapLayer.Type layer = MapLayer.parse(realLayer).type();
-        final DaylightModel model = daylightModel;
-        final DaylightModel.State lighting = model == null
-            ? new DaylightModel.State(1f, 0f)
-            : model.state();
-        final float gamma = lighting.gamma();
-        if (layer == MapLayer.Type.NETHER_CEILING) {
-            // Captured Xaero roof tiles keep their zero-light ambient bake untouched
-            // (TileService's composeXaeroColumn applies no light replacement to
-            // NETHER_CEILING), so the prediction must match instead of being re-lit.
-            if (style != MapColorStyle.XAERO) {
-                for (int pixel = 0; pixel < pixels.length; pixel++) {
-                    pixels[pixel] = LightTint.applyBlockLightOverAmbient(
-                        pixels[pixel], blockLight[pixel] & 0xFF, true, gamma
-                    );
-                }
-            }
-            return AppliedLighting.NONE;
-        }
-        if (layer == MapLayer.Type.END_SURFACE) {
-            // The End plane composes with the zero-light ambient baked in (see composeTile);
-            // the per-column block-light plane replaces it here, matching TileService's
-            // raw END_SURFACE composition. The Xaero style composes without the bake (its
-            // terrain shading adds light, which a ratio replace cannot invert) and takes the
-            // curve applied over the shaded pixel, exactly like captured Xaero End tiles.
-            for (int pixel = 0; pixel < pixels.length; pixel++) {
-                pixels[pixel] = style == MapColorStyle.XAERO
-                    ? LightTint.applyBlockLightTint(
-                        pixels[pixel], blockLight[pixel] & 0xFF, false, gamma
-                    )
-                    : LightTint.applyBlockLightOverAmbient(
-                        pixels[pixel], blockLight[pixel] & 0xFF, false, gamma
-                    );
-            }
-            return AppliedLighting.NONE;
-        }
-        if (layer != MapLayer.Type.SURFACE) {
-            return AppliedLighting.NONE;
-        }
-        if (model == null) {
-            return AppliedLighting.NONE;
-        }
-        final float factor = lighting.daylight();
-        for (int pixel = 0; pixel < pixels.length; pixel++) {
-            pixels[pixel] = style == MapColorStyle.XAERO
-                ? Argb.scale(
-                    pixels[pixel],
-                    ShadingPipeline.applyGamma(
-                        XaeroMapStyle.daylightScale(factor, blockLight[pixel] & 0xFF), gamma
-                    )
-                )
-                : ShadingPipeline.applyDaylight(
-                    pixels[pixel], factor, blockLight[pixel] & 0xFF, gamma
-                );
-        }
-        return new AppliedLighting(factor, gamma);
-    }
-
-    private static TileUpdate tileUpdate(
-        final TileKey key,
-        final int[] pixels,
-        final byte[] blockLight,
-        final float composedDaylight,
-        final float composedGamma,
-        final MapColorStyle style
-    ) {
-        return Float.isNaN(composedDaylight)
-            ? TileUpdate.fullTile(key, pixels)
-            : TileUpdate.fullTile(
-                key, pixels, new TileUpdate.Relight(
-                    composedDaylight, composedGamma, blockLight, style
-                )
-            );
     }
 
     /**
@@ -1832,7 +1745,7 @@ public final class PredictionTileService {
     }
 
     /**
-     * Nonzero {@link LodSampling.OverworldStage} stages of a six-slot wall array as
+     * Nonzero {@link OverworldStages.OverworldStage} stages of a six-slot wall array as
      * {@code (h_lattice=1.2 cells=3.4)}, fixed enum order; empty when the tile never ran the
      * staged skeleton (cache hits, superflat, non-Overworld).
      */
@@ -1845,7 +1758,7 @@ public final class PredictionTileService {
             return "";
         }
         final StringBuilder stages = new StringBuilder("(");
-        for (final LodSampling.OverworldStage stage : LodSampling.OverworldStage.values()) {
+        for (final OverworldStages.OverworldStage stage : OverworldStages.OverworldStage.values()) {
             final long nanos = stageNanos[stage.ordinal()];
             if (nanos > 0L) {
                 if (stages.length() > 1) {
@@ -2033,7 +1946,7 @@ public final class PredictionTileService {
                     quadrantMask = null;
                 } else {
                     final long[] overworldStageNanos = timing
-                        ? new long[LodSampling.OVERWORLD_STAGE_COUNT] : null;
+                        ? new long[OverworldStages.OVERWORLD_STAGE_COUNT] : null;
                     grid = key.dimension().equals(DimensionId.NETHER)
                         ? LodSampling.sampleNetherRoof(
                             sampler, plan.lod(), plan.tileOriginX(), plan.tileOriginZ()
@@ -2149,9 +2062,10 @@ public final class PredictionTileService {
             directCorrections == null
                 ? CorrectionProfile.LEGACY_V1 : directCorrections.correctionProfile()
         );
-        final AppliedLighting appliedLighting = applyLayerLighting(
-            key, pixels, blockLight, plan.style()
-        );
+        final PredictionTileShading.AppliedLighting appliedLighting =
+            PredictionTileShading.applyLayerLighting(
+                key, pixels, blockLight, plan.style(), daylightModel
+            );
         final PredictionMipCache.Tile planar = planarTile(
             key, grid, derived, blockLight, syncEvaluated, syncChunkSourceRevisions,
             plan.compositionMode(), plan.directHasServerState(), plan.directValidatedAt(),
@@ -2160,7 +2074,7 @@ public final class PredictionTileService {
         );
         publishBaseline(plan, grid, planar);
         return new Composition(
-            tileUpdate(
+            PredictionTileShading.tileUpdate(
                 key, pixels, blockLight, appliedLighting.daylight(), appliedLighting.gamma(),
                 plan.style()
             ),
@@ -2355,15 +2269,16 @@ public final class PredictionTileService {
                 directCorrections == null
                     ? reusable.correctionProfile() : directCorrections.correctionProfile()
             );
-            final AppliedLighting appliedLighting = applyLayerLighting(
-                key, pixels, blockLight, style
-            );
+            final PredictionTileShading.AppliedLighting appliedLighting =
+                PredictionTileShading.applyLayerLighting(
+                    key, pixels, blockLight, style, daylightModel
+                );
             return new CompositionPlan(
                 key, token, compositionMode, style, lowerNetherBiome, netherY, lod, tileOriginX,
                 tileOriginZ, state.seed(), nativeDim, directCorrections, directHasServerState,
                 directValidatedAt,
                 new Composition(
-                    tileUpdate(
+                    PredictionTileShading.tileUpdate(
                         key, pixels, blockLight, appliedLighting.daylight(), appliedLighting.gamma(),
                         style
                     ),
@@ -2440,7 +2355,7 @@ public final class PredictionTileService {
             derived, grid, state.palette(), directCorrections, compositionMode, key.lod(),
             baselineMapColorId, derived, grid, baselineMapColorId,
             !key.dimension().equals(DimensionId.NETHER),
-            ambientLightTint(key, style),
+            PredictionTileShading.ambientLightTint(key, style),
             syncedMaterials, style, XaeroMapStyle.shadowFor(key.dimension()),
             quadrantMask == null ? null : quadrantMask.mapColorOverrides(),
             quadrantMask == null ? null : quadrantMask.topMaterials(),
@@ -2462,23 +2377,6 @@ public final class PredictionTileService {
         return key.dimension().equals(DimensionId.NETHER)
             ? PredictionDimensions.NETHER_ROOF_MAP_COLOR_ID
             : Proto.MAP_COLOR_NONE;
-    }
-
-    /** Ambient tint baked in before height and relief shading. */
-    private static int ambientLightTint(final TileKey key, final MapColorStyle style) {
-        if (key.dimension().equals(DimensionId.NETHER)) {
-            return LightTint.multiplier(0, 0, true);
-        }
-        if (key.dimension().equals(DimensionId.END) && style == MapColorStyle.CONFLUX) {
-            // The End owes the cave dark-light contract too: bake the zero-light ambient in
-            // here (baseline and corrections alike), then the per-column block-light plane
-            // replaces it in applyLayerLighting. The Xaero style bakes nothing - its terrain
-            // shading adds light, which the ambient ratio-replace cannot invert - and instead
-            // takes the curve applied over the shaded pixel, exactly like the captured Xaero
-            // End tiles.
-            return LightTint.multiplier(0, 0, false);
-        }
-        return 0xFFFFFFFF;
     }
 
     /** Whether the dimension composes from a uniform flat baseline instead of sampled terrain. */
@@ -2798,7 +2696,9 @@ public final class PredictionTileService {
                 final QuadrantLayout.Mask quadrantMask =
                     reapplyCachedLayering(parent, cachedGrid, cachedDerived);
                 reducedPixels = shade(parent, cachedDerived, cachedGrid, null, effectiveViewMode(), quadrantMask);
-                applyLayerLighting(parent, reducedPixels, reduced.blockLight(), mapColorStyle);
+                PredictionTileShading.applyLayerLighting(
+                    parent, reducedPixels, reduced.blockLight(), mapColorStyle, daylightModel
+                );
                 reducedMetadata = new TileMetadata(
                     biomeIds(cachedGrid, null, cachedGrid),
                     surfaceYs(cachedDerived, null, cachedDerived)
@@ -3234,10 +3134,6 @@ public final class PredictionTileService {
             final short packed = surfaces[pixel];
             return packed == BaselineGrid.NO_SURFACE_SHORT ? BaselineGrid.NO_SURFACE : packed;
         }
-    }
-
-    private record AppliedLighting(float daylight, float gamma) {
-        private static final AppliedLighting NONE = new AppliedLighting(Float.NaN, 0f);
     }
 
     private record PixelLookup(TileKey key, TileKey requestKey, int pixel) {

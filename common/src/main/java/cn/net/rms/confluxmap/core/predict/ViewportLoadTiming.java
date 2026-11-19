@@ -35,7 +35,7 @@ final class ViewportLoadTiming {
         /** Wall nanos per {@link SampleStage} bucket, indexed by ordinal; never null. */
         long[] stageNanos,
         /**
-         * Wall nanos per {@link LodSampling.OverworldStage}, indexed by ordinal; never null.
+         * Wall nanos per {@link OverworldStages.OverworldStage}, indexed by ordinal; never null.
          * Stage wall includes the Java work a stage does around its sampler calls; batched
          * stages distribute the batch's wall evenly across their members.
          */
@@ -82,7 +82,7 @@ final class ViewportLoadTiming {
     private long firstUploadWallNanos = -1L;
     private TileKey firstUploadedTile;
     private final long[] stageNanos = new long[SampleStage.COUNT];
-    private final long[] overworldStageNanos = new long[LodSampling.OVERWORLD_STAGE_COUNT];
+    private final long[] overworldStageNanos = new long[OverworldStages.OVERWORLD_STAGE_COUNT];
     /** Uploads queued but not yet reported complete, each with its queue-entry nanos. */
     private final Map<TileKey, Long> pendingUploads = new HashMap<>();
 
