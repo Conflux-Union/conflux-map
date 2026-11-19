@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.waypoint.library;
 
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import cn.net.rms.confluxmap.core.store.NamespaceAdoption;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
@@ -14,6 +15,7 @@ import java.util.concurrent.*;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
+import org.apache.logging.log4j.Logger;
 
 /** Private, world/source scoped media. All disk access and decoding run on the supplied IO executor. */
 public final class WaypointMediaService implements AutoCloseable {
@@ -107,6 +109,10 @@ public final class WaypointMediaService implements AutoCloseable {
             try { return task.run(); } catch (IOException e) { throw new CompletionException(e); }
         } }, executor);
     }
+    public void adoptNamespace(WorldIdentity world, String legacyWorldId, Logger logger) {
+        if (legacyWorldId == null || legacyWorldId.equals(world.worldId())) return;
+        async(() -> NamespaceAdoption.adopt(List.of(new NamespaceAdoption.Store(root, "")), world, legacyWorldId, logger));
+    }
     public CompletableFuture<List<Photo>> list(Key key) {
         return async(() -> List.copyOf(load(key).bindings.getOrDefault(key.binding(), List.of())));
     }
@@ -149,6 +155,7 @@ public final class WaypointMediaService implements AutoCloseable {
                     }
                 }
                 BufferedImage decoded; String extension;
+                int width, height;
                 try (ImageInputStream stream = ImageIO.createImageInputStream(staged.toFile())) {
                     Iterator<ImageReader> readers = ImageIO.getImageReaders(stream);
                     if (!readers.hasNext()) throw new IOException("Only PNG and JPEG images are supported");
@@ -158,14 +165,15 @@ public final class WaypointMediaService implements AutoCloseable {
                         if (!(format.equals("png") || format.equals("jpeg") || format.equals("jpg"))) throw new IOException("Only PNG and JPEG images are supported");
                         extension = format.equals("png") ? "png" : "jpg";
                         reader.setInput(stream, true, true);
-                        validateSize(reader.getWidth(0), reader.getHeight(0));
-                        decoded = reader.read(0);
+                        width = reader.getWidth(0);
+                        height = reader.getHeight(0);
+                        decoded = decodePreview(reader, width, height, 256);
                     } finally { reader.dispose(); }
                 }
-                Photo photo = new Photo(UUID.randomUUID(), extension, "", decoded.getWidth(), decoded.getHeight(), 0);
+                Photo photo = new Photo(UUID.randomUUID(), extension, "", width, height, 0);
                 original = image(key, photo, false); thumb = image(key, photo, true);
                 Files.move(staged, original);
-                ImageIO.write(resize(decoded, 256), "png", thumb.toFile());
+                ImageIO.write(decoded, "png", thumb.toFile());
                 photos.add(photo); doc.bindings.put(key.binding(), photos); save(key, doc);
                 committed = true; return photo;
             } finally {
@@ -177,9 +185,18 @@ public final class WaypointMediaService implements AutoCloseable {
     private static void validateSize(int width, int height) throws IOException {
         if (width <= 0 || height <= 0 || (long) width * height > MAX_PIXELS) throw new IOException("Image exceeds 40 million pixels");
     }
-    private static BufferedImage resize(BufferedImage input, int limit) {
-        double scale = Math.min(1, (double) limit / Math.max(input.getWidth(), input.getHeight()));
-        BufferedImage result = new BufferedImage(Math.max(1, (int) (input.getWidth() * scale)), Math.max(1, (int) (input.getHeight() * scale)), BufferedImage.TYPE_INT_ARGB);
+    private static BufferedImage decodePreview(ImageReader reader, int width, int height, int limit) throws IOException {
+        validateSize(width, height);
+        int longest = Math.max(width, height);
+        int stride = 1 + (longest - 1) / limit;
+        var parameters = reader.getDefaultReadParam();
+        parameters.setSourceSubsampling(stride, stride, 0, 0);
+        BufferedImage input = reader.read(0, parameters);
+        double scale = Math.min(1, (double) limit / longest);
+        int outputWidth = Math.max(1, (int) (width * scale));
+        int outputHeight = Math.max(1, (int) (height * scale));
+        if (input.getWidth() == outputWidth && input.getHeight() == outputHeight) return input;
+        BufferedImage result = new BufferedImage(outputWidth, outputHeight, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = result.createGraphics();
         try { graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR); graphics.drawImage(input, 0, 0, result.getWidth(), result.getHeight(), null); }
         finally { graphics.dispose(); }
@@ -207,11 +224,13 @@ public final class WaypointMediaService implements AutoCloseable {
             Iterator<ImageReader> readers = ImageIO.getImageReaders(stream);
             if (!readers.hasNext()) throw new IOException("Invalid image");
             ImageReader reader = readers.next();
-            try { reader.setInput(stream, true, true); validateSize(reader.getWidth(0), reader.getHeight(0)); input = reader.read(0); }
+            try {
+                reader.setInput(stream, true, true);
+                input = decodePreview(reader, reader.getWidth(0), reader.getHeight(0), thumbnail ? 256 : 2048);
+            }
             finally { reader.dispose(); }
         }
-        BufferedImage scaled = resize(input, thumbnail ? 256 : 2048);
-        return new Pixels(scaled.getWidth(), scaled.getHeight(), scaled.getRGB(0, 0, scaled.getWidth(), scaled.getHeight(), null, 0, scaled.getWidth()));
+        return new Pixels(input.getWidth(), input.getHeight(), input.getRGB(0, 0, input.getWidth(), input.getHeight(), null, 0, input.getWidth()));
     }
     public CompletableFuture<Photo> saveRotation(Key key, UUID id, double rotation) {
         return async(() -> {

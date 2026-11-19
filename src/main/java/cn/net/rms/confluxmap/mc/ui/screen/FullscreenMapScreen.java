@@ -617,7 +617,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
         ));
         range.setSelected(config.fullscreenLoadedRangeVisible);
-        setHoverTooltip(range, rangeKey + (config.fullscreenLoadedRangeVisible ? ".on" : ".off"));
+        setHoverTooltip(range, config.fullscreenLoadedRangeVisible
+            ? "confluxmap.map.loaded_range.on" : "confluxmap.map.loaded_range.off");
     }
 
     void jumpToCoordinates(final int blockX, final int blockZ) {
@@ -937,9 +938,24 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         refreshLayerButtons();
         manageWaypointsButton.active = viewingLiveWorld()
             && ConfluxMapClient.get().companionSession().waypointsAllowed();
-        annotationToolbarBounds = new AnnotationToolbarBounds(
-            x, top, CONTROL_SIZE, y + CONTROL_SIZE - top
-        );
+        final int rows = waypointGroupRows(top, height);
+        final int step = CONTROL_SIZE + CONTROL_GAP;
+        final int count = expansionButtons.size();
+        for (int i = 0; i < count; i++) {
+            final ButtonWidget button = expansionButtons.get(i).button();
+            final int settleX = x - (i / rows) * step;
+            final int settleY = top + (i % rows) * step;
+            Widgets.setX(button, settleX);
+            Widgets.setY(button, settleY);
+            expansionButtons.set(i, new FullscreenMapToolPanel.FlyingButton(button, settleX, settleY));
+        }
+        final int additionalWidth = ((count - 1) / rows) * step;
+        annotationToolbarBounds = new AnnotationToolbarBounds(x - additionalWidth, top,
+            CONTROL_SIZE + additionalWidth, (Math.min(rows, count) - 1) * step + CONTROL_SIZE);
+    }
+
+    static int waypointGroupRows(final int top, final int height) {
+        return Math.max(1, (height - MARGIN - top + CONTROL_GAP) / (CONTROL_SIZE + CONTROL_GAP));
     }
 
     /**

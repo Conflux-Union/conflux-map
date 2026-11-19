@@ -57,8 +57,13 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$                 var viewer = (WaypointImagesScreen) client.currentScreen;
 //$$                 return viewer.imageReady();
 //$$             }, 200);
+//$$             context.runOnClient(client -> ((TextFieldWidget) field(client.currentScreen, "caption"))
+//$$                 .setText("Port caption"));
 //$$             context.getInput().pressKey(GLFW.GLFW_KEY_RIGHT);
 //$$             context.waitFor(client -> (int) field(client.currentScreen, "index") == 1, 100);
+//$$             if (!"Port caption".equals(app.waypointMediaService().list(mediaKey).join().get(0).caption())) {
+//$$                 throw new AssertionError("Changing page lost the image caption");
+//$$             }
 //$$             final int[] photoCenter = context.computeOnClient(client -> {
 //$$                 final int scale = (int) client.getWindow().getScaleFactor();
 //$$                 return new int[]{
@@ -101,6 +106,19 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$             final var map = context.computeOnClient(client -> (FullscreenMapScreen) client.currentScreen);
 //$$             context.waitFor(client -> !((java.util.List<?>) field(field(map, "screenshotOverlay"), "markers")).isEmpty(), 200);
 //$$             context.takeScreenshot("map-screenshot-camera-hover");
+//$$             context.getInput().resizeWindow(1280, 480);
+//$$             context.waitTicks(3);
+//$$             click(context, "confluxmap.map.tools.waypoints");
+//$$             context.waitFor(client -> field(map, "endGatewayVisibilityButton") != null, 80);
+//$$             context.runOnClient(client -> {
+//$$                 var widget = (ClickableWidget) field(map, "endGatewayVisibilityButton");
+//$$                 if (widget.getY() + widget.getHeight() > client.getWindow().getScaledHeight()) {
+//$$                     throw new AssertionError("Short map clips the last waypoint group button");
+//$$                 }
+//$$             });
+//$$             click(context, "confluxmap.map.tools.waypoints");
+//$$             context.getInput().resizeWindow(1280, 720);
+//$$             context.waitTicks(3);
 //$$             click(context, "confluxmap.map.loaded_range");
 //$$             context.runOnClient(client -> app.config().fullscreenLoadedRangeStyle =
 //$$                 cn.net.rms.confluxmap.core.config.ConfluxConfig.LoadedRangeStyle.DASHED);

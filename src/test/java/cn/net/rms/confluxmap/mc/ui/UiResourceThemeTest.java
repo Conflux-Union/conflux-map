@@ -73,14 +73,20 @@ final class UiResourceThemeTest {
             "waypoint_visible.png",
             "waypoint_hidden.png",
             "waypoint_share.png",
-            "world_profile.png"
+            "world_profile.png",
+            "end_gateway_visibility.png",
+            "map_coordinate_jump.png",
+            "map_loaded_range.png",
+            "nether_portal_visibility.png",
+            "screenshot_visibility.png",
+            "structure_visibility.png"
         );
 
         for (final String file : nativeOnly) {
             final Identifier icon = Ids.of("confluxmap", "textures/gui/" + file);
             assertEquals(UiIcon.monochrome(icon), theme.icon(icon), file);
         }
-        assertEquals(37, UiResourceTheme.auditedIconIds().size());
+        assertEquals(43, UiResourceTheme.auditedIconIds().size());
     }
 
     @Test

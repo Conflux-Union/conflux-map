@@ -68,6 +68,27 @@ class WaypointListMemoryTest {
         assertFalse(Files.readString(temp.resolve("native.json")).contains("selected"));
         memory.options().remember = false; assertNull(memory.get(world));
     }
+    @Test void legacyImportRetriesOnlyPendingPreferencesAndPreservesNewNativeChoices() throws Exception {
+        final Path legacy = Files.createDirectories(temp.resolve("halfmasa")).resolve("halfmasa.json");
+        Files.writeString(legacy, """
+            {"Extensions":{"confluxMapWaypointDistance":true,"confluxMapWaypointDimension":"invalid",
+            "confluxMapPublicWaypoints":"invalid"}}
+            """);
+        final var first = memory();
+        assertTrue(first.options().distance);
+        assertFalse(first.options().dimension);
+        assertFalse(first.options().unknownHeightFallback);
+        first.options().defaultPublic = true;
+        first.save();
+        Files.writeString(legacy, """
+            {"Extensions":{"confluxMapWaypointDistance":false,"confluxMapWaypointDimension":true,
+            "confluxMapPublicWaypoints":false}}
+            """);
+        final var reopened = memory();
+        assertTrue(reopened.options().distance);
+        assertTrue(reopened.options().dimension);
+        assertTrue(reopened.options().defaultPublic);
+    }
     @Test void unsupportedAndMalformedNativeDocumentsAreNeverOverwritten() throws Exception {
         for (String invalid : new String[]{"broken", "{\"version\":2}"}) {
             Files.writeString(temp.resolve("native.json"), invalid); var memory = memory();

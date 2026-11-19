@@ -10,6 +10,27 @@ import static org.junit.jupiter.api.Assertions.*;
 final class MapScreenshotIndexTest {
     @TempDir Path directory;
 
+    @Test void adoptsScreenshotScopesWithoutOverwritingAnotherWorld() throws Exception {
+        Path screenshots = Files.createDirectory(directory.resolve("screenshots"));
+        final var index = new MapScreenshotIndex(directory.resolve("locations.json"), screenshots,
+            Runnable::run, LogManager.getLogger());
+        final var source = new MapScreenshotIndex.Scope("server", "uuid", "minecraft:the_nether");
+        final var target = new MapScreenshotIndex.Scope("server", "instance", source.dimension());
+        final var shot = Files.createFile(screenshots.resolve("capture.png"));
+        index.save(new MapScreenshotIndex.Location(source, 1, 2, 3), shot, 1);
+        index.saveRotation(index.list(source).get(0), 90).join();
+        index.adoptNamespace(new cn.net.rms.confluxmap.core.model.WorldIdentity("server", target.world()), source.world());
+        assertTrue(index.list(source).isEmpty());
+        assertEquals(90, index.list(target).get(0).rotation());
+        assertEquals(shot, index.file(index.list(target).get(0)));
+
+        final var second = Files.createFile(screenshots.resolve("second.png"));
+        index.save(new MapScreenshotIndex.Location(source, 4, 5, 6), second, 2);
+        index.adoptNamespace(new cn.net.rms.confluxmap.core.model.WorldIdentity("server", target.world()), source.world());
+        assertEquals("second.png", index.list(source).get(0).file());
+        assertEquals("capture.png", index.list(target).get(0).file());
+    }
+
     @Test void captureScopeSurvivesRestartAndFilesOutsideScreenshotDirectoryAreIgnored() throws Exception {
         Path screenshots = Files.createDirectory(directory.resolve("screenshots"));
         Path index = directory.resolve("locations.json");

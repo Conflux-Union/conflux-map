@@ -194,9 +194,14 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$             context.waitTick();
 //$$             context.runOnClient(client -> {
 //$$                 if ((Integer) field(MinecraftAccess.screen(client), "index") != 2) throw new AssertionError("Right arrow moved past the last image");
+//$$                 ((net.minecraft.client.gui.components.EditBox) field(MinecraftAccess.screen(client), "caption"))
+//$$                     .setValue("Saved before changing page");
 //$$             });
 //$$             context.getInput().pressKey(InputConstants.KEY_LEFT);
 //$$             context.waitFor(client -> (Integer) field(MinecraftAccess.screen(client), "index") == 1, 100);
+//$$             if (!app.waypointMediaService().list(key).join().get(2).caption().equals("Saved before changing page")) {
+//$$                 throw new AssertionError("Changing page discarded the image caption");
+//$$             }
 //$$             context.getInput().pressKey(InputConstants.KEY_RIGHT);
 //$$             context.waitFor(client -> (Integer) field(MinecraftAccess.screen(client), "index") == 2, 100);
 //$$             context.setScreen(() -> new WaypointImagesScreen(null, key, () -> true));
@@ -267,8 +272,20 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$         }
 //$$     }
 //$$     private static void testMapLayerShortcuts(ClientGameTestContext context, ConfluxMapClient app) {
+//$$         context.getInput().resizeWindow(1280, 480);
+//$$         context.waitTicks(3);
 //$$         clickMapButton(context, "waypointGroupButton");
 //$$         context.waitFor(client -> field(MinecraftAccess.screen(client), "screenshotVisibilityButton") != null, 80);
+//$$         context.runOnClient(client -> {
+//$$             final var map = MinecraftAccess.screen(client);
+//$$             for (String name : java.util.List.of("structureVisibilityButton", "screenshotVisibilityButton",
+//$$                 "netherPortalVisibilityButton", "endGatewayVisibilityButton")) {
+//$$                 final var button = (net.minecraft.client.gui.components.AbstractWidget) field(map, name);
+//$$                 if (button.getY() + button.getHeight() > client.getWindow().getGuiScaledHeight()) {
+//$$                     throw new AssertionError("Short map clipped " + name);
+//$$                 }
+//$$             }
+//$$         });
 //$$         var options = app.waypointListMemory().options();
 //$$         boolean structures = app.config().predictionShowStructures;
 //$$         clickMapButton(context, "structureVisibilityButton");
@@ -288,6 +305,8 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$         context.runOnClient(client -> options.setScreenshotMode(WaypointListMemory.MapPhotoMode.THUMBNAIL));
 //$$         clickMapButton(context, "screenshotVisibilityButton");
 //$$         context.waitFor(client -> options.screenshotMode == WaypointListMemory.MapPhotoMode.OFF, 80);
+//$$         context.getInput().resizeWindow(1280, 720);
+//$$         context.waitTicks(3);
 //$$         clickMapButton(context, "screenshotVisibilityButton");
 //$$         context.waitFor(client -> options.screenshotMode == WaypointListMemory.MapPhotoMode.THUMBNAIL, 80);
 //$$         clickMapButton(context, "screenshotVisibilityButton");

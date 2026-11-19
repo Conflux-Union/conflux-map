@@ -34,6 +34,19 @@ class WaypointMediaServiceTest {
         assertTrue(media.list(new WaypointMediaService.Key(new WorldIdentity("server", "other"), false, local.waypoint())).join().isEmpty());
         assertThrows(CompletionException.class, () -> media.pixels(key(true), photo.id(), false).join());
     }
+    @Test void adoptsOwnedPhotoAndThumbnailUnderTheNewInstance() throws Exception {
+        final var legacy = key(false);
+        final var world = new WorldIdentity(legacy.world().serverId(), "instance");
+        final var adopted = new WaypointMediaService.Key(world, false, legacy.waypoint());
+        final var media = service();
+        final var photo = media.add(legacy, image("wide.png", "png", 2400, 1200)).join();
+        media.adoptNamespace(world, legacy.world().worldId(), org.apache.logging.log4j.LogManager.getLogger());
+        assertTrue(media.list(legacy).join().isEmpty());
+        assertEquals(photo, media.list(adopted).join().get(0));
+        assertEquals(2400, photo.width());
+        assertEquals(256, media.pixels(adopted, photo.id(), true).join().width());
+        assertEquals(2048, media.pixels(adopted, photo.id(), false).join().width());
+    }
     @Test void captionOrderRemoveAndRestartPreserveOtherPhotosAndExternalFile() throws Exception {
         Path file = image("photo.png", "png", 16, 16); var media = service(); var key = key(false);
         var a = media.add(key, file).join(); var b = media.add(key, file).join();

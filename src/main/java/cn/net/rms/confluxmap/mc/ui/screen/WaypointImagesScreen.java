@@ -62,12 +62,13 @@ final class WaypointImagesScreen extends PhotoViewerScreen {
         addDrawableChild(Widgets.button(left + 140, 30, 44, 20, Texts.literal("+"), b -> zoom(1)));
         addDrawableChild(Widgets.button(left + 188, 30, Math.max(44, Math.min(100, width - left * 2 - 188)), 20,
             label("paste"), b -> paste())).active = !busy;
-        addDrawableChild(Widgets.button(left, height - 78, 40, 20, Texts.literal("<"), b -> select(index - 1))).active = !busy && index > 0;
-        addDrawableChild(Widgets.button(left + 44, height - 78, 40, 20, Texts.literal(">"), b -> select(index + 1))).active = !busy && index + 1 < photos.size();
+        addDrawableChild(Widgets.button(left, height - 78, 40, 20, Texts.literal("<"), b -> changePage(index - 1))).active = !busy && index > 0;
+        addDrawableChild(Widgets.button(left + 44, height - 78, 40, 20, Texts.literal(">"), b -> changePage(index + 1))).active = !busy && index + 1 < photos.size();
         addDrawableChild(Widgets.button(left + 92, height - 78, 64, 20, label("earlier"), b -> edit(-1, false))).active = !busy && index > 0;
         addDrawableChild(Widgets.button(left + 160, height - 78, 64, 20, label("later"), b -> edit(1, false))).active = !busy && index + 1 < photos.size();
         caption = new TextFieldWidget(this.textRenderer, left, height - 54, Math.max(80, w - 140), 20, label("caption"));
         caption.setMaxLength(512); caption.setText(captionDraft);
+        caption.setEditable(!busy);
         addDrawableChild(caption);
         addDrawableChild(Widgets.button(width - 152, height - 54, 64, 20, label("save"), b -> edit(0, false))).active = !busy && !photos.isEmpty();
         addDrawableChild(Widgets.button(width - 84, height - 54, 68, 20, label(confirmRemove ? "confirm" : "remove"), b -> {
@@ -117,6 +118,33 @@ final class WaypointImagesScreen extends PhotoViewerScreen {
         loadTexture();
     }
 
+    private void changePage(int next) {
+        if (busy || isClosing() || !current() || next < 0 || next >= photos.size() || next == index) return;
+        final var photo = photos.get(index);
+        final String text = caption.getText();
+        if (text.equals(photo.caption())) {
+            select(next);
+            return;
+        }
+        busy = true;
+        controls();
+        media.edit(key, photo.id(), text, 0, false).whenComplete((ignored, error) ->
+            MinecraftClient.getInstance().execute(() -> {
+                if (!current()) return;
+                busy = false;
+                if (error != null) {
+                    fail(error);
+                    return;
+                }
+                final var updated = new ArrayList<>(photos);
+                updated.set(index, new WaypointMediaService.Photo(photo.id(), photo.extension(), text,
+                    photo.width(), photo.height(), photo.rotation()));
+                photos = List.copyOf(updated);
+                status = "";
+                select(next);
+            }));
+    }
+
     private void loadTexture() {
         int request = ++generation;
         release(); controls();
@@ -142,7 +170,7 @@ final class WaypointImagesScreen extends PhotoViewerScreen {
     //$$         if (input.isPaste()) { paste(); return true; }
     //$$         if (input.isLeft() || input.isRight()) {
     //$$             int next = index + (input.isLeft() ? -1 : 1);
-    //$$             if (!busy && !isClosing() && next >= 0 && next < photos.size()) select(next);
+    //$$             changePage(next);
     //$$             return true;
     //$$         }
     //$$     }
@@ -154,7 +182,7 @@ final class WaypointImagesScreen extends PhotoViewerScreen {
     //$$         if (input.isPaste()) { paste(); return true; }
     //$$         if (input.isLeft() || input.isRight()) {
     //$$             int next = index + (input.isLeft() ? -1 : 1);
-    //$$             if (!busy && !isClosing() && next >= 0 && next < photos.size()) select(next);
+    //$$             changePage(next);
     //$$             return true;
     //$$         }
     //$$     }
@@ -166,7 +194,7 @@ final class WaypointImagesScreen extends PhotoViewerScreen {
             if (isPaste(keyCode)) { paste(); return true; }
             if (keyCode == cn.net.rms.confluxmap.compat.Keys.LEFT || keyCode == cn.net.rms.confluxmap.compat.Keys.RIGHT) {
                 int next = index + (keyCode == cn.net.rms.confluxmap.compat.Keys.LEFT ? -1 : 1);
-                if (!busy && !isClosing() && next >= 0 && next < photos.size()) select(next);
+                changePage(next);
                 return true;
             }
         }

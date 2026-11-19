@@ -938,8 +938,8 @@ final class ConfigRows {
         y = enhancementToggle(y, "images", () -> options.images, v -> options.images = v);
         y = enhancementToggle(y, "list_photo_preview", () -> options.listPhotoPreview, v -> options.listPhotoPreview = v);
         y = enhancementToggle(y, "compact", () -> options.compact, v -> options.compact = v);
-        y = compactSizeRow(y, "width", options::compactWidthPercent, v -> { options.setCompactWidthPercent(v); memory.save(); });
-        y = compactSizeRow(y, "height", options::compactHeightPercent, v -> { options.setCompactHeightPercent(v); memory.save(); });
+        y = compactSizeRow(y, "confluxmap.enhancements.compact_width", options::compactWidthPercent, v -> { options.setCompactWidthPercent(v); memory.save(); });
+        y = compactSizeRow(y, "confluxmap.enhancements.compact_height", options::compactHeightPercent, v -> { options.setCompactHeightPercent(v); memory.save(); });
         y = enhancementToggle(y, "both", () -> options.both, v -> options.both = v);
         y = enhancementToggle(y, "hover_actions", () -> options.hoverActions, v -> options.hoverActions = v);
         y = enhancementToggle(y, "source_priority", () -> options.sourcePriority, v -> options.sourcePriority = v);
@@ -954,8 +954,8 @@ final class ConfigRows {
             () -> options.unknownHeight, v -> { options.unknownHeight = v; memory.save(); }, ConfigValueLabels::plainText);
     }
 
-    private int compactSizeRow(int y, String dimension, IntSupplier getter, IntConsumer setter) {
-        return addIntSliderRow(y, "confluxmap.enhancements.compact_" + dimension,
+    private int compactSizeRow(int y, String key, IntSupplier getter, IntConsumer setter) {
+        return addIntSliderRow(y, key,
             cn.net.rms.confluxmap.core.waypoint.library.WaypointGridLayout.MIN_PERCENT,
             cn.net.rms.confluxmap.core.waypoint.library.WaypointGridLayout.MAX_PERCENT,
             getter, setter, ConfigValueLabels::percentText, true, null, null, true, null);

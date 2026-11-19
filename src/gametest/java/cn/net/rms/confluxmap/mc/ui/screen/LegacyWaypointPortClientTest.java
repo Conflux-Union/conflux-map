@@ -34,6 +34,7 @@ public final class LegacyWaypointPortClientTest implements ClientModInitializer 
     private WaypointMediaService.Key mediaKey;
     private FullscreenMapScreen map;
     private MapScreenshotIndex.Scope scope;
+    private String screenshotFile;
     private double screenshotX;
 
     @Override
@@ -64,6 +65,7 @@ public final class LegacyWaypointPortClientTest implements ClientModInitializer 
                 final var waypoint = Waypoint.create("Port test", DimensionId.OVERWORLD,
                     player.blockX() + 2, player.blockY(), player.blockZ(), 0xFF33CC88, "", Waypoint.Type.NORMAL);
                 app.config().uiTransitionsEnabled = false;
+                app.config().fullscreenLoadedRangeVisible = false;
                 app.waypointService().current().add(waypoint);
                 app.waypointLibraryService().library().setStarred(waypoint.id, false, true);
                 app.waypointListMemory().options().compact = true;
@@ -78,12 +80,15 @@ public final class LegacyWaypointPortClientTest implements ClientModInitializer 
             case 2 -> {
                 var viewer = (WaypointImagesScreen) client.currentScreen;
                 if (!viewer.imageReady()) return false;
+                Widgets.setText((TextFieldWidget) field(viewer, "caption"), "Port caption");
                 viewer.keyPressed(Keys.RIGHT, 0, 0);
-                check((int) field(viewer, "index") == 1, "Right arrow did not select the second image");
             }
             case 3 -> {
                 var viewer = (WaypointImagesScreen) client.currentScreen;
-                if (!viewer.imageReady()) return false;
+                if ((boolean) field(viewer, "busy") || !viewer.imageReady()) return false;
+                check((int) field(viewer, "index") == 1, "Right arrow did not select the second image");
+                check("Port caption".equals(app.waypointMediaService().list(mediaKey).join().get(0).caption()),
+                    "Changing page lost the image caption");
                 int x = (int) field(viewer, "x") + (int) field(viewer, "w") / 2;
                 int y = (int) field(viewer, "y") + (int) field(viewer, "h") / 2;
                 if (!viewer.mouseClicked(x + 30, y, MouseButtons.RIGHT)) return false;
@@ -102,12 +107,13 @@ public final class LegacyWaypointPortClientTest implements ClientModInitializer 
                 final var session = app.gameBridge().session();
                 scope = MapScreenshotIndex.Scope.of(session.world(), session.dimension());
                 screenshotX = app.gameBridge().player().orElseThrow().x();
-                ScreenshotRecorder.saveScreenshot(client.runDirectory, client.getFramebuffer(), ignored -> {});
+                screenshotFile = "waypoint-review-" + java.util.UUID.randomUUID() + ".png";
+                ScreenshotRecorder.saveScreenshot(client.runDirectory, screenshotFile, client.getFramebuffer(), ignored -> {});
             }
             case 6 -> {
-                final var shots = app.mapScreenshotIndex().list(scope);
-                if (shots.isEmpty()) return false;
-                final var shot = shots.get(0);
+                final var shot = app.mapScreenshotIndex().list(scope).stream()
+                    .filter(capture -> screenshotFile.equals(capture.file())).findFirst().orElse(null);
+                if (shot == null) return false;
                 check(Files.isRegularFile(app.mapScreenshotIndex().file(shot)), "Screenshot file is missing");
                 check(Math.abs(shot.location().x() - screenshotX) < 0.1, "Screenshot lost its capture coordinates");
                 app.waypointListMemory().options().setScreenshotMode(WaypointListMemory.MapPhotoMode.ICON);

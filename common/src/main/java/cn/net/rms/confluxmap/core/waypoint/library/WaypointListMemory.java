@@ -45,7 +45,7 @@ public final class WaypointListMemory {
         public boolean hoverActions = true;
         public boolean sourcePriority = true;
         public boolean temporaryWaypoint = true;
-        public boolean unknownHeightFallback = true;
+        public boolean unknownHeightFallback;
         public boolean compact, both, localFirst, dimension, distance, quickPublish;
         public boolean remember = true;
         public boolean defaultPublic, allDimensions, closeAfterTeleport;
@@ -76,6 +76,7 @@ public final class WaypointListMemory {
         int uiRevision;
         Options options = new Options();
         Map<String, State> worlds = new LinkedHashMap<>();
+        java.util.Set<String> pendingLegacy;
     }
     private final Path file;
     private final Executor executor;
@@ -98,7 +99,14 @@ public final class WaypointListMemory {
                         document.options.waypointPhotoMode, MapPhotoMode.ICON);
                 }
             } catch (IOException | RuntimeException error) { readOnly = true; document = new Document(); logger.error("Browsing state preserved read-only: {}", file, error); }
-        } else migrate(legacyDirectory);
+        } else {
+            document.pendingLegacy = new java.util.LinkedHashSet<>(LEGACY_OPTIONS.keySet());
+            document.pendingLegacy.add(LEGACY_WORLDS);
+        }
+        if (!readOnly && document.pendingLegacy != null && !document.pendingLegacy.isEmpty()) {
+            migrate(legacyDirectory);
+            save();
+        }
         // The revised UI defaults to the native list once, retaining every feature's data.
         if (!readOnly && document.uiRevision < 2) {
             options().compact = false;
@@ -136,51 +144,99 @@ public final class WaypointListMemory {
             finally { if (temp != null) try { Files.deleteIfExists(temp); } catch (IOException error) { logger.warn("Cannot remove browsing temporary file {}", temp, error); } }
         });
     }
+    private static final String LEGACY_WORLDS = "conflux-waypoint-list.json";
+    private static final String LEGACY_ORDER = "confluxMapWaypointOrder";
+    private static final String LEGACY_HEIGHT = "confluxMapUnknownHeight";
+    private static final String LEGACY_HOTKEY = "confluxMapTemporaryWaypoint";
+    private static final Map<String, String> LEGACY_OPTIONS = Map.ofEntries(
+        Map.entry("confluxMapShowBothWaypoints", "both"),
+        Map.entry("confluxMapWaypointDimension", "dimension"),
+        Map.entry("confluxMapWaypointDistance", "distance"),
+        Map.entry("confluxMapQuickPublish", "quickPublish"),
+        Map.entry("confluxMapRememberList", "remember"),
+        Map.entry("confluxMapPublicWaypoints", "defaultPublic"),
+        Map.entry("confluxMapAllDimensions", "allDimensions"),
+        Map.entry("confluxMapCloseAfterTeleport", "closeAfterTeleport"),
+        Map.entry(LEGACY_ORDER, "localFirst"),
+        Map.entry(LEGACY_HEIGHT, "unknownHeight"),
+        Map.entry(LEGACY_HOTKEY, "temporaryKeys")
+    );
+
     private void migrate(Path directory) {
-        Path old = directory.resolve("conflux-waypoint-list.json");
-        try {
-            if (Files.isRegularFile(old)) {
-                JsonObject json = GSON.fromJson(Files.readString(old), JsonObject.class);
-                if (json.has("version") && json.get("version").getAsInt() == 1 && json.has("worlds"))
-                    for (var entry : json.getAsJsonObject("worlds").entrySet()) {
-                        State state = GSON.fromJson(entry.getValue(), State.class);
-                        if (state != null) document.worlds.put(entry.getKey(), state);
-                    }
+        if (document.pendingLegacy.contains(LEGACY_WORLDS)) {
+            try {
+                if (importLegacyWorlds(directory.resolve(LEGACY_WORLDS))) document.pendingLegacy.remove(LEGACY_WORLDS);
+            } catch (IOException | RuntimeException error) {
+                logger.warn("Could not read legacy waypoint browsing state; will retry", error);
             }
-            Path config = directory.resolve("halfmasa.json");
-            if (Files.isRegularFile(config)) {
-                JsonObject root = GSON.fromJson(Files.readString(config), JsonObject.class);
-                JsonObject merged = new JsonObject();
-                for (String category : new String[]{"Ported", "Extensions"}) if (root.has(category) && root.get(category).isJsonObject())
-                    root.getAsJsonObject(category).entrySet().forEach(entry -> merged.add(entry.getKey(), entry.getValue()));
-                Options o = options();
-                o.compact = flag(merged, "confluxMapWaypointCompact", false);
-                o.both = flag(merged, "confluxMapShowBothWaypoints", false);
-                o.dimension = flag(merged, "confluxMapWaypointDimension", false);
-                o.distance = flag(merged, "confluxMapWaypointDistance", false);
-                o.quickPublish = flag(merged, "confluxMapQuickPublish", false);
-                o.remember = flag(merged, "confluxMapRememberList", true);
-                o.defaultPublic = flag(merged, "confluxMapPublicWaypoints", false);
-                o.allDimensions = flag(merged, "confluxMapAllDimensions", false);
-                o.closeAfterTeleport = flag(merged, "confluxMapCloseAfterTeleport", false);
-                o.localFirst = merged.has("confluxMapWaypointOrder") && "personal_first".equalsIgnoreCase(merged.get("confluxMapWaypointOrder").getAsString());
-                if (merged.has("confluxMapUnknownHeight")) o.unknownHeight = Math.max(-2048, Math.min(4096, merged.get("confluxMapUnknownHeight").getAsInt()));
-                if (merged.has("confluxMapTemporaryWaypoint") && merged.get("confluxMapTemporaryWaypoint").isJsonObject()) {
-                    JsonObject hotkey = merged.getAsJsonObject("confluxMapTemporaryWaypoint");
-                    if (hotkey.has("keys")) o.temporaryKeys = hotkey.get("keys").getAsString();
+        }
+        if (document.pendingLegacy.isEmpty()) return;
+        try {
+            final Path config = directory.resolve("halfmasa.json");
+            final JsonObject merged = new JsonObject();
+            if (!Files.notExists(config)) {
+                final var root = GSON.fromJson(Files.readString(config), JsonObject.class);
+                for (String category : new String[]{"Ported", "Extensions"}) {
+                    if (root.has(category)) root.getAsJsonObject(category).entrySet()
+                        .forEach(entry -> merged.add(entry.getKey(), entry.getValue()));
                 }
             }
-        } catch (IOException | RuntimeException error) { logger.warn("Legacy halfmasa preferences were not fully imported; originals preserved", error); }
-        save(); // One-time import. Native choices take precedence on subsequent starts.
+            final var defaults = GSON.toJsonTree(new Options()).getAsJsonObject();
+            final var options = GSON.toJsonTree(document.options).getAsJsonObject();
+            for (var entry : LEGACY_OPTIONS.entrySet()) {
+                final String legacy = entry.getKey();
+                final String target = entry.getValue();
+                if (!document.pendingLegacy.contains(legacy)) continue;
+                try {
+                    // A newer native value takes precedence if the user changed it while import was pending.
+                    if (merged.has(legacy) && java.util.Objects.equals(options.get(target), defaults.get(target))) {
+                        options.add(target, legacyValue(legacy, merged.get(legacy)));
+                    }
+                    document.pendingLegacy.remove(legacy);
+                } catch (RuntimeException error) {
+                    logger.warn("Invalid legacy waypoint option {}; will retry", legacy, error);
+                }
+            }
+            document.options = GSON.fromJson(options, Options.class);
+        } catch (IOException | RuntimeException error) {
+            logger.warn("Could not read legacy waypoint options; will retry", error);
+        }
     }
-    private static boolean flag(JsonObject json, String name, boolean fallback) {
-        if (!json.has(name)) return fallback;
-        JsonElement value = json.get(name);
+
+    private boolean importLegacyWorlds(Path file) throws IOException {
+        if (Files.notExists(file)) return true;
+        final var json = GSON.fromJson(Files.readString(file), JsonObject.class);
+        if (!json.has("version") || json.get("version").getAsInt() != 1 || !json.has("worlds")) {
+            throw new IOException("Unsupported legacy browsing state schema");
+        }
+        boolean complete = true;
+        for (var entry : json.getAsJsonObject("worlds").entrySet()) {
+            if (document.worlds.containsKey(entry.getKey())) continue;
+            try {
+                final State state = GSON.fromJson(entry.getValue(), State.class);
+                if (state == null) throw new JsonParseException("Missing legacy browsing state");
+                document.worlds.put(entry.getKey(), state);
+            } catch (RuntimeException error) {
+                complete = false;
+                logger.warn("Invalid legacy waypoint browsing state for {}; will retry", entry.getKey(), error);
+            }
+        }
+        return complete;
+    }
+
+    private static JsonElement legacyValue(String key, JsonElement value) {
+        if (LEGACY_ORDER.equals(key)) return new JsonPrimitive("personal_first".equalsIgnoreCase(value.getAsString()));
+        if (LEGACY_HEIGHT.equals(key)) return new JsonPrimitive(Math.max(-2048, Math.min(4096, value.getAsInt())));
+        if (LEGACY_HOTKEY.equals(key)) {
+            final var bindings = value.getAsJsonObject();
+            return new JsonPrimitive(bindings.has("keys") ? bindings.get("keys").getAsString() : "");
+        }
         // MaliLib boolean-hotkeys store {enabled, hotkey}; plain booleans store a primitive.
         if (value.isJsonObject()) value = value.getAsJsonObject().get("enabled");
-        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isBoolean())
-            throw new IllegalArgumentException("Invalid legacy boolean: " + name);
-        return value.getAsBoolean();
+        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isBoolean()) {
+            throw new JsonParseException("Invalid legacy boolean");
+        }
+        return value;
     }
 
     /** Inject only a missing native key, preserving even an explicitly unbound user choice. */

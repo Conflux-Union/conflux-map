@@ -100,6 +100,34 @@ public final class MapScreenshotIndex {
     public List<Shot> list(Scope scope) { return byScope.getOrDefault(scope, List.of()); }
     public Path file(Shot shot) { return screenshots.resolve(shot.file()); }
 
+    /** Moves the old world scope once, preserving a destination that already has its own history. */
+    public void adoptNamespace(WorldIdentity world, String legacyWorldId) {
+        if (legacyWorldId == null || legacyWorldId.equals(world.worldId())) return;
+        io.execute(() -> {
+            if (!writable || all.stream().anyMatch(shot -> matchesWorld(shot, world.serverId(), world.worldId()))) return;
+            final List<Shot> next = new ArrayList<>(all.size());
+            boolean moved = false;
+            for (Shot shot : all) {
+                if (matchesWorld(shot, world.serverId(), legacyWorldId)) {
+                    final Location old = shot.location();
+                    final Scope scope = new Scope(world.serverId(), world.worldId(), old.scope().dimension());
+                    next.add(new Shot(new Location(scope, old.x(), old.y(), old.z()), shot.file(), shot.capturedAt(), shot.rotation()));
+                    moved = true;
+                } else {
+                    next.add(shot);
+                }
+            }
+            if (!moved) return;
+            try { write(next); }
+            catch (IOException error) { logger.warn("Could not adopt screenshot locations for {}", world, error); }
+        });
+    }
+
+    private static boolean matchesWorld(Shot shot, String server, String world) {
+        final Scope scope = shot.location().scope();
+        return server.equals(scope.server()) && world.equals(scope.world());
+    }
+
     public void save(Location location, Path screenshot, long capturedAt) {
         Path path = screenshot.toAbsolutePath().normalize();
         if (!screenshots.equals(path.getParent()) || !path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".png")) return;

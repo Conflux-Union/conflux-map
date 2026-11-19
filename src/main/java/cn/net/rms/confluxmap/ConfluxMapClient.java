@@ -269,9 +269,12 @@ public final class ConfluxMapClient implements ClientModInitializer {
             new NamespaceAdoption.Store(waypointLibraryRoot, ".json"),
             new NamespaceAdoption.Store(portalRoot, ".json")
         );
-        sessionTracker.bindNamespaceAdopter(identity -> NamespaceAdoption.adopt(
-            adoptableStores, identity, companionSession.companionWorldId(), ConfluxMapMod.LOGGER
-        ));
+        sessionTracker.bindNamespaceAdopter(identity -> {
+            final String legacyWorldId = companionSession.companionWorldId();
+            NamespaceAdoption.adopt(adoptableStores, identity, legacyWorldId, ConfluxMapMod.LOGGER);
+            waypointMediaService.adoptNamespace(identity, legacyWorldId, ConfluxMapMod.LOGGER);
+            mapScreenshotIndex.adoptNamespace(identity, legacyWorldId);
+        });
         mapWorlds = new MapWorldService();
         daylightModel = new DaylightModel();
         tileService = new TileService(mapWorlds, executors, config, daylightModel);
@@ -888,6 +891,12 @@ public final class ConfluxMapClient implements ClientModInitializer {
             blockX, blockZ, dimension, voidColumn
         );
         if (extension.isPresent() || waypointListMemory == null || !waypointListMemory.options().unknownHeightFallback) return extension;
-        return OptionalInt.of(Math.max(-2048, Math.min(4096, waypointListMemory.options().unknownHeight)));
+        final var world = MinecraftClient.getInstance().world;
+        if (world == null || !dimension.equals(gameBridge.session().dimension())) return OptionalInt.empty();
+        final int bottom = world.getBottomY();
+        final int ceiling = Math.min(world.getTopY(), bottom
+            + cn.net.rms.confluxmap.mc.world.LayerSelector.logicalHeight(world.getDimension()));
+        return ceiling - bottom < 3 ? OptionalInt.empty()
+            : OptionalInt.of(Math.max(bottom + 1, Math.min(ceiling - 2, waypointListMemory.options().unknownHeight)));
     }
 }
