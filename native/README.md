@@ -82,7 +82,7 @@ dead-section elimination and WASM SIMD. The Web Worker first paints the cheap
 terrain overview, then refines LOD 0-1 with the sparse exact residual grid while
 keeping prediction work off the page's rendering thread.
 
-`buildNativesHost` (root `build.gradle`) compiles `build/natives/host/linux-x86_64/` with
+`buildNativesHost` (`native/native.gradle`) compiles `build/natives/host/linux-x86_64/` with
 the host `cc` - this is what CI and local contributors on Linux x86_64 run for local development
 and testing without touching prebuilt releases. It is intentionally **not** wired into general
 `build`/`check` lifecycle tasks:
