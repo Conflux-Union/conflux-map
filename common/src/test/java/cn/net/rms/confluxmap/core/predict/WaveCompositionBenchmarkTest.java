@@ -37,47 +37,41 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Fixed-seed, fixed-tile-set wall-clock comparison of GPU-batched wave composition against the
- * per-tile CPU baseline, driven through the real {@link PredictionTileService} pipeline
- * (admission, wave barriers, batch dispatch, repair, compose, upload queue). Each cell runs a
- * fresh service per round, marks one padded-ring viewport dirty in a single pump (the
+ * per-tile CPU baseline, through the real {@link PredictionTileService} pipeline (admission,
+ * wave barriers, batch dispatch, repair, compose, upload queue). Each cell runs a fresh service
+ * per round, marks one padded-ring viewport dirty in a single pump (the
  * {@code stagedTilesFormOneWaveThroughTheBatchSeam} formation), and measures wall from that pump
- * until every ring tile has been drained from the upload queue - the measurement boundary is the
- * upload queue, not a rendered frame or a texture upload. One warmup round (reported as the cold
- * sample) precedes the recorded rounds and the median is reported. Seed, origin, LOD/tile
- * matrix, round counts, and leg order are {@link WaveBenchmarkOptions} properties; the defaults
- * reproduce the historical matrix exactly.
+ * until every ring tile drains from the upload queue - the measurement boundary is the upload
+ * queue, not a rendered frame. One warmup round (reported as the cold sample) precedes the
+ * recorded rounds; the median is reported. Seed, origin, LOD/tile matrix, round counts, and leg
+ * order are {@link WaveBenchmarkOptions} properties; the defaults reproduce the historical
+ * matrix exactly.
  *
- * <p>The worker pool is sized to {@link WaveComposer#WAVE_CAP} so the matrix holds the topology
- * constant across machines: ring sizes 8/16/24 are exactly 1/2/3 consecutive waves, which is
- * the amortization question (does the GPU/CPU speedup grow with tile count past the single-wave
- * cap). The CPU leg runs with the seam admission gate closed
- * ({@link GpuBackend#batchDispatchAvailable}), so every stage stays per tile on every member -
- * the fair pre-redesign topology, not a refusal-repair loop.
+ * <p>The worker pool is sized to {@link WaveComposer#WAVE_CAP} so ring sizes 8/16/24 are exactly
+ * 1/2/3 consecutive waves on every machine - the amortization question. The CPU leg closes the
+ * seam admission gate ({@link GpuBackend#batchDispatchAvailable}): the fair pre-redesign
+ * topology, not a refusal-repair loop.
  *
- * <p>GPU engagement is asserted per round through the engine's process-global dispatch counters:
- * a GPU round whose counters stand still is a dead engine publishing fake "GPU" numbers, and a
- * CPU round that moves them is a backend leak. {@code gpuHeightDelta} reads as 1 per batched
- * wave for shapes the entries serve (the first wave at lods 2-4); a +1-per-tile excess above
- * the wave count is the single-shot trickle past the first wave, or lod 1's per-tile
+ * <p>GPU engagement is asserted per round via the engine's process-global dispatch counters: a
+ * GPU round whose counters stand still is a dead engine publishing fake "GPU" numbers; a CPU
+ * round that moves them is a backend leak. {@code gpuHeightDelta} reads 1 per batched wave; a
+ * +1-per-tile excess is the single-shot trickle past the first wave or lod 1's per-tile
  * biome-stage height work.
  *
- * <p>Every round also snapshots the engine's process-global batch metrics ({@link
- * GpuBackend#metrics}) around its measured phase; the per-cell columns and the closing summary
- * block accumulate the deltas over the measured rounds - members/points/kernels/reads plus the
- * member and points histograms, so the waves' batch distribution reads straight off a run. The
- * counters only move through the two batch entries, so CPU rounds report zeros, and a library
- * predating the export degrades the columns to "-".
+ * <p>Every round snapshots the batch metrics ({@link GpuBackend#metrics}) around its measured
+ * phase; per-cell columns and the closing summary accumulate the deltas, so the waves' batch
+ * distribution reads straight off a run. The counters only move through the two batch entries,
+ * so CPU rounds report zeros; a library predating the export degrades the columns to "-".
  *
- * <p>With timing instrumentation on, every round also totals the per-tile six-stage wall
- * vectors ({@link OverworldStages.OverworldStage}, including wave members' even shares of batched
- * stages) and reports them per cell alongside the poll-granular first-tile latency and the cold
- * warmup sample. Stage columns are cumulative worker time - concurrent workers make those sums
- * larger than the wall they run inside, so they are never shown as fractions of wall. The
- * speedup column is CPU wall / GPU wall; the measurement boundary stays the upload queue, so
- * sched/upload-wait columns are the live client's debug logs, not this harness's.
- *
- * <p>The table goes to stdout rather than a logger because the common test classpath has no
- * Log4j configuration, so info-level lines never reach the console or the JUnit XML report.
+ * <p>With timing instrumentation on, every round totals the per-tile six-stage wall vectors
+ * ({@link OverworldStages.OverworldStage}, including wave members' even shares of batched
+ * stages) per cell, alongside the poll-granular first-tile latency and the cold warmup sample.
+ * Stage columns are cumulative worker time - concurrent workers make the sums exceed the wall
+ * they run in - so they are never shown as fractions of wall. The speedup column is CPU wall /
+ * GPU wall; the measurement boundary stays the upload queue, so sched/upload-wait columns are
+ * the live client's debug logs, not this harness's. The table goes to stdout rather than a
+ * logger because the common test classpath has no Log4j configuration, so info-level lines
+ * never reach the console or the JUnit XML report.
  */
 @Tag("benchmark")
 class WaveCompositionBenchmarkTest {
