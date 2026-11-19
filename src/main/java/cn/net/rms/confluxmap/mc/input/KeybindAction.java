@@ -9,6 +9,7 @@ public enum KeybindAction {
     OPEN_MAP("open_map", "openMap", Keys.M, "M"),
     CYCLE_LAYER("cycle_layer", "cycleLayer", Keys.Y, "Y"),
     OPEN_WAYPOINTS("waypoints", "openWaypoints", Keys.U, "U"),
+    TEMPORARY_WAYPOINT("temporary_waypoint", "temporaryWaypoint", -1, ""),
     NEW_WAYPOINT("new_waypoint", "newWaypoint", Keys.B, "B"),
     TOGGLE_LOCAL_WAYPOINTS("toggle_local_waypoints", "toggleLocalWaypoints", Keys.J, "J"),
     OPEN_CONFIG("open_config", "openConfig", Keys.COMMA, "COMMA"),

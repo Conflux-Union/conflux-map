@@ -131,6 +131,9 @@ loom {
         client {
             property("mixin.debug.export", "true")
             ideConfigGenerated true
+            if (mcVersion < 12104 && project.hasProperty('legacyWaypointSmoke')) {
+                source sourceSets.gametest
+            }
             if (project.hasProperty('issue87') && mcVersion == 12111) {
                 runDir "build/issue-87-client"
                 vmArg "-Dconfluxmap.issue87.debug=true"
@@ -166,7 +169,8 @@ loom {
                 // and complete a real login, so the scheduler would add risk without adding coverage.
                 vmArg "-Dfabric.client.gametest.disableNetworkSynchronizer=true"
                 vmArg "-Xms256m"
-                vmArg "-Xmx1G"
+                // The fullscreen UI smoke opens the lowest zoom with prediction active, like the 26.3 test instance.
+                vmArg(mcVersion >= 12104 && project.hasProperty('waypointSmoke') ? "-Xmx4G" : "-Xmx1G")
                 if (project.hasProperty('xaeroOracle') && mcVersion == 12111) {
                     vmArg "-Dconfluxmap.xaero.oracle=true"
                 }
@@ -293,6 +297,11 @@ tasks.named('build') {
     description = 'Assembles the mod jar without running verification'
     setDependsOn([tasks.named('assemble')])
 }
+if (mcVersion < 12104 && project.hasProperty('legacyWaypointSmoke')) {
+    tasks.named('runServer') {
+        mustRunAfter tasks.named('test'), tasks.named('build'), tasks.named('checkModMetadata')
+    }
+}
 tasks.named('runGametest') {
     doFirst {
         final File runDirectory = project.file("${project.buildDir}/gametest")
@@ -328,5 +337,20 @@ if (mcVersion >= 12104) {
             runDirectory.mkdirs()
             new File(runDirectory, 'eula.txt').text = 'eula=true\n'
         }
+    }
+}
+
+// A targeted UI smoke suite can run without the prediction benchmark suites.
+tasks.named('processGametestResources') {
+    def clientTests = mcVersion >= 12104 && project.hasProperty('waypointSmoke')
+        ? [mcVersion >= 260100 ? 'cn.net.rms.confluxmap.mc.ui.screen.WaypointLibraryClientGameTest' : 'cn.net.rms.confluxmap.mc.ui.screen.WaypointPortClientGameTest']
+        : ['cn.net.rms.confluxmap.gametest.ClientConnectionGameTest', 'cn.net.rms.confluxmap.gametest.HudAvoidanceClientGameTest', 'cn.net.rms.confluxmap.gametest.PredictionE2EClientGameTest', 'cn.net.rms.confluxmap.gametest.SurfaceCarpetClientGameTest', 'cn.net.rms.confluxmap.gametest.XaeroAuthoritativeParityClientGameTest']
+    inputs.property 'clientTestEntrypoints', clientTests
+    def legacyClientTests = mcVersion < 12104 && project.hasProperty('legacyWaypointSmoke')
+        ? ['cn.net.rms.confluxmap.mc.ui.screen.LegacyWaypointPortClientTest'] : []
+    inputs.property 'legacyClientTestEntrypoints', legacyClientTests
+    filesMatching('fabric.mod.json') {
+        expand client_test_entrypoints: groovy.json.JsonOutput.toJson(clientTests),
+            legacy_client_test_entrypoints: groovy.json.JsonOutput.toJson(legacyClientTests)
     }
 }

@@ -47,7 +47,7 @@ final class FullscreenMapSettingsButtonTest {
             "    void rebuild()"
         );
         assertTrue(
-            close.contains("requestClose(parent);"),
+            close.contains(": parent;") && close.contains("requestClose(target);"),
             "closing map settings must restore the fullscreen map"
         );
     }

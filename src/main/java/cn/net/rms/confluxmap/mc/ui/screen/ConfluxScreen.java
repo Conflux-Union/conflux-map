@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 //#if MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
 //#else
@@ -36,7 +37,7 @@ import net.minecraft.text.Text;
 /** Screen base that keeps the MatrixStack-to-DrawContext rewrite at one lifecycle seam. */
 public abstract class ConfluxScreen extends Screen {
     private final Map<ClickableWidget, String> disabledTooltipKeys = new IdentityHashMap<>();
-    private final Map<ClickableWidget, String> locationMenuTooltipKeys = new LinkedHashMap<>();
+    private final Map<ClickableWidget, Supplier<Text>> hoverTooltips = new LinkedHashMap<>();
     private final List<ButtonWidget> embeddedLocationMenuButtons = new ArrayList<>();
     private final HotkeyFocusDelay initialFocusDelay = new HotkeyFocusDelay();
     private Runnable enterAction;
@@ -738,10 +739,14 @@ public abstract class ConfluxScreen extends Screen {
 
     /** Tooltip shown on hover, whether or not the control is currently usable. */
     protected final void setHoverTooltip(final ClickableWidget widget, final String translationKey) {
-        if (translationKey == null) {
-            locationMenuTooltipKeys.remove(widget);
+        setDynamicHoverTooltip(widget, translationKey == null ? null : () -> Texts.translatable(translationKey));
+    }
+
+    protected final void setDynamicHoverTooltip(final ClickableWidget widget, final Supplier<Text> tooltip) {
+        if (tooltip == null) {
+            hoverTooltips.remove(widget);
         } else {
-            locationMenuTooltipKeys.put(widget, translationKey);
+            hoverTooltips.put(widget, tooltip);
         }
     }
 
@@ -756,14 +761,14 @@ public abstract class ConfluxScreen extends Screen {
     }
 
     private void renderLocationMenuTooltip(final GuiDraw draw, final int mouseX, final int mouseY) {
-        locationMenuTooltipKeys.entrySet().removeIf(entry -> !children().contains(entry.getKey()));
-        for (final Map.Entry<ClickableWidget, String> entry : locationMenuTooltipKeys.entrySet()) {
+        hoverTooltips.entrySet().removeIf(entry -> !children().contains(entry.getKey()));
+        for (final Map.Entry<ClickableWidget, Supplier<Text>> entry : hoverTooltips.entrySet()) {
             final ClickableWidget widget = entry.getKey();
             if (widget.visible && pointerOver(widget, mouseX, mouseY)) {
                 draw.drawTooltip(
                     this,
                     this.textRenderer,
-                    Texts.translatable(entry.getValue()),
+                    entry.getValue().get(),
                     mouseX,
                     mouseY
                 );

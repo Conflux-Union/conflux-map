@@ -192,6 +192,19 @@ class LocalWaypointListModelTest {
         assertTrue(model.stateVersion() != before);
     }
 
+    @Test
+    void editorAllocatedUuidIsUsedAndCannotOverwriteAnExistingWaypoint() {
+        final UUID id = UUID.randomUUID();
+        final EditDraft draft = new EditDraft("Farm", DimensionId.OVERWORLD, 10, 64, 20, 0xFFFFFFFF,
+            Waypoint.Type.NORMAL, "", "", false, null, "");
+        assertTrue(model.createWaypoint(id, draft));
+        assertEquals("Farm", model.rowById(id).name());
+        assertEquals(id, idOf("Farm"));
+        final int count = store.size();
+        assertFalse(model.createWaypoint(id, draft));
+        assertEquals(count, store.size());
+    }
+
     private UUID idOf(final String name) {
         return store.list().stream()
             .filter(waypoint -> waypoint.name.equals(name))

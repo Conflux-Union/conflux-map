@@ -86,6 +86,23 @@ final class MapExportServiceTest {
     }
 
     @Test
+    void cancelledTileWithoutReasonIsReportedAsFailure() throws Exception {
+        final SessionGuard guard = new SessionGuard();
+        final SessionGuard.Session session = guard.begin(
+            new WorldIdentity("server", "world"), DimensionId.OVERWORLD
+        );
+        final CompletableFuture<MapExportTile> tile = new CompletableFuture<>();
+        tile.cancel(false);
+        try (MapExportService service = new MapExportService(temp, guard, request -> key -> tile)) {
+            service.start(request(session));
+            final MapExportStatus status = waitForTerminal(service);
+
+            assertEquals(MapExportStatus.State.FAILED, status.state());
+            assertEquals("CancellationException", status.error());
+        }
+    }
+
+    @Test
     void explicitUserCancellationIsReportedAsCancelled() throws Exception {
         final SessionGuard guard = new SessionGuard();
         final SessionGuard.Session session = guard.begin(

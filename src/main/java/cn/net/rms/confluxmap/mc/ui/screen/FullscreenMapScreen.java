@@ -160,7 +160,7 @@ import net.minecraft.util.math.MathHelper;
  * {@code open_map} keybind (M by default); always north-locked (no rotation).
  * View state is continuous: {@link #centerX}/{@link #centerZ} is the world
  * point at screen center, {@link #scale} is blocks-per-screen-pixel, clamped
- * to {@link #MIN_SCALE}-{@link #MAX_SCALE}. The displayed LOD is derived from
+ * to the configured fullscreen-map zoom limits. The displayed LOD is derived from
  * scale ({@link #currentLod()}) so zooming out smoothly walks up the tile
  * pyramid {@link TileService} composes in core/.
  *
@@ -169,8 +169,6 @@ import net.minecraft.util.math.MathHelper;
  */
 public final class FullscreenMapScreen extends ConfluxScreen {
 
-    private static final double MIN_SCALE = 0.125;
-    private static final double MAX_SCALE = 16.0;
     private static final double DEFAULT_SCALE = 2.0;
     private static final double ZOOM_STEP = 1.26;
     private static final int DEFAULT_CANDIDATE_WAYPOINT_Y = 64;
@@ -220,6 +218,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     );
     private static final Identifier MAP_IMPORT_ICON = Ids.of(
         "confluxmap", "textures/gui/map_import.png"
+    );
+    private static final Identifier MAP_COORDINATE_JUMP_ICON = Ids.of(
+        "confluxmap", "textures/gui/map_coordinate_jump.png"
+    );
+    private static final Identifier MAP_LOADED_RANGE_ICON = Ids.of(
+        "confluxmap", "textures/gui/map_loaded_range.png"
     );
     private static final Identifier MAP_SETTINGS_ICON = Ids.of(
         "confluxmap", "textures/gui/map_settings.png"
@@ -300,6 +304,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     SplitMapLayout embeddedLayout;
 
     /** Recomputed every frame by {@link #drawWaypoints} - the marker nearest the cursor within {@link #HOVER_RADIUS_PX}, or none. */
+    private final MapScreenshotOverlay screenshotOverlay = new MapScreenshotOverlay();
+    private final MapPhotoMarkers mapPhotoMarkers = new MapPhotoMarkers();
+    private final MapWaypointHover waypointHover = new MapWaypointHover();
+    private final WaypointMapPhotoOverlay waypointPhotoOverlay = new WaypointMapPhotoOverlay();
     WaypointRenderEntry hoveredWaypoint;
     StructureIndex.Marker hoveredStructure;
 
@@ -326,6 +334,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     final MapLocationMenuController locationMenu;
     final MapExportSelectionController exportControls;
     final MapLoadStateOverlay loadStateOverlay;
+    private final MapLoadedRangeOverlay loadedRange = new MapLoadedRangeOverlay(this);
+    private MapIconButton coordinateJumpButton;
     private final MapInfoLabels infoLabels;
     private SharedWaypointAvailability sharedAvailability;
     private MapIconButton viewGroupButton;
@@ -333,6 +343,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private MapIconButton drawingGroupButton;
     private MapIconButton actionsGroupButton;
     private MapIconButton localVisibilityButton;
+    private MapIconButton structureVisibilityButton;
+    private MapIconButton screenshotVisibilityButton;
+    private MapIconButton netherPortalVisibilityButton;
+    private MapIconButton endGatewayVisibilityButton;
     private MapIconButton sharedVisibilityButton;
     private MapIconButton manageWaypointsButton;
     private MapIconButton structureSearchButton;
@@ -415,7 +429,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         );
         centerX = initialView.centerX();
         centerZ = initialView.centerZ();
-        scale = initialView.scale();
+        scale = config.clampFullscreenMapScale(initialView.scale());
     }
 
     @Override
@@ -458,6 +472,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     @Override
     protected void init() {
+        scale = config.clampFullscreenMapScale(scale);
         if (applyServerRestriction()) {
             return;
         }
@@ -478,7 +493,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             ));
             centerX = requestedFocus.x();
             centerZ = requestedFocus.z();
-            scale = Math.min(scale, DEFAULT_SCALE);
+            scale = config.clampFullscreenMapScale(Math.min(scale, DEFAULT_SCALE));
         }
         if (exportControls.selecting()) {
             exportControls.rebuildExportSelectionControls();
@@ -493,6 +508,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         expansionButtons.clear();
         sharedAvailability = viewSharedAvailability();
         localVisibilityButton = null;
+        structureVisibilityButton = null;
+        screenshotVisibilityButton = null;
+        netherPortalVisibilityButton = null;
+        endGatewayVisibilityButton = null;
         sharedVisibilityButton = null;
         manageWaypointsButton = null;
         locationMenu.clearButtons();
@@ -517,6 +536,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int x = width - MARGIN - CONTROL_SIZE;
         final int top = MARGIN + this.textRenderer.fontHeight + 5;
         int y = top;
+        final int step = CONTROL_SIZE + CONTROL_GAP;
+        final boolean vertical = top + 6 * step + CONTROL_SIZE + MARGIN <= height;
+        addMapPositionControls(x, top, vertical);
+        y += vertical ? 2 * step : step;
+        final int groupTop = y;
         viewGroupButton = addToolGroupButton(
             x, y, VIEW_GROUP_ICON, "confluxmap.map.tools.view", FullscreenMapToolPanel.Group.VIEW
         );
@@ -553,10 +577,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final FullscreenMapToolPanel.Group openGroup = toolPanel.openGroup();
         if (openGroup != null) {
             switch (openGroup) {
-                case VIEW -> rebuildViewControls(top);
-                case WAYPOINTS -> rebuildWaypointGroupControls(top + CONTROL_SIZE + CONTROL_GAP);
-                case DRAWING -> annotations.rebuildAnnotationControls(top + (CONTROL_SIZE + CONTROL_GAP) * 2);
-                case ACTIONS -> rebuildActionControls(top + (CONTROL_SIZE + CONTROL_GAP) * 3);
+                case VIEW -> rebuildViewControls(groupTop);
+                case WAYPOINTS -> rebuildWaypointGroupControls(groupTop + CONTROL_SIZE + CONTROL_GAP);
+                case DRAWING -> annotations.rebuildAnnotationControls(groupTop + (CONTROL_SIZE + CONTROL_GAP) * 2);
+                case ACTIONS -> rebuildActionControls(groupTop + (CONTROL_SIZE + CONTROL_GAP) * 3);
                 default -> throw new IllegalStateException("Unhandled tool group: " + openGroup);
             }
         }
@@ -574,6 +598,33 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
     }
 
+
+    private void addMapPositionControls(final int x, final int y, final boolean vertical) {
+        final String jumpKey = "confluxmap.map.coordinate_jump";
+        coordinateJumpButton = addDrawableChild(new MapIconButton(
+            vertical ? x : x - CONTROL_SIZE - CONTROL_GAP, y, MAP_COORDINATE_JUMP_ICON, Texts.translatable(jumpKey),
+            button -> MinecraftAccess.setScreen(MinecraftClient.getInstance(), new MapCoordinateJumpScreen(this))
+        ));
+        setHoverTooltip(coordinateJumpButton, jumpKey);
+
+        final String rangeKey = "confluxmap.map.loaded_range";
+        final MapIconButton range = addDrawableChild(new MapIconButton(
+            x, vertical ? y + CONTROL_SIZE + CONTROL_GAP : y, MAP_LOADED_RANGE_ICON, Texts.translatable(rangeKey), button -> {
+                config.fullscreenLoadedRangeVisible = !config.fullscreenLoadedRangeVisible;
+                ConfluxMapClient.get().configIo().save(config);
+                loadedRange.clear();
+                rebuildWaypointControls();
+            }
+        ));
+        range.setSelected(config.fullscreenLoadedRangeVisible);
+        setHoverTooltip(range, rangeKey + (config.fullscreenLoadedRangeVisible ? ".on" : ".off"));
+    }
+
+    void jumpToCoordinates(final int blockX, final int blockZ) {
+        centerX = blockX + 0.5;
+        centerZ = blockZ + 0.5;
+        waypointHover.clear();
+    }
 
     private MapIconButton addToolGroupButton(
         final int x,
@@ -847,6 +898,43 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             )
         ));
         trackExpansionButton(manageWaypointsButton);
+        y += CONTROL_SIZE + CONTROL_GAP;
+        structureVisibilityButton = addDrawableChild(new MapIconButton(x, y,
+            Ids.of("confluxmap", "textures/gui/structure_visibility.png"), ignored -> {
+                config.predictionShowStructures = !config.predictionShowStructures;
+                ConfluxMapClient.get().configIo().save(config);
+                refreshLayerButtons();
+            }));
+        trackExpansionButton(structureVisibilityButton);
+        if (ConfluxMapClient.get().mapScreenshotIndex() != null) {
+            y += CONTROL_SIZE + CONTROL_GAP;
+            screenshotVisibilityButton = addDrawableChild(new MapIconButton(x, y,
+                Ids.of("confluxmap", "textures/gui/screenshot_visibility.png"), ignored -> {
+                    var memory = ConfluxMapClient.get().waypointListMemory();
+                    memory.options().toggleScreenshots();
+                    memory.save();
+                    screenshotOverlay.clear();
+                    refreshLayerButtons();
+                }));
+            trackExpansionButton(screenshotVisibilityButton);
+        }
+        y += CONTROL_SIZE + CONTROL_GAP;
+        netherPortalVisibilityButton = addDrawableChild(new MapIconButton(x, y,
+            Ids.of("confluxmap", "textures/gui/nether_portal_visibility.png"), ignored -> {
+                config.fullscreenNetherPortalsVisible = !config.fullscreenNetherPortalsVisible;
+                ConfluxMapClient.get().configIo().save(config);
+                refreshLayerButtons();
+            }));
+        trackExpansionButton(netherPortalVisibilityButton);
+        y += CONTROL_SIZE + CONTROL_GAP;
+        endGatewayVisibilityButton = addDrawableChild(new MapIconButton(x, y,
+            Ids.of("confluxmap", "textures/gui/end_gateway_visibility.png"), ignored -> {
+                config.fullscreenEndGatewaysVisible = !config.fullscreenEndGatewaysVisible;
+                ConfluxMapClient.get().configIo().save(config);
+                refreshLayerButtons();
+            }));
+        trackExpansionButton(endGatewayVisibilityButton);
+        refreshLayerButtons();
         manageWaypointsButton.active = viewingLiveWorld()
             && ConfluxMapClient.get().companionSession().waypointsAllowed();
         annotationToolbarBounds = new AnnotationToolbarBounds(
@@ -859,6 +947,33 @@ public final class FullscreenMapScreen extends ConfluxScreen {
      * both "you hid this set" and "the server is not sharing", which is also why the shared
      * button's own enabled state has to be reapplied here.
      */
+    private void refreshLayerButtons() {
+        updateLayerButton(netherPortalVisibilityButton, "nether_portals", config.fullscreenNetherPortalsVisible);
+        updateLayerButton(endGatewayVisibilityButton, "end_gateways", config.fullscreenEndGatewaysVisible);
+        if (structureVisibilityButton != null) {
+            structureVisibilityButton.setSelected(config.predictionShowStructures);
+            structureVisibilityButton.setMessage(layerTooltip("structures", config.predictionShowStructures));
+        }
+        if (screenshotVisibilityButton != null) {
+            boolean visible = ConfluxMapClient.get().waypointListMemory().options().screenshotMode
+                != cn.net.rms.confluxmap.core.waypoint.library.WaypointListMemory.MapPhotoMode.OFF;
+            screenshotVisibilityButton.setSelected(visible);
+            screenshotVisibilityButton.setMessage(layerTooltip("screenshots", visible));
+        }
+    }
+
+    private void updateLayerButton(MapIconButton button, String layer, boolean visible) {
+        if (button != null) {
+            button.setSelected(visible);
+            button.setMessage(layerTooltip(layer, visible));
+        }
+    }
+
+    private static Text layerTooltip(String layer, boolean visible) {
+        return Texts.translatable("confluxmap.map.layers." + layer,
+            Texts.translatable(visible ? "confluxmap.value.on" : "confluxmap.value.off").getString());
+    }
+
     private void refreshWaypointVisibilityButtons() {
         if (localVisibilityButton != null) {
             localVisibilityButton.setSelected(config.localWaypointsVisible);
@@ -934,6 +1049,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         config.fullscreenDisplayMode = mode;
         if (current == FullscreenDisplayMode.CHUNK_LOAD_STATE
             && mode != FullscreenDisplayMode.CHUNK_LOAD_STATE) {
+            screenshotOverlay.clear();
+            waypointPhotoOverlay.clear();
+            waypointHover.clear();
+            mapPhotoMarkers.clear();
             chunkLoadStates.deactivate();
         }
         ConfluxMapClient.get().configIo().save(config);
@@ -975,6 +1094,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             rebuildWaypointControls();
             return;
         }
+        loadedRange.refresh();
         refreshDisplayModeButton();
         final SharedWaypointAvailability availability = viewSharedAvailability();
         if (sharedAvailability == null || availability.visible() != sharedAvailability.visible()) {
@@ -1039,6 +1159,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     /** Detaches the live map pipeline and persists view state; runs exactly once per close. */
     private void releaseMapView() {
         viewState.rememberScale(viewSession().dimension(), scale);
+        screenshotOverlay.clear();
+        waypointPhotoOverlay.clear();
+        waypointHover.clear();
+        mapPhotoMarkers.clear();
         chunkLoadStates.deactivate();
         tiles.clearViewport();
         mapBrowser.tiles().clearViewport();
@@ -1063,6 +1187,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     @Override
     public void removed() {
+        screenshotOverlay.clear();
+        waypointPhotoOverlay.clear();
+        waypointHover.clear();
+        mapPhotoMarkers.clear();
         chunkLoadStates.deactivate();
         ConfluxMapClient.get().mapSyncClient().clearViewport();
         embeddedBlur.close();
@@ -1277,6 +1405,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (button == MouseButtons.LEFT && annotations.beginAnnotationPointer(mouseX, mouseY)) {
             return true;
         }
+        if (button == MouseButtons.LEFT && (waypointHover.click(this, waypointPhotoOverlay, mouseX, mouseY)
+            || screenshotOverlay.open(this, mouseX, mouseY)
+            || waypointPhotoOverlay.open(this, mouseX, mouseY))) {
+            mapPointerPress = false;
+            return true;
+        }
         if (button == MouseButtons.RIGHT) {
             // Press only arms; release without dragging opens the menu, dragging selects a
             // region (see mouseDragged/mouseReleased).
@@ -1467,6 +1601,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int top = MARGIN + this.textRenderer.fontHeight + 5;
         final boolean waypointControls = mouseX >= left && mouseX <= width - MARGIN
             && mouseY >= top && mouseY <= waypointControlsBottom;
+        if (coordinateJumpButton != null && coordinateJumpButton.isMouseOver(mouseX, mouseY)) return true;
         return waypointControls
             || annotationToolbarBounds != null && annotationToolbarBounds.contains(mouseX, mouseY)
             || annotationColorMenuBounds != null && annotationColorMenuBounds.contains(mouseX, mouseY);
@@ -1474,19 +1609,22 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     private void openWaypoint(final WaypointRenderEntry waypoint) {
         if (waypoint.shared()) {
-            if (!sharedWaypoints.availability().enabled()) {
-                return;
+            if (!viewingLiveWorld() || !sharedWaypoints.availability().enabled()) return;
+            var model = ConfluxMapClient.get().sharedWaypointListModel();
+            var row = model.rowById(waypoint.id());
+            if (row != null && model.canEditWaypoint(row).granted()) {
+                MinecraftAccess.setScreen(MinecraftClient.getInstance(), WaypointEditScreen.forPublicEdit(this, row));
+            } else {
+                MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointListScreen(this, WaypointListScreen.Tab.PUBLIC));
             }
-            MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointListScreen(
-                this, WaypointListScreen.Tab.PUBLIC
-            ));
             return;
         }
+        if (waypoint.source() == WaypointRenderEntry.Source.SIBLING) return;
         for (final Waypoint local : viewWaypointService().list()) {
             if (local.id.equals(waypoint.id())) {
-                MinecraftAccess.setScreen(MinecraftClient.getInstance(), WaypointEditScreen.forEdit(
-                    this, local, this::viewWaypointStore
-                ));
+                MinecraftAccess.setScreen(MinecraftClient.getInstance(), viewingLiveWorld()
+                    ? WaypointEditScreen.forEdit(this, local)
+                    : WaypointEditScreen.forEdit(this, local, this::viewWaypointStore));
                 return;
             }
         }
@@ -1506,6 +1644,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (isClosing()) {
             return true;
         }
+        if (waypointHover.scroll(mouseX, mouseY, amount)) return true;
+        waypointHover.clear();
         if (!regionSelectDragging) {
             regionSelection = null;
         }
@@ -1530,7 +1670,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final double amount
     ) {
         final double oldScale = scale;
-        final double newScale = MathHelper.clamp(oldScale * (amount > 0 ? 1.0 / ZOOM_STEP : ZOOM_STEP), MIN_SCALE, MAX_SCALE);
+        final double newScale = config.clampFullscreenMapScale(
+            oldScale * (amount > 0 ? 1.0 / ZOOM_STEP : ZOOM_STEP)
+        );
         if (newScale != oldScale) {
             // Cursor-anchored: keep the world point under the cursor fixed on screen.
             final double cursorWorldX = centerX + (mouseX - viewportCenterX) * oldScale;
@@ -1642,6 +1784,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
         GuiShapes.fillRect(matrices, 0, 0, width, height, BACKGROUND_COLOR);
         drawTiles(matrices);
+        if (embeddedLayout == null && !exportControls.selecting()) loadedRange.draw(matrices);
         if (loadStateMode()) {
             loadStateOverlay.drawChunkLoadStateOverlay(draw);
         }
@@ -1652,6 +1795,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         drawPortals(draw, mouseX, mouseY);
         drawRadar(draw, tickDelta, mouseX, mouseY);
 
+        mapPhotoMarkers.beginFrame(width, height);
+        waypointPhotoOverlay.beginFrame(viewingLiveWorld() && gameBridge.session().active() ? viewSession().world() : null);
+        screenshotOverlay.draw(draw, this, mapPhotoMarkers, this.textRenderer, viewSession(),
+            width, height, centerX, centerZ, scale, mouseX, mouseY);
         drawWaypoints(draw, mouseX, mouseY, radarObserver);
         drawCustomMarkers(draw);
         drawCameraMarker(matrices, radarObserver);
@@ -1836,6 +1983,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     ) {
         locationMenu.drawHotkeyHints(draw);
         selectors.renderTargetDropdown(draw, mouseX, mouseY);
+        if (!isClosing() && !locationMenu.isOpen() && !selectors.dropdownOpen() && !mapPointerPress
+            && !annotations.isColorMenuOpen() && !annotations.isMeasureMode() && !exportControls.selecting()) {
+            boolean waypointCard = waypointHover.draw(this, draw, this.textRenderer, waypointPhotoOverlay,
+                mapPhotoMarkers, width, height, mouseX, mouseY);
+            if (mapPhotoMarkers.drawHover(draw, this.textRenderer, mouseX, mouseY) || waypointCard) return;
+        } else {
+            waypointHover.clear();
+        }
         final Text annotationTooltip = annotations.hoveredAnnotationTooltip();
         final Text locationActionTooltip = locationMenu.hoveredLocationActionTooltip();
         final Text tooltip;
@@ -1849,6 +2004,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 : sharedVisibilityButton.active
                     ? visibilityTooltip(false)
                     : Texts.translatable("confluxmap.map.waypoints.shared.unavailable");
+        } else if (structureVisibilityButton != null && structureVisibilityButton.isHovered()) {
+            tooltip = layerTooltip("structures", config.predictionShowStructures);
+        } else if (screenshotVisibilityButton != null && screenshotVisibilityButton.isHovered()) {
+            tooltip = screenshotVisibilityButton.getMessage();
+        } else if (netherPortalVisibilityButton != null && netherPortalVisibilityButton.isHovered()) {
+            tooltip = netherPortalVisibilityButton.getMessage();
+        } else if (endGatewayVisibilityButton != null && endGatewayVisibilityButton.isHovered()) {
+            tooltip = endGatewayVisibilityButton.getMessage();
         } else if (manageWaypointsButton != null && manageWaypointsButton.isHovered()) {
             tooltip = Texts.translatable("confluxmap.map.waypoints.manage.tooltip");
         } else if (locationMenu.locationActionHeightUnavailable()) {
@@ -2146,7 +2309,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
      * rendered frame reports the matching viewport to {@code PredictionTileService}.
      */
     public void setScaleForTest(final double blocksPerPixel) {
-        scale = MathHelper.clamp(blocksPerPixel, MIN_SCALE, MAX_SCALE);
+        scale = config.clampFullscreenMapScale(blocksPerPixel);
     }
 
     FullscreenMapBrowseService.Target viewTarget() {
@@ -2175,14 +2338,19 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         centerZ = DimensionScale.convertHorizontal(
             previousCenterZ, previous.dimension(), selected.dimension()
         );
-        scale = viewState.viewForOpening(
-            selected.dimension(), centerX, centerZ, DEFAULT_SCALE
-        ).scale();
+        scale = config.clampFullscreenMapScale(
+            viewState.viewForOpening(selected.dimension(), centerX, centerZ, DEFAULT_SCALE).scale()
+        );
         tiles.clearViewport();
         mapBrowser.tiles().clearViewport();
         predictionTiles.clearViewport();
         ConfluxMapClient.get().mapSyncClient().clearViewport();
+        screenshotOverlay.clear();
+        waypointPhotoOverlay.clear();
+        waypointHover.clear();
+        mapPhotoMarkers.clear();
         chunkLoadStates.deactivate();
+        loadedRange.clear();
         locationMenu.dismissLocationMenu();
         rebuildWaypointControls();
     }
@@ -2766,6 +2934,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         PortalMarker hovered = null;
         double bestHoverDistance = 8.0;
         for (final PortalMarker marker : markers) {
+            if (!config.fullscreenPortalIconVisible(marker.kind())) continue;
             final float screenX = (float) (width / 2.0 + (marker.anchorX() + 0.5 - centerX) * pxPerBlock);
             final float screenY = (float) (height / 2.0 + (marker.anchorZ() + 0.5 - centerZ) * pxPerBlock);
             if (screenX < -16 || screenX > width + 16 || screenY < -16 || screenY > height + 16) {
@@ -2778,6 +2947,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
         }
         for (final PortalMarker marker : markers) {
+            if (!config.fullscreenPortalIconVisible(marker.kind())) continue;
             final float screenX = (float) (width / 2.0 + (marker.anchorX() + 0.5 - centerX) * pxPerBlock);
             final float screenY = (float) (height / 2.0 + (marker.anchorZ() + 0.5 - centerZ) * pxPerBlock);
             if (screenX < -16 || screenX > width + 16 || screenY < -16 || screenY > height + 16) {
@@ -2947,16 +3117,25 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             markers.add(new ScreenMarker(waypoint, screenX, screenY));
         }
 
-        WaypointRenderEntry hovered = null;
+        ScreenMarker hovered = null;
         double bestHoverDist = HOVER_RADIUS_PX;
         for (final ScreenMarker marker : markers) {
             final double hoverDist = Math.hypot(mouseX - marker.screenX(), mouseY - marker.screenY());
-            if (hoverDist <= bestHoverDist) {
+            if (hoverDist <= bestHoverDist
+                && !mapOverlayIntersectsUi(marker.screenX() - MARKER_HALF_SIZE, marker.screenY() - MARKER_HALF_SIZE,
+                    marker.screenX() + MARKER_HALF_SIZE, marker.screenY() + MARKER_HALF_SIZE)) {
                 bestHoverDist = hoverDist;
-                hovered = marker.waypoint();
+                hovered = marker;
             }
         }
-        hoveredWaypoint = hovered;
+        hoveredWaypoint = hovered == null ? null : hovered.waypoint();
+        var cardPoint = waypointHover.point();
+        if (cardPoint != null && markers.stream().noneMatch(marker -> marker.waypoint().equals(cardPoint))) {
+            waypointHover.clear();
+        }
+        if (hovered == null) waypointHover.track(null, 0, 0, 0, mouseX, mouseY);
+        else waypointHover.track(hoveredWaypoint, Math.round(hovered.screenX()), Math.round(hovered.screenY()),
+            (int) HOVER_RADIUS_PX, mouseX, mouseY);
         final boolean hasHighlight = waypointHighlightState.hasRenderableTarget(
             waypoints, currentDimension
         );
@@ -2978,6 +3157,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     MARKER_HALF_SIZE, visibilityAlpha(selected, hasHighlight), isHovered, relation
                 );
             }
+            waypointPhotoOverlay.draw(draw, this, mapPhotoMarkers, this.textRenderer, waypoint,
+                marker.screenX(), marker.screenY(), mouseX, mouseY);
             if (scale <= NAME_LABEL_MAX_SCALE || isHovered) {
                 final float labelX = marker.screenX() + MARKER_HALF_SIZE + 2;
                 final float labelY = marker.screenY() - 4;
@@ -3183,13 +3364,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     void focusStructure(final StructureIndex.Marker marker) {
         centerX = marker.blockX();
         centerZ = marker.blockZ();
-        scale = Math.min(scale, DEFAULT_SCALE);
+        scale = config.clampFullscreenMapScale(Math.min(scale, DEFAULT_SCALE));
     }
 
     void focusBiome(final BiomeCandidateSearch.Candidate candidate) {
         centerX = candidate.blockX();
         centerZ = candidate.blockZ();
-        scale = Math.min(scale, DEFAULT_SCALE);
+        scale = config.clampFullscreenMapScale(Math.min(scale, DEFAULT_SCALE));
     }
 
     void createWaypointForStructure(

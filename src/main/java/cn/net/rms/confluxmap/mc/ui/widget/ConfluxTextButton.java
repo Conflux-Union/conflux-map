@@ -169,6 +169,16 @@ public class ConfluxTextButton extends ButtonWidget {
         drawForeground(draw);
     }
 
+    /** The same Conflux paint for screen-owned popovers rendered after the widget pass. */
+    public void drawStandalone(final GuiDraw draw, final boolean highlighted) {
+        this.hovered = highlighted;
+        //#if MC>=260100
+        //$$ extractContents(draw.context(), 0, 0, 0f);
+        //#else
+        drawContents(draw);
+        //#endif
+    }
+
     protected void drawForeground(final GuiDraw draw) {
         if (icon == null) {
             drawText(draw);
