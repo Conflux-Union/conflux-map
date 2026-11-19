@@ -8,9 +8,11 @@ import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
 import cn.net.rms.confluxmap.mc.world.DimensionLayerPolicy;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.OptionalInt;
 import java.util.UUID;
+import java.util.function.Predicate;
 import net.minecraft.client.font.TextRenderer;
 
 /** Layout and captured map target for the fullscreen map's right-click location menu. */
@@ -29,7 +31,7 @@ final class FullscreenMapLocationMenu {
 
     /** Digit shortcuts for the open menu, one per button in list order. */
     private static final int[] HOTKEY_KEYS = {
-        Keys.DIGIT_1, Keys.DIGIT_2, Keys.DIGIT_3, Keys.DIGIT_4, Keys.DIGIT_5
+        Keys.DIGIT_1, Keys.DIGIT_2, Keys.DIGIT_3, Keys.DIGIT_4, Keys.DIGIT_5, Keys.DIGIT_6
     };
 
     enum Action {
@@ -43,7 +45,8 @@ final class FullscreenMapLocationMenu {
         HIGHLIGHT_WAYPOINT("confluxmap.map.location_menu.highlight_waypoint"),
         CLEAR_HIGHLIGHT("confluxmap.map.location_menu.clear_highlight"),
         HIGHLIGHT_PLAYER("confluxmap.map.location_menu.highlight_player"),
-        CLEAR_PLAYER_HIGHLIGHT("confluxmap.map.location_menu.clear_player_highlight");
+        CLEAR_PLAYER_HIGHLIGHT("confluxmap.map.location_menu.clear_player_highlight"),
+        LOOT("confluxmap.map.location_menu.loot");
 
         private final String translationKey;
 
@@ -83,6 +86,30 @@ final class FullscreenMapLocationMenu {
             return List.of(Action.TELEPORT, Action.EDIT_WAYPOINT, Action.DELETE_WAYPOINT, share, highlight);
         }
         return List.of(Action.TELEPORT, edit, share, highlight);
+    }
+
+    /** Loot-supported structure targets append the read-only Loot inspection after the shared actions. */
+    static List<Action> actions(
+        final boolean existingWaypoint,
+        final boolean currentTargetHighlighted,
+        final boolean playerTarget,
+        final boolean lootEntry
+    ) {
+        final List<Action> base = actions(existingWaypoint, currentTargetHighlighted, playerTarget);
+        if (!lootEntry) {
+            return base;
+        }
+        final List<Action> withLoot = new ArrayList<>(base);
+        withLoot.add(Action.LOOT);
+        return List.copyOf(withLoot);
+    }
+
+    /** Whether the target gains the Loot entry: a structure whose chests the session can preview. */
+    static boolean lootEntryShown(
+        final StructureIndex.Marker structure,
+        final Predicate<StructureIndex.StructureType> lootSupported
+    ) {
+        return structure != null && lootSupported.test(structure.type());
     }
 
     /**
@@ -275,7 +302,8 @@ final class FullscreenMapLocationMenu {
         Bounds bounds,
         Target target,
         WaypointRenderEntry waypoint,
-        UUID playerId
+        UUID playerId,
+        StructureIndex.Marker structure
     ) {
     }
 

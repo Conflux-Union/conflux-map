@@ -39,6 +39,16 @@ preprocess {
 // against the binaries already committed under native/prebuilt/, which common.gradle copies
 // into every version subproject's jar via processResources.
 
+// The loot library rolling the vanilla tables behind finders.c's chest output
+// (piece paths emit table names and seeds; getStrongholdLoot in
+// features/stronghold.c is part of that chain). A link dependency of the
+// shim's chest-loot operations and of native/test_chest_loot.c; the glob also
+// picks up every generated table under loot/loot_tables/ the fork's
+// CMakeLists compiles with the machinery, so pin bumps need no edit here.
+final List<String> nativeLootSources = fileTree(dir: 'native/cubiomes/loot', include: ['**/*.c'])
+    .collect { rootProject.projectDir.toPath().relativize(it.toPath()).toString().replace(File.separator, '/') }
+    .sort()
+
 final List<String> nativeSources = [
     'native/shim/confluxnative.c',
     'native/shim/anvilscan.c',
@@ -64,6 +74,7 @@ final List<String> nativeSources = [
     // instead of a C-level error. -Wl,--no-undefined below keeps it that way.
     'native/cubiomes/util.c',
     'native/cubiomes/features/stronghold.c',
+    *nativeLootSources,
     // The OpenCL GPU executor behind the transparent dispatch hooks that
     // CUBIOMES_ENABLE_GPU compiles into biomenoise.c. opencl_host.c resolves
     // the platform's OpenCL loader via dlopen/LoadLibrary at first use, so
@@ -320,6 +331,38 @@ tasks.register('verifyNativeSmoke') {
     group = 'verification'
     description = 'Runs lightweight native verification harnesses (purity, smoke matrix).'
     dependsOn 'testNativePuritySmoke', 'testNativeMatrixSmoke'
+}
+
+// Loot-library harness (native/test_chest_loot.c): the fork's outpost
+// known-answer case plus a roll matrix per loot-bearing type at 1.21.9 and
+// 1.17.1. A later task freezes the matrix output into Java constants.
+tasks.register('compileTestNativeChestLoot', Exec) {
+    group = 'verification'
+    description = 'Compiles the loot-library known-answer and smoke harness.'
+    final File binFile = rootProject.file('build/bin/test_chest_loot')
+    // The harness drives the fork's APIs directly; no shim sources.
+    final List<String> cubiomesOnlySources = nativeSources.findAll { !it.contains('/shim/') }
+    final List<File> inputSourceFiles = (cubiomesOnlySources + ['native/test_chest_loot.c']).collect { rootProject.file(it) }
+    inputs.files(inputSourceFiles)
+    inputs.dir rootProject.file('native/cubiomes/loot')
+    inputs.dir rootProject.file('native/cubiomes/tables')
+    outputs.file binFile
+    doFirst {
+        if (['which', 'cc'].execute().waitFor() != 0) {
+            throw new GradleException('compileTestNativeChestLoot needs a host C compiler (`cc`) on PATH.')
+        }
+        binFile.parentFile.mkdirs()
+    }
+    workingDir rootProject.projectDir
+    commandLine(['cc', '-O2', '-g0', '-Inative/cubiomes'] + cubiomesOnlySources + ['native/test_chest_loot.c', '-lm', '-o', binFile.absolutePath])
+}
+
+tasks.register('testNativeChestLoot', Exec) {
+    group = 'verification'
+    description = 'Executes the loot-library known-answer and per-structure-type smoke matrix.'
+    dependsOn 'compileTestNativeChestLoot'
+    workingDir rootProject.projectDir
+    commandLine rootProject.file('build/bin/test_chest_loot').absolutePath
 }
 
 tasks.register('compileBenchNative', Exec) {

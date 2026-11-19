@@ -18,6 +18,21 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class CubiomesContext implements AutoCloseable {
     public static final int STATUS_FEATURE_PARTIAL = 7;
 
+    /**
+     * Chest cap per structure instance for {@link #structureChests}; callers size their
+     * position/seed/table arrays from it (or smaller, the native side clamps and reports the
+     * full chest count so truncation stays visible).
+     */
+    public static final int MAX_CHESTS_PER_STRUCTURE = 32;
+    /** Roll cap per loot table ({@code LootTableContext.generated_items[27]} in the fork). */
+    public static final int MAX_LOOT_STACKS = 27;
+    /**
+     * Enchantment capacity per stack ({@code ItemStack.enchantments[16]} in the fork). {@link
+     * #rollChestLoot} takes the total flattened capacity across all stacks - allocating
+     * {@link #MAX_LOOT_STACKS} &times; this covers the worst case.
+     */
+    public static final int MAX_ENCHANTS_PER_STACK = 16;
+
     private final long handle;
     private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -467,6 +482,83 @@ public final class CubiomesContext implements AutoCloseable {
     public boolean structureViable(final int structType, final int blockX, final int blockZ) {
         requireOpen();
         return CubiomesNative.cfxStructureViable(handle, structType, blockX, blockZ) != 0;
+    }
+
+    /**
+     * Chest loot metadata for one structure instance: chest positions, per-chest loot seeds and
+     * loot table names - the variant is recomputed internally, the same way {@link
+     * #viableStructures}/{@link #nearestStructure} do it. Writes up to {@code maxChests} chests
+     * (clamped to the output arrays' capacity; size them from {@link
+     * #MAX_CHESTS_PER_STRUCTURE}): {@code outPositions} as (x, y, z) triples, {@code outSeeds}
+     * one loot seed per chest, {@code outTables} one table name per chest
+     * ("chests/pillager_outpost" style). The chest Y is the fork's piece Y, which bastion and
+     * camp pieces leave unset - those arrive as 0, with the surface height left to the caller.
+     * Shares the fork's process-global loot-table registry with {@link #rollChestLoot} -
+     * callers must not run the two concurrently. Returns the chest count, or a negative status:
+     * -1 pieces/chests unsupported for this type or version, -2 native fault. A return value
+     * above the written count means the outputs truncated.
+     */
+    public int structureChests(
+        final int structType,
+        final int blockX,
+        final int blockZ,
+        final int maxChests,
+        final int[] outPositions,
+        final long[] outSeeds,
+        final String[] outTables
+    ) {
+        requireOpen();
+        final int capacity = Math.min(
+            maxChests,
+            Math.min(outPositions.length / 3, Math.min(outSeeds.length, outTables.length))
+        );
+        return CubiomesNative.cfxStructureChests(
+            handle, structType, blockX, blockZ, capacity, outPositions, outSeeds, outTables
+        );
+    }
+
+    /**
+     * Rolls one loot table with one seed - see {@link CubiomesNative#cfxRollChestLoot} for the
+     * full contract. Writes up to {@code maxStacks} stacks (clamped to the output arrays;
+     * size them from {@link #MAX_LOOT_STACKS}). {@code outItemCounts[i]} receives the fork's
+     * per-stack item count of stack {@code i} (a shorter array just bounds the writes; null
+     * is a -2 fault). {@code maxEnchants} is the total flattened
+     * capacity across all stacks - {@link #MAX_LOOT_STACKS} &times; {@link
+     * #MAX_ENCHANTS_PER_STACK} covers the worst case, and the flattened arrays
+     * ({@code outEnchantNames}/{@code outEnchantLevels}) must both hold it. Returns the stack
+     * count, or a negative status: -1 table/version not rollable, -2 native fault.
+     *
+     * <p>Thread safety: the fork's loot-table contexts are process-global statics mutated by a
+     * roll ({@code set_loot_seed}/{@code generate_loot}), so concurrent rolls can interleave
+     * and produce wrong or mixed stacks. Rolls must be serialized across threads and against
+     * {@link #structureChests} - callers hold the same discipline, one static lock around the
+     * whole native section of a loot query.
+     */
+    public int rollChestLoot(
+        final String lootTable,
+        final long lootSeed,
+        final int maxStacks,
+        final int[] outCounts,
+        final int[] outItemCounts,
+        final String[] outItemNames,
+        final String[] outEffects,
+        final String[] outEnchantNames,
+        final int[] outEnchantLevels,
+        final int maxEnchants
+    ) {
+        requireOpen();
+        final int stackCapacity = Math.min(
+            maxStacks,
+            Math.min(outCounts.length - 1, Math.min(outItemNames.length, outEffects.length))
+        );
+        final int enchantCapacity = Math.min(
+            maxEnchants, Math.min(outEnchantNames.length, outEnchantLevels.length)
+        );
+        return CubiomesNative.cfxRollChestLoot(
+            handle, lootTable, lootSeed, stackCapacity,
+            outCounts, outItemCounts, outItemNames, outEffects, outEnchantNames, outEnchantLevels,
+            enchantCapacity
+        );
     }
 
     /**

@@ -203,6 +203,8 @@ Files compiled from this commit by buildNativesHost/buildNativesAll
   terrainnoise.c/h, finders.c/h, terrain_features.c/h, util.c/h, rng.h,
   features/end_city.c/h, features/fortress.c/h,
   features/abandoned_camp.c/h, features/stronghold.c/h,
+  loot/ (every *.c: the roll machinery, cjson, and the generated
+  per-version tables under loot/loot_tables/),
   gpu.c/h, gpu_cl_kernels.h, opencl_host.c/h,
   tables/btree18.h, tables/btree192.h, tables/btree19.h,
   tables/btree20.h, tables/btree21wd.h, tables/btree215.h,
@@ -210,4 +212,4 @@ Files compiled from this commit by buildNativesHost/buildNativesAll
 
 Not compiled (utilities/tests/docs present in the submodule but unused by
 this project): quadbase.c/h, xradv.c, carver.c/h, tests.c, tests/,
-feature_tests.c, loot/, docs/, CMakeLists.txt.
+feature_tests.c, docs/, CMakeLists.txt.

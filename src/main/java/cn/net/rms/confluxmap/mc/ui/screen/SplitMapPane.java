@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 import cn.net.rms.confluxmap.compat.MouseButtons;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
+import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.anim.PopupReveal;
@@ -39,6 +40,7 @@ final class SplitMapPane {
     private FullscreenMapLocationMenu.Target menuTarget;
     private WaypointRenderEntry menuWaypoint;
     private UUID menuPlayerId;
+    private StructureIndex.Marker menuStructure;
     private FullscreenMapLocationMenu.Action pendingMenuAction;
     private boolean menuDeletePending;
     private List<FullscreenMapLocationMenu.ButtonSpec> menuSpecs = List.of();
@@ -215,8 +217,9 @@ final class SplitMapPane {
         final FullscreenMapLocationMenu.Target target = menuTarget;
         final WaypointRenderEntry waypoint = menuWaypoint;
         final UUID playerId = menuPlayerId;
+        final StructureIndex.Marker structure = menuStructure;
         closeMenu(host);
-        map.runLocationAction(action, target, waypoint, playerId, host);
+        map.runLocationAction(action, target, waypoint, playerId, structure, host);
     }
 
     /** Re-adds the menu buttons onto a freshly rebuilt host screen. */
@@ -225,7 +228,7 @@ final class SplitMapPane {
             return;
         }
         final List<FullscreenMapLocationMenu.ButtonSpec> specs = map.locationMenuButtonSpecs(
-            menuTarget, menuWaypoint, menuPlayerId, menuDeletePending
+            menuTarget, menuWaypoint, menuPlayerId, menuDeletePending, menuStructure
         );
         menuSpecs = specs;
         for (int index = 0; index < specs.size(); index++) {
@@ -281,6 +284,7 @@ final class SplitMapPane {
         menuTarget = capture.target();
         menuWaypoint = capture.waypoint();
         menuPlayerId = capture.playerId();
+        menuStructure = capture.structure();
         pendingMenuAction = null;
         menuDeletePending = false;
         menuReveal.setOpen(true);
@@ -295,6 +299,7 @@ final class SplitMapPane {
         menuTarget = null;
         menuWaypoint = null;
         menuPlayerId = null;
+        menuStructure = null;
         pendingMenuAction = null;
         menuDeletePending = false;
         menuSpecs = List.of();
