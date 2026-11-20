@@ -4,7 +4,9 @@
 build/
 out/
 classes/
-tools/
+tools/*
+!tools/gen_config_ref.py
+!tools/test_gen_config_ref.py
 
 # eclipse
 
