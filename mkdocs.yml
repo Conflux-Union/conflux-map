@@ -43,10 +43,30 @@ plugins:
           build: true
 nav:
   - Home: index.md
+  - Getting started:
+      - Installation: getting-started/install.md
+      - Quick start: getting-started/quickstart.md
+  - Features:
+      - Minimap: features/minimap.md
+      - World map: features/world-map.md
+      - Autofill & prediction: features/autofill-prediction.md
+      - Structure & biome search: features/structure-biome-search.md
+      - Chest loot preview: features/chest-loot-preview.md
+      - Portal markers: features/portal-markers.md
+      - Waypoints: features/waypoints.md
+      - Shared waypoints: features/shared-waypoints.md
+      - Entity radar: features/entity-radar.md
+      - Drawings & export: features/drawings-export.md
+      - Appearance: features/appearance.md
+      - Multi-server data: features/multi-server.md
   - Reference:
+      - Keybinds: reference/keybinds.md
       - Configuration: config/index.md
   - Technical:
+      - Server companion (Fabric): technical/server-companion.md
       - Paper companion: technical/paper-companion.md
       - Network protocol: technical/protocol.md
       - Public API: technical/api.md
       - Prediction quality: technical/prediction-quality.md
+      - Developing: technical/developing.md
+  - FAQ & compatibility: faq.md
