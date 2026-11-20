@@ -45,3 +45,8 @@ nav:
   - Home: index.md
   - Reference:
       - Configuration: config/index.md
+  - Technical:
+      - Paper companion: technical/paper-companion.md
+      - Network protocol: technical/protocol.md
+      - Public API: technical/api.md
+      - Prediction quality: technical/prediction-quality.md
