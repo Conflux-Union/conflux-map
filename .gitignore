@@ -59,3 +59,4 @@ AGENTS.md
 # Local docs toolchain
 .venv/
 site/
+.playwright-mcp/

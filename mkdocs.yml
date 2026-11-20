@@ -21,7 +21,6 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
 plugins:
-  - search
   - exclude:
       glob:
         - protocol.md
@@ -70,6 +69,8 @@ plugins:
             Prediction quality: 预测质量
             Developing: 参与开发
             "FAQ & compatibility": 常见问题与兼容性
+  - material/search:
+      separator: '[\s​\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
 nav:
   - Home: index.md
   - Getting started:
