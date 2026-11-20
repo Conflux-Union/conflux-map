@@ -846,14 +846,31 @@ public final class TileService {
     private void composeAndFinish(final TileKey key, final DirtyWork work, final long generation) {
         try {
             final TileUpdate update = composeTile(key, work);
-            if (update != null) {
-                pushUpload(update, generation);
-            }
+            publishComposed(key, update, generation);
         } finally {
             synchronized (this) {
                 inFlight.remove(key);
             }
             pump();
+        }
+    }
+
+    /**
+     * Publishes the upload and clears the in-flight marker inside one critical section. With the
+     * steps split, {@link #pump()}'s backpressure and {@link #isIdleForTest()} could observe a
+     * drainable update that still counts as a running composition.
+     */
+    private void publishComposed(
+        final TileKey key, final TileUpdate update, final long generation
+    ) {
+        final List<TileKey> evicted;
+        synchronized (this) {
+            evicted = update == null ? List.of() : enqueueUploadLocked(update, generation);
+            inFlight.remove(key);
+        }
+        // Outside the monitor: recomposing goes back through markDirty() and pump().
+        for (final TileKey evictedKey : evicted) {
+            recomposeEvicted(evictedKey);
         }
     }
 
@@ -1549,29 +1566,37 @@ public final class TileService {
     private void pushUpload(final TileUpdate update, final Long expectedGeneration) {
         final List<TileKey> evicted;
         synchronized (this) {
-            if (expectedGeneration != null
-                && expectedGeneration.longValue() != compositionGeneration) {
-                return;
-            }
-            final TileUpdate pending = uploads.remove(update.key());
-            uploads.put(
-                update.key(),
-                pending == null ? update : TileUpdate.merge(pending, update)
-            );
-            if (uploads.size() <= UPLOAD_QUEUE_CAPACITY) {
-                return;
-            }
-            evicted = new ArrayList<>();
-            while (uploads.size() > UPLOAD_QUEUE_CAPACITY) {
-                final TileKey oldest = uploads.keySet().iterator().next();
-                uploads.remove(oldest);
-                evicted.add(oldest);
-            }
+            evicted = enqueueUploadLocked(update, expectedGeneration);
         }
         // Outside the monitor: recomposing goes back through markDirty() and pump().
         for (final TileKey key : evicted) {
             recomposeEvicted(key);
         }
+    }
+
+    /** Caller must hold the monitor. Returns tiles evicted by queue capacity for recompose. */
+    private List<TileKey> enqueueUploadLocked(
+        final TileUpdate update, final Long expectedGeneration
+    ) {
+        if (expectedGeneration != null
+            && expectedGeneration.longValue() != compositionGeneration) {
+            return List.of();
+        }
+        final TileUpdate pending = uploads.remove(update.key());
+        uploads.put(
+            update.key(),
+            pending == null ? update : TileUpdate.merge(pending, update)
+        );
+        if (uploads.size() <= UPLOAD_QUEUE_CAPACITY) {
+            return List.of();
+        }
+        final List<TileKey> evicted = new ArrayList<>();
+        while (uploads.size() > UPLOAD_QUEUE_CAPACITY) {
+            final TileKey oldest = uploads.keySet().iterator().next();
+            uploads.remove(oldest);
+            evicted.add(oldest);
+        }
+        return evicted;
     }
 
     private void recomposeEvicted(final TileKey key) {

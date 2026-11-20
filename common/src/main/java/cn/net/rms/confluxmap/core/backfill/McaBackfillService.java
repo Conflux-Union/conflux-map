@@ -301,7 +301,13 @@ public final class McaBackfillService {
             }
             final SummaryCodec.SampledRegion scanned = scanner.scanRegion(dimension, regionX, regionZ, mtime);
             if (scanned == null || scanner.mtimeMs(dimension, regionX, regionZ) != mtime) {
-                return; // unreadable, or the file changed mid-scan
+                // Unreadable, or the file changed mid-scan. Cooldown like an accepted scan:
+                // a mutating file is mid-save (an immediate retry discards again), and the
+                // release would otherwise let the same patrol resubmit within one push.
+                if (this.session.token() == session.token()) {
+                    cooldownUntil.put(slot, scanStartedAt + RESCAN_COOLDOWN_MS);
+                }
+                return;
             }
             final MapWorld world = mapWorlds.ifCurrent(session.token());
             if (world == null) {
