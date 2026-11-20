@@ -221,7 +221,7 @@ tasks.register('compileTestNativePurity', Exec) {
     dependsOn 'buildNativesHost'
     final File binFile = rootProject.file('build/bin/test_purity')
     final List<String> cubiomesOnlySources = nativeSources.findAll { !it.contains('confluxnative.c') }
-    final List<File> inputSourceFiles = (cubiomesOnlySources + ['native/test/test_dual_precision.c']).collect { rootProject.file(it) }
+    final List<File> inputSourceFiles = (cubiomesOnlySources + ['native/test/test_position_purity.c']).collect { rootProject.file(it) }
     inputs.files(inputSourceFiles)
     inputs.dir rootProject.file('native/cubiomes/tables')
     inputs.dir rootProject.file('native/jni')
@@ -231,7 +231,7 @@ tasks.register('compileTestNativePurity', Exec) {
         binFile.parentFile.mkdirs()
     }
     workingDir rootProject.projectDir
-    commandLine(['gcc', '-O2', '-g0', '-Inative', '-Inative/jni', '-Inative/cubiomes', '-Inative/shim'] + cubiomesOnlySources + ['native/test/test_dual_precision.c', '-lm', '-o', binFile.absolutePath])
+    commandLine(['gcc', '-O2', '-g0', '-Inative', '-Inative/jni', '-Inative/cubiomes', '-Inative/shim'] + cubiomesOnlySources + ['native/test/test_position_purity.c', '-lm', '-o', binFile.absolutePath])
 }
 
 tasks.register('testNativePurity', Exec) {
@@ -333,10 +333,10 @@ tasks.register('testNativeChestLoot', Exec) {
 
 tasks.register('compileBenchNative', Exec) {
     group = 'verification'
-    description = 'Compiles the single-core benchmark harness (native/test/bench_single.c).'
+    description = 'Compiles the single-core benchmark harness (native/bench/bench_single.c).'
     final File binFile = rootProject.file('build/bin/bench_single')
     final List<String> cubiomesOnlySources = nativeSources.findAll { !it.contains('confluxnative.c') }
-    final List<File> inputSourceFiles = (cubiomesOnlySources + ['native/test/bench_single.c']).collect { rootProject.file(it) }
+    final List<File> inputSourceFiles = (cubiomesOnlySources + ['native/bench/bench_single.c']).collect { rootProject.file(it) }
     inputs.files(inputSourceFiles)
     inputs.dir rootProject.file('native/cubiomes/tables')
     inputs.dir rootProject.file('native/jni')
@@ -346,7 +346,7 @@ tasks.register('compileBenchNative', Exec) {
         binFile.parentFile.mkdirs()
     }
     workingDir rootProject.projectDir
-    commandLine(['gcc', '-O3', '-g0', '-fno-fast-math', '-ffp-contract=off', '-Inative', '-Inative/jni', '-Inative/cubiomes', '-Inative/shim'] + cubiomesOnlySources + ['native/test/bench_single.c', '-lm', '-o', binFile.absolutePath])
+    commandLine(['gcc', '-O3', '-g0', '-fno-fast-math', '-ffp-contract=off', '-Inative', '-Inative/jni', '-Inative/cubiomes', '-Inative/shim'] + cubiomesOnlySources + ['native/bench/bench_single.c', '-lm', '-o', binFile.absolutePath])
 }
 
 tasks.register('benchNative', Exec) {
@@ -360,10 +360,10 @@ tasks.register('benchNative', Exec) {
 // The pre-1.18 counterpart of benchNative, on the legacy 1.17.1 paths.
 tasks.register('compileBenchNativeLegacy', Exec) {
     group = 'verification'
-    description = 'Compiles the pre-1.18 benchmark harness (native/test/bench_legacy.c).'
+    description = 'Compiles the pre-1.18 benchmark harness (native/bench/bench_legacy.c).'
     final File binFile = rootProject.file('build/bin/bench_legacy')
     final List<String> cubiomesOnlySources = nativeSources.findAll { !it.contains('confluxnative.c') }
-    final List<File> inputSourceFiles = (cubiomesOnlySources + ['native/test/bench_legacy.c']).collect { rootProject.file(it) }
+    final List<File> inputSourceFiles = (cubiomesOnlySources + ['native/bench/bench_legacy.c']).collect { rootProject.file(it) }
     inputs.files(inputSourceFiles)
     inputs.dir rootProject.file('native/cubiomes/tables')
     inputs.dir rootProject.file('native/jni')
@@ -373,7 +373,7 @@ tasks.register('compileBenchNativeLegacy', Exec) {
         binFile.parentFile.mkdirs()
     }
     workingDir rootProject.projectDir
-    commandLine(['gcc', '-O3', '-g0', '-fno-fast-math', '-ffp-contract=off', '-Inative', '-Inative/jni', '-Inative/cubiomes', '-Inative/shim'] + cubiomesOnlySources + ['native/test/bench_legacy.c', '-lm', '-o', binFile.absolutePath])
+    commandLine(['gcc', '-O3', '-g0', '-fno-fast-math', '-ffp-contract=off', '-Inative', '-Inative/jni', '-Inative/cubiomes', '-Inative/shim'] + cubiomesOnlySources + ['native/bench/bench_legacy.c', '-lm', '-o', binFile.absolutePath])
 }
 
 tasks.register('benchNativeLegacy', Exec) {

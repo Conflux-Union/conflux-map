@@ -1,3 +1,10 @@
+/* Full accuracy matrix audit (testNativeMatrix / testNativeMatrixSmoke).
+ *
+ * Seeds x locations (origin to the 30M world border) x strides 1/2/4 x tile
+ * shapes, compared pixel-by-pixel against cubiomes' exact heights: Y MAE,
+ * max error, biome/water flips, and coastline (y 60-66) biome flips. Fails
+ * when the <=2-block rate drops below 80% on any case. Each seed run starts
+ * with a cfxSurfaceBiomes vs production-JNI-entry audit. */
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>

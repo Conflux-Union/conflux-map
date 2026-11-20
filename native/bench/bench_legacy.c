@@ -1,6 +1,6 @@
 /* Legacy (pre-1.18) overview-pipeline benchmark.
  *
- * Mirrors native/bench_single.c on the perf/cpu-noise-simd-avx2 branch, but
+ * Mirrors native/bench/bench_single.c on the perf/cpu-noise-simd-avx2 branch, but
  * targets MC 1.17.1. Per LOD it times, on a fixed 512x512 block region:
  *   - overview:    cfxOverviewHeightsImpl with a fresh origin every iteration,
  *                  i.e. the production per-tile cost (biome generation on the
@@ -13,7 +13,7 @@
  * Build (host):
  *   zig cc -O2 -Inative/jni -Inative/cubiomes native/cubiomes/{biomenoise,biomes,generator,layers,noise,terrainnoise,finders,util}.c \
  *       native/cubiomes/features/{end_city,fortress,abandoned_camp,stronghold}.c native/cubiomes/terrain_features.c \
- *       native/bench_legacy.c -lm -o build/bin/bench_legacy
+ *       native/bench/bench_legacy.c -lm -o build/bin/bench_legacy
  */
 #define _GNU_SOURCE
 #include <stdio.h>

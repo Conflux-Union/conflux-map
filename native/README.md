@@ -61,13 +61,17 @@ for what it predicts; this file is only the build/maintenance side.
   baseline used by the Java predictor. A Web Worker composes that baseline;
   generated server regions are then drawn over it. `buildWebPredictor` compiles it to the
   committed `common/src/main/resources/webmap/predictor.wasm` asset.
-- `test/` - the C verification and benchmark harnesses: `test_dual_precision.c`
-  (position purity) and `test_full_matrix.c` (full matrix) behind
-  `verifyNative`/`verifyNativeSmoke`, `test_chest_loot.c` behind
-  `testNativeChestLoot`, the pre-1.18 `test_legacy_matrix.c`/
-  `test_web_legacy.c`/`test_legacy_fullscale.c` trio behind `testNativeLegacy`,
-  and the benchmarks `bench_single.c`/`bench_legacy.c` behind
-  `benchNative`/`benchNativeLegacy`.
+- `test/` - the C verification harnesses: `test_position_purity.c` and
+  `test_full_matrix.c` behind `verifyNative`/`verifyNativeSmoke`,
+  `test_chest_loot.c` behind `testNativeChestLoot`, and the pre-1.18
+  contracts `test_legacy_matrix.c`/`test_web_legacy.c` behind
+  `testNativeLegacy`. `test_legacy_fullscale.c` is an audit archive:
+  `testNativeLegacy` compiles it to keep it bit-rot-free, but it is run
+  manually per `(seed, region)` unit when the pre-1.18 paths change.
+- `bench/` - the benchmark harnesses (measurements, not tests):
+  `bench_single.c` behind `benchNative`, `bench_legacy.c` behind
+  `benchNativeLegacy`. Pin the process to P-cores (`taskset`) before
+  comparing numbers.
 - `prebuilt/<target>/<libname>` - **committed** compiled binaries, so a
   contributor without a C toolchain can still build/run/test the mod; `git`
   must not ignore this directory. `common.gradle`'s `processResources` copies
@@ -111,8 +115,8 @@ have no `cc`/`gcc`, and `-Wl,--no-undefined` is GNU-ld only):
 ./gradlew verifyNativeSmoke  # testNativePuritySmoke + testNativeMatrixSmoke (12 cases)
 ./gradlew testNativeChestLoot  # native/test/test_chest_loot.c, loot known answer + per-type roll matrix
 ./gradlew testNativeLegacy   # native/test/test_legacy_*.c + test_web_legacy.c, pre-1.18 oracle & parity
-./gradlew benchNative        # native/test/bench_single.c, per-LOD single-core solve time
-./gradlew benchNativeLegacy  # native/test/bench_legacy.c, per-LOD pre-1.18 overview-pipeline cost
+./gradlew benchNative        # native/bench/bench_single.c, per-LOD single-core solve time
+./gradlew benchNativeLegacy  # native/bench/bench_legacy.c, per-LOD pre-1.18 overview-pipeline cost
 ```
 
 Run `verifyNative` or `verifyNativeSmoke` locally before touching anything under `native/`.
