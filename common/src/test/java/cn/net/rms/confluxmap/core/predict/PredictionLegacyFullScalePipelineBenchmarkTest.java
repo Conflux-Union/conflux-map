@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
  * Full-scale production-pipeline validation for pre-1.18 prediction, opt-in via
  * {@code :common:benchmark} (the default {@code test} task excludes the benchmark tag).
  *
- * <p>Where {@code native/test_legacy_fullscale.c} compares the raw native overview against
+ * <p>Where {@code native/test/test_legacy_fullscale.c} compares the raw native overview against
  * vanilla's exact generation, this harness runs the real {@link LodSampling} pipeline - exact
  * residual correction, fluid resolution and all - over 4096x4096 block regions and scores the
  * map-visible output block by block against vanilla columns: height, water/land kind, fluid

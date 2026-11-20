@@ -32,7 +32,7 @@ for what it predicts; this file is only the build/maintenance side.
   MIT-licensed like the rest, see `loot/LICENSE_loot_library.h.txt`) compiles
   with them since the chest-loot preview feature: the JNI shim's chest
   operations roll chest contents from the loot seeds the piece paths emit, and
-  `native/test_chest_loot.c` pins the fork's known-answer case plus a
+  `native/test/test_chest_loot.c` pins the fork's known-answer case plus a
   per-structure-type smoke matrix. Other upstream utilities
   this project never calls (`quadbase.c/h`, `carver.c/h`)
   ship in the submodule but are not compiled. To change
@@ -61,10 +61,21 @@ for what it predicts; this file is only the build/maintenance side.
   baseline used by the Java predictor. A Web Worker composes that baseline;
   generated server regions are then drawn over it. `buildWebPredictor` compiles it to the
   committed `common/src/main/resources/webmap/predictor.wasm` asset.
+- `test/` - the C verification and benchmark harnesses: `test_dual_precision.c`
+  (position purity) and `test_full_matrix.c` (full matrix) behind
+  `verifyNative`/`verifyNativeSmoke`, `test_chest_loot.c` behind
+  `testNativeChestLoot`, the pre-1.18 `test_legacy_matrix.c`/
+  `test_web_legacy.c`/`test_legacy_fullscale.c` trio behind `testNativeLegacy`,
+  and the benchmarks `bench_single.c`/`bench_legacy.c` behind
+  `benchNative`/`benchNativeLegacy`.
 - `prebuilt/<target>/<libname>` - **committed** compiled binaries, so a
   contributor without a C toolchain can still build/run/test the mod; `git`
   must not ignore this directory. `common.gradle`'s `processResources` copies
   it into every version subproject's jar (and dev classpath) as `natives/`.
+- `reference/` - standalone vanilla-reference oracle programs (the
+  per-version `NetherFossilOracle*`) compiled against Mojang-mapped Minecraft
+  jars to regenerate the nether-fossil fixtures `NetherFossilNativeTest`
+  asserts against; see `reference/README.md`.
 
 ## Building
 
@@ -98,8 +109,10 @@ have no `cc`/`gcc`, and `-Wl,--no-undefined` is GNU-ld only):
 ```
 ./gradlew verifyNative       # testNativePurity + testNativeMatrix (300 cases)
 ./gradlew verifyNativeSmoke  # testNativePuritySmoke + testNativeMatrixSmoke (12 cases)
-./gradlew testNativeChestLoot  # native/test_chest_loot.c, loot known answer + per-type roll matrix
-./gradlew benchNative        # native/bench_single.c, per-LOD single-core solve time
+./gradlew testNativeChestLoot  # native/test/test_chest_loot.c, loot known answer + per-type roll matrix
+./gradlew testNativeLegacy   # native/test/test_legacy_*.c + test_web_legacy.c, pre-1.18 oracle & parity
+./gradlew benchNative        # native/test/bench_single.c, per-LOD single-core solve time
+./gradlew benchNativeLegacy  # native/test/bench_legacy.c, per-LOD pre-1.18 overview-pipeline cost
 ```
 
 Run `verifyNative` or `verifyNativeSmoke` locally before touching anything under `native/`.
