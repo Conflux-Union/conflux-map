@@ -53,3 +53,7 @@ replay_*.log
 
 CLAUDE.md
 AGENTS.md
+
+# Local docs toolchain
+.venv/
+site/

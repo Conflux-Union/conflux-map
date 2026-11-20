@@ -1,0 +1,45 @@
+site_name: Conflux Map Wiki
+site_url: https://conflux-union.github.io/conflux-map/
+repo_url: https://github.com/Conflux-Union/conflux-map
+repo_name: Conflux-Union/conflux-map
+edit_uri: edit/master/docs/
+strict: true
+theme:
+  name: material
+  features:
+    - navigation.indexes
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+plugins:
+  - search
+  - exclude:
+      glob:
+        - protocol.md
+        - paper-companion.md
+        - api.md
+        - prediction-quality.md
+        - i18n-glossary.md
+        - reference-specs/**
+        - research/**
+  - i18n:
+      docs_structure: folder
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+        - locale: zh
+          name: 简体中文
+          build: true
+nav:
+  - Home: index.md
