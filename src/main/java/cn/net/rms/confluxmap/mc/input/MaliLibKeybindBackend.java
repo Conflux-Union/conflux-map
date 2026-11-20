@@ -164,19 +164,21 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
 
     @Override
     public void load() {
-        if (!Files.exists(configFile)) {
-            save();
-            return;
-        }
+        final boolean existed = Files.exists(configFile);
         try {
-            final JsonObject root = GSON.fromJson(
+            final JsonObject root = !existed ? new JsonObject() : GSON.fromJson(
                 Files.readString(configFile, StandardCharsets.UTF_8),
                 JsonObject.class
             );
             if (root == null) {
                 throw new IOException("empty config");
             }
+            final var app = cn.net.rms.confluxmap.ConfluxMapClient.get();
+            final boolean migrated = app != null && app.waypointListMemory() != null
+                && cn.net.rms.confluxmap.core.waypoint.library.WaypointListMemory.importTemporaryHotkey(
+                    root, app.waypointListMemory().options().temporaryKeys);
             ConfigUtils.readHotkeys(root, HOTKEYS_KEY, hotkeys);
+            if (!existed || migrated) save();
         } catch (final IOException | RuntimeException e) {
             ConfluxMapMod.LOGGER.warn(
                 "MaliLib hotkey config {} is unreadable ({}); keeping defaults",

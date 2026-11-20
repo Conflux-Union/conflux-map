@@ -7,6 +7,7 @@
     "WorldChunkMixin"
   ],
   "client": [
+    "ScreenshotLocationMixin",
     "AgeableMobEntityRendererAccessor",
     "ChatHudMixin",
     "GameRendererAccessor",

@@ -142,7 +142,7 @@ public final class LayerSelector {
             : MapLayer.NETHER_CURRENT;
     }
 
-    private static int logicalHeight(final DimensionType type) {
+    public static int logicalHeight(final DimensionType type) {
         //#if MC>=12000
         //$$ return type.logicalHeight();
         //#else

@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.api.ConfluxMapApiImpl;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
@@ -27,6 +28,7 @@ import cn.net.rms.confluxmap.core.waypoint.list.LocalWaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.SharedWaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointRow;
+import cn.net.rms.confluxmap.core.waypoint.library.WaypointMetadata;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.ui.anim.PopupReveal;
 import cn.net.rms.confluxmap.mc.ui.anim.PopupRevealFrame;
@@ -37,6 +39,7 @@ import cn.net.rms.confluxmap.mc.teleport.TeleportCommandAccess;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.widget.ConfluxTextButton;
+import cn.net.rms.confluxmap.mc.ui.widget.WaypointStarButton;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
@@ -79,6 +82,7 @@ public final class WaypointListScreen extends ConfluxScreen {
     private static final int ROW_PADDING = 6;
     private static final int MARKER_SIZE = 14;
     private static final int CHECK_WIDTH = 20;
+    private static final int STAR_WIDTH = 18;
     private static final int ROW_ACTION_MAX_WIDTH = 48;
     private static final int ROW_ICON_ACTION_WIDTH = 20;
     /** Both tabs expose the same row actions: eye, share, edit, delete, locate, teleport. */
@@ -199,8 +203,10 @@ public final class WaypointListScreen extends ConfluxScreen {
     private final Set<ButtonWidget> iconActions =
         java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private Tab tab;
+    private final WorldIdentity browsingWorld;
 
     private int scrollOffset;
+    private int compactScrollOffset;
     private UUID pendingDeleteId;
     /** Group filter of the active tab; null means "All", so it survives tab switches per tab. */
     private GroupRef selectedLocalGroupFilter;
@@ -263,6 +269,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         super(Texts.translatable("confluxmap.screen.waypoints.title"));
         final ConfluxMapClient app = ConfluxMapClient.get();
         this.gameBridge = app.gameBridge();
+        this.browsingWorld = gameBridge.session().world();
         this.waypointService = app.waypointService();
         this.localModel = app.localWaypointListModel();
         this.sharedModel = app.sharedWaypointListModel();
@@ -299,6 +306,40 @@ public final class WaypointListScreen extends ConfluxScreen {
         if (this.tab != Tab.LOCAL && !sharedWaypoints.availability().enabled()) {
             this.tab = Tab.LOCAL;
         }
+        final var preferences = app.waypointListMemory();
+        restoreBrowsingState(preferences.get(browsingWorld));
+    }
+
+    cn.net.rms.confluxmap.core.waypoint.library.WaypointListMemory.State browsingState() {
+        return new cn.net.rms.confluxmap.core.waypoint.library.WaypointListMemory.State(tab.name(),
+            dimensionFilter.mode().name(), dimensionFilter.dimension() == null ? null : dimensionFilter.dimension().toString(),
+            groupFilter() == null ? null : groupFilter().key(), searchField == null ? observedSearch : searchField.getText(),
+            scrollOffset, compactScrollOffset);
+    }
+
+    void rememberCompactScroll(final int scroll) { compactScrollOffset = Math.max(0, scroll); }
+
+    Screen layoutAfterSettings() {
+        return ConfluxMapClient.get().waypointListMemory().options().compact
+            ? new CompactWaypointScreen(this, parent, browsingState()) : this;
+    }
+
+    void restoreBrowsingState(final cn.net.rms.confluxmap.core.waypoint.library.WaypointListMemory.State state) {
+        if (state == null) return;
+        tab = "PUBLIC".equals(state.tab()) && sharedWaypoints.availability().enabled() ? Tab.PUBLIC : Tab.LOCAL;
+        dimensionFilter = "ALL".equals(state.dimensionMode()) ? WaypointDimensionFilter.all()
+            : "ONLY".equals(state.dimensionMode()) && state.dimension() != null
+                ? WaypointDimensionFilter.only(DimensionId.parse(state.dimension())) : WaypointDimensionFilter.current();
+        observedSearch = state.search(); scrollOffset = state.nativeScroll(); compactScrollOffset = state.compactScroll();
+        final GroupRef group = state.set() == null ? null : activeModel().groupByKey(state.set());
+        if (tab == Tab.PUBLIC) selectedSharedGroupFilter = group; else selectedLocalGroupFilter = group;
+        selectedWaypointIds.clear(); pendingDeleteId = null;
+    }
+
+    @Override public void removed() {
+        if (searchField != null) observedSearch = searchField.getText();
+        ConfluxMapClient.get().waypointListMemory().put(browsingWorld, browsingState());
+        super.removed();
     }
 
     private WaypointListModel activeModel() {
@@ -339,6 +380,12 @@ public final class WaypointListScreen extends ConfluxScreen {
     @Override
     public void tick() {
         super.tick();
+        if (isClosing() || MinecraftAccess.screen(MinecraftClient.getInstance()) != this) return;
+        if (!browsingWorld.equals(gameBridge.session().world())) { requestClose(null); return; }
+        if (ConfluxMapClient.get().waypointListMemory().options().compact) {
+            MinecraftAccess.setScreen(MinecraftClient.getInstance(), new CompactWaypointScreen(this, parent, browsingState()));
+            return;
+        }
         Widgets.tick(searchField);
         final String currentSearch = searchField == null ? "" : searchField.getText();
         if (!currentSearch.equals(observedSearch)) {
@@ -445,8 +492,8 @@ public final class WaypointListScreen extends ConfluxScreen {
         owned.sort((a, b) -> Double.compare(a.distance(), b.distance()));
         guests.sort((a, b) -> Double.compare(a.distance(), b.distance()));
         final List<ListRow> list = new ArrayList<>();
-        for (final WaypointListGrouping.Entry<RowInfo> entry : WaypointListGrouping.group(
-            model.groupsForDisplay(), owned, row -> row.row().groupKey(), isSearchActive()
+        for (final WaypointListGrouping.Entry<RowInfo> entry : WaypointListGrouping.groupPinned(
+            model.groupsForDisplay(), owned, row -> row.row().groupKey(), this::isStarred, isSearchActive()
         )) {
             if (entry instanceof WaypointListGrouping.GroupHeader<?> header) {
                 @SuppressWarnings("unchecked")
@@ -454,7 +501,7 @@ public final class WaypointListScreen extends ConfluxScreen {
                 list.add(ListRow.ofHeader(new HeaderRow(group, header.visibleCount(), 0)));
             } else if (entry instanceof WaypointListGrouping.Member<?> member) {
                 @SuppressWarnings("unchecked") final RowInfo row = (RowInfo) member.row();
-                list.add(ListRow.ofWaypoint(row, true));
+                list.add(ListRow.ofWaypoint(row, !isStarred(row)));
             }
         }
         for (final RowInfo guest : guests) {
@@ -463,15 +510,48 @@ public final class WaypointListScreen extends ConfluxScreen {
         return list;
     }
 
+    private boolean isStarred(final RowInfo row) {
+        final var library = ConfluxMapClient.get().waypointLibraryService();
+        return ConfluxMapClient.get().waypointListMemory().options().favorites && !row.row().guest() && library.world() != null
+            && library.world().equals(gameBridge.session().world())
+            && library.library().isStarred(row.id(), row.source() == WaypointRenderEntry.Source.SHARED);
+    }
+
+    private void toggleStar(final WaypointListModel model, final RowInfo row, final WorldIdentity expectedWorld) {
+        final var library = ConfluxMapClient.get().waypointLibraryService();
+        if (!ConfluxMapClient.get().waypointListMemory().options().favorites || model != activeModel() || !library.writable() || !expectedWorld.equals(library.world())
+            || !expectedWorld.equals(gameBridge.session().world())) {
+            return;
+        }
+        final WaypointRow current = model.rowById(row.id());
+        if (current == null || current.guest()) {
+            return;
+        }
+        library.library().setStarred(row.id(), row.source() == WaypointRenderEntry.Source.SHARED, !isStarred(row));
+        library.save();
+        scrollOffset = 0;
+        rebuild();
+    }
+
     private boolean isSearchActive() {
         return !observedSearch.trim().isEmpty();
     }
 
     private static boolean matchesSearch(final RowInfo row, final String query) {
-        return WaypointSearch.matches(
+        final WaypointMetadata extra = metadata(row);
+        return WaypointDetailsText.matches(extra, query) || WaypointSearch.matches(
             query, row.name(), row.row().secondaryText(), row.dimensionText(),
             row.row().x(), row.row().y(), row.row().z()
         );
+    }
+
+    private static WaypointMetadata metadata(final RowInfo row) {
+        final ConfluxMapClient app = ConfluxMapClient.get();
+        if (row.row().guest() || app != null && !app.waypointListMemory().options().details || app == null || app.waypointLibraryService() == null
+            || app.waypointLibraryService().world() == null) {
+            return WaypointMetadata.EMPTY;
+        }
+        return app.waypointLibraryService().library().get(row.id(), row.source() == WaypointRenderEntry.Source.SHARED);
     }
 
     private List<RowInfo> buildRows(
@@ -720,6 +800,10 @@ public final class WaypointListScreen extends ConfluxScreen {
             ));
             importButton.active = localStoreWritable();
         }
+        final WaypointListChrome chrome = WaypointListChrome.create(width, height, tab == Tab.PUBLIC);
+        addDrawableChild(Widgets.button(chrome.settingsX(), chrome.settingsY(), chrome.settingsWidth(), 20,
+            Texts.translatable("confluxmap.enhancements.settings"), button ->
+                MinecraftAccess.setScreen(MinecraftClient.getInstance(), ConfigScreen.waypointEnhancements(this))));
         addDrawableChild(Widgets.button(
             contentRight() - 80,
             height - 24,
@@ -1240,6 +1324,17 @@ public final class WaypointListScreen extends ConfluxScreen {
         final int leftInset = indented ? SET_MEMBER_INDENT : 0;
 
         if (!row.guest()) {
+            if (ConfluxMapClient.get().waypointListMemory().options().favorites) {
+            final WorldIdentity starWorld = gameBridge.session().world();
+            final WaypointStarButton star = addDrawableChild(new WaypointStarButton(
+                markerX(indented) - STAR_WIDTH - GAP,
+                selectionY,
+                isStarred(info),
+                button -> toggleStar(model, info, starWorld)
+            ));
+            star.active = ConfluxMapClient.get().waypointLibraryService().writable();
+            setDisabledTooltip(star, "confluxmap.screen.waypoints.star_read_only");
+            }
             final WaypointListModel.Permission move = model.canMoveWaypoint(row);
             final ButtonWidget selected = addDrawableChild(Widgets.button(
                 contentLeft() + ROW_PADDING + leftInset,
@@ -1925,7 +2020,11 @@ public final class WaypointListScreen extends ConfluxScreen {
             }
             // The preprocessor's method mapping for this call misses chained accessor
             // arguments, so keep the argument a plain local like every other call site.
-            final String secondaryText = info.row().secondaryText();
+            final WaypointMetadata extra = metadata(info);
+            final String summary = WaypointDetailsText.summary(extra);
+            final String secondaryText = info.row().secondaryText()
+                + (summary.isEmpty() ? "" : " \u00b7 " + summary)
+                + (extra.note().isBlank() ? "" : " \u00b7 " + extra.note());
             final String secondary = this.textRenderer.trimToWidth(secondaryText, maxNameWidth);
             draw.drawTextWithShadow(this.textRenderer, secondary, nameX(row.indented()), info.y() + 15, 0xFFAAAAAA);
             if (!compact) {
@@ -2415,7 +2514,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         return contentWidth() < NARROW_TOOLBAR_WIDTH;
     }
 
-    /** Bottom-bar action width: two actions plus the done button must fit on narrow screens. */
+    /** Two local actions plus the done button must fit on narrow screens. */
     private int bottomActionWidth() {
         return Math.min(116, Math.max(60, (contentWidth() - 80 - GAP * 2) / 2));
     }
@@ -2429,7 +2528,8 @@ public final class WaypointListScreen extends ConfluxScreen {
     }
 
     private int markerX(final boolean indented) {
-        return contentLeft() + ROW_PADDING + (indented ? SET_MEMBER_INDENT : 0) + CHECK_WIDTH + GAP;
+        return contentLeft() + ROW_PADDING + (indented ? SET_MEMBER_INDENT : 0)
+            + CHECK_WIDTH + GAP + (ConfluxMapClient.get().waypointListMemory().options().favorites ? STAR_WIDTH + GAP : 0);
     }
 
     private int nameX(final boolean indented) {

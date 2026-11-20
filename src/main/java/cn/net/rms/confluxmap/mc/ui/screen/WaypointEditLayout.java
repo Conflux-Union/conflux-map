@@ -91,9 +91,32 @@ final class WaypointEditLayout {
         int swatchesY,
         int optionsY,
         int markerY,
+        int imageY,
+        int titleY,
         int statusY,
         int gap
     ) {
+        Rows shifted(int offset, int fixedStatusY) {
+            return new Rows(nameFieldY - offset, coordsY - offset, groupY - offset,
+                swatchesY - offset, optionsY - offset, markerY - offset, imageY < 0 ? -1 : imageY - offset,
+                titleY, fixedStatusY, gap);
+        }
+    }
+
+    private static final int ATTACHMENT_GAP = 3;
+
+    record DetailsRows(Rows base, int noteY, int productY, int top, int bottom, int maxScroll) {
+        boolean contains(int y, int elementHeight) { return y >= top && y + elementHeight <= bottom; }
+        Rows form(int scroll) { return base.shifted(scroll, bottom); }
+    }
+
+    static DetailsRows detailsRows(int screenHeight, boolean images) {
+        int bottom = footerY(screenHeight) - STATUS_FOOTER_OFFSET;
+        Rows base = rows(screenHeight - 2 * (FIELD_HEIGHT + ATTACHMENT_GAP) - STATUS_FOOTER_OFFSET, true, images);
+        int note = (images ? base.imageY() : base.markerY()) + FIELD_HEIGHT + ATTACHMENT_GAP;
+        int products = note + FIELD_HEIGHT + ATTACHMENT_GAP;
+        int top = base.titleY() + LABEL_HEIGHT + 2;
+        return new DetailsRows(base, note, products, top, bottom, Math.max(0, products + FIELD_HEIGHT - bottom));
     }
 
     /**
@@ -102,14 +125,23 @@ final class WaypointEditLayout {
      *     leaving holes at the dropped positions.
      */
     static Rows rows(final int screenHeight, final boolean fullForm) {
+        return rows(screenHeight, fullForm, false);
+    }
+
+    static Rows rows(final int screenHeight, final boolean fullForm, final boolean images) {
         final int labeledRows = fullForm ? 5 : 3;
         final int blockHeight = labeledRows * LABELED_ROW_HEIGHT + FIELD_HEIGHT;
         final int gapCount = labeledRows;
         final int available =
             screenHeight - FOOTER_MARGIN - FOOTER_CLEARANCE - STATUS_RESERVED - CONTENT_TOP;
-        final int gap = Math.max(MIN_ROW_GAP, Math.min(MAX_ROW_GAP, (available - blockHeight) / gapCount));
+        final int normalGap = Math.max(MIN_ROW_GAP, Math.min(MAX_ROW_GAP, (available - blockHeight) / gapCount));
+        final int roomForGaps = footerY(screenHeight) - CONTENT_TOP - blockHeight - FIELD_HEIGHT - 3;
+        final boolean tight = images && roomForGaps < gapCount;
+        final int gap = images ? Math.max(0, Math.min(normalGap, roomForGaps / (gapCount + 1))) : normalGap;
+        final int titleY = tight ? 2 : TITLE_Y;
+        final int contentTop = tight ? 13 : CONTENT_TOP;
 
-        int y = CONTENT_TOP + LABEL_HEIGHT + LABEL_CONTROL_GAP;
+        int y = contentTop + LABEL_HEIGHT + LABEL_CONTROL_GAP;
         final int nameFieldY = y;
         y += LABELED_ROW_HEIGHT + gap;
         final int coordsY = y;
@@ -128,12 +160,14 @@ final class WaypointEditLayout {
         y += FIELD_HEIGHT + gap;
         y += LABEL_HEIGHT + LABEL_CONTROL_GAP;
         final int markerY = y;
-        final int contentBottom = fullForm ? markerY + FIELD_HEIGHT : optionsY + FIELD_HEIGHT;
+        final int imageY = images ? markerY + FIELD_HEIGHT + Math.max(3, gap) : -1;
+        final int contentBottom = images ? imageY + FIELD_HEIGHT : fullForm ? markerY + FIELD_HEIGHT : optionsY + FIELD_HEIGHT;
         // At the 240px floor the form consumes the reserved status slot; the line
         // then follows the last row and may touch the footer top edge instead of
         // hiding behind widgets, which is where the old pre-widget draw put it.
-        final int statusY = Math.max(contentBottom + STATUS_GAP, footerY(screenHeight) - STATUS_FOOTER_OFFSET);
-        return new Rows(nameFieldY, coordsY, groupY, swatchesY, optionsY, markerY, statusY, gap);
+        final int regularStatus = Math.max(contentBottom + STATUS_GAP, footerY(screenHeight) - STATUS_FOOTER_OFFSET);
+        final int statusY = images && regularStatus + LABEL_HEIGHT > footerY(screenHeight) ? titleY : regularStatus;
+        return new Rows(nameFieldY, coordsY, groupY, swatchesY, optionsY, markerY, imageY, titleY, statusY, gap);
     }
 
     static int footerY(final int screenHeight) {

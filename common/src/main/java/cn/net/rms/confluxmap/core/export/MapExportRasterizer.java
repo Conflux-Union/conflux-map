@@ -190,6 +190,9 @@ public final class MapExportRasterizer {
             }
             try {
                 return future.get(100L, TimeUnit.MILLISECONDS);
+            } catch (final CancellationException e) {
+                // Newer JDKs wrap cancellation to add the waiting thread's stack trace.
+                throw e.getCause() instanceof final CancellationException cause ? cause : e;
             } catch (final TimeoutException ignored) {
                 // Keep cancellation responsive while disk/native/network work is pending.
             } catch (final InterruptedException e) {

@@ -29,4 +29,13 @@ final class WaypointIconSearchTest {
     void emptyQueryKeepsOnlyVanillaItems() {
         assertEquals(3, WaypointIconSearch.filter(ITEMS, "").size());
     }
+
+    @Test
+    void resourcesIncludeModdedItemsAndSearchNamesNamespacesAndIds() {
+        assertEquals(ITEMS, WaypointIconSearch.filterResources(ITEMS, ""));
+        assertEquals(List.of(ITEMS.get(3)), WaypointIconSearch.filterResources(ITEMS, "EXAMPLE:"));
+        assertEquals(List.of(ITEMS.get(1)), WaypointIconSearch.filterResources(ITEMS, "oak_boat"));
+        assertEquals(List.of(ITEMS.get(0), ITEMS.get(3)), WaypointIconSearch.filterResources(ITEMS, "diamond"));
+        assertEquals(List.of(ITEMS.get(2)), WaypointIconSearch.filterResources(ITEMS, "指南针"));
+    }
 }

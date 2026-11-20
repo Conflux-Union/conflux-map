@@ -26,6 +26,17 @@ class ConfigIoTest {
     private static final Logger LOGGER = LogManager.getLogger("ConfigIoTest");
 
     @Test
+    void oldConfigRetainsOriginalFullscreenZoomLimits(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("config.json");
+        Files.writeString(file, "{}", StandardCharsets.UTF_8);
+
+        final ConfluxConfig config = new ConfigIo(file, LOGGER).load();
+        assertEquals(100, config.fullscreenMinZoomPercent);
+        assertEquals(100, config.fullscreenMaxZoomPercent);
+        assertTrue(Files.readString(file).contains("\"fullscreenMinZoomPercent\": 100"));
+    }
+
+    @Test
     void predictionBackendDefaultsToGpuAndRoundTrips(@TempDir final Path tmp)
         throws IOException {
         final Path file = tmp.resolve("config.json");

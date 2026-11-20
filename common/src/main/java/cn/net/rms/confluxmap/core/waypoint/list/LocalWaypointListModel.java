@@ -208,12 +208,17 @@ public final class LocalWaypointListModel implements WaypointListModel {
 
     @Override
     public boolean createWaypoint(final EditDraft draft) {
+        return createWaypoint(UUID.randomUUID(), draft);
+    }
+
+    /** The editor allocates one UUID for both the waypoint and its private metadata. */
+    public boolean createWaypoint(final UUID id, final EditDraft draft) {
         final WaypointStore store = storeSupplier.get();
-        if (!canCreateWaypoint().granted() || store == null) {
+        if (!canCreateWaypoint().granted() || store == null || id == null || findWaypoint(store, id) != null) {
             return false;
         }
         final Waypoint waypoint = new Waypoint(
-            UUID.randomUUID(),
+            id,
             draft.name(),
             draft.dimensionId(),
             draft.x(),
