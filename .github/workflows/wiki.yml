@@ -8,6 +8,12 @@ on:
       - mkdocs.yml
       - requirements-docs.txt
       - .github/workflows/wiki.yml
+  pull_request:
+    paths:
+      - docs/**
+      - mkdocs.yml
+      - requirements-docs.txt
+      - .github/workflows/wiki.yml
   workflow_dispatch:
 
 permissions:
