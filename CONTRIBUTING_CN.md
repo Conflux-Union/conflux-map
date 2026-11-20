@@ -9,7 +9,7 @@
 - **Bug 与兼容性报告**——用 issue 模板提交；模板会引导你给出排查所需的信息，提供中英文两个版本。
 - **功能建议**——请先开 issue 讨论方案，再动手写代码。
 - **代码修复与功能开发**——见下文。
-- **翻译**——语言文件位于 `src/main/resources/assets/confluxmap/lang/`（目前为 `en_us.json` 与 `zh_cn.json`）；面向玩家的措辞请与 [`docs/i18n-glossary.md`](docs/i18n-glossary.md) 保持一致。
+- **翻译**——语言文件位于 `src/main/resources/assets/confluxmap/lang/`（目前为 `en_us.json` 与 `zh_cn.json`）；面向玩家的措辞请与 [`docs/en/technical/i18n-glossary.md`](docs/en/technical/i18n-glossary.md) 保持一致。
 
 非平凡改动请先开 issue，每个 pull request 只聚焦一个 issue 或一个改动。
 
@@ -31,7 +31,7 @@ cd conflux-map
 | --- | --- |
 | `common/` | 与 Minecraft 解耦的领域代码：地图存储、瓦片合成、路径点、网络协议。纯 Java 16。 |
 | `src/` | Fabric 客户端与服务端实现，以 Minecraft 1.17.1 为基准编写，经预处理器生成所有其他版本。 |
-| `api/` | 实验性客户端 API 模块（见 [`docs/api.md`](docs/api.md)）。 |
+| `api/` | 实验性客户端 API 模块（见 [`docs/en/technical/api.md`](docs/en/technical/api.md)）。 |
 | `paper/` | 独立的 Paper 插件。 |
 | `versions/` | 每个受支持的 Minecraft 版本一个 Gradle 子工程。`versions/mainProject` 指明源版本；其余版本全部由 `src/` 生成。 |
 | `native/` | cubiomes git 子模块与预编译的预测二进制。 |

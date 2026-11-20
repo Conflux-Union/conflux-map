@@ -37,7 +37,7 @@ class ViewportLoadTimingTest {
     }
 
     private static long[] overworldStages(final long... perStage) {
-        final long[] stageNanos = new long[LodSampling.OverworldStage.values().length];
+        final long[] stageNanos = new long[OverworldStages.OverworldStage.values().length];
         System.arraycopy(perStage, 0, stageNanos, 0, perStage.length);
         return stageNanos;
     }
@@ -58,13 +58,13 @@ class ViewportLoadTimingTest {
         final ViewportLoadTiming.Summary done = timing.uploaded(tile(1, 1), 20L, true, 2_500L);
 
         final long[] stages = done.overworldStageNanos();
-        assertEquals(LodSampling.OverworldStage.values().length, stages.length);
-        assertEquals(30L, stages[LodSampling.OverworldStage.H_LATTICE.ordinal()]);
-        assertEquals(40L, stages[LodSampling.OverworldStage.ANCHOR_BIOMES.ordinal()]);
-        assertEquals(300L + 100L, stages[LodSampling.OverworldStage.BAND.ordinal()]);
-        assertEquals(0L, stages[LodSampling.OverworldStage.EXACT_COLUMNS.ordinal()]);
-        assertEquals(500L, stages[LodSampling.OverworldStage.CELLS.ordinal()]);
-        assertEquals(10L + 40L, stages[LodSampling.OverworldStage.COMPOSE.ordinal()]);
+        assertEquals(OverworldStages.OverworldStage.values().length, stages.length);
+        assertEquals(30L, stages[OverworldStages.OverworldStage.H_LATTICE.ordinal()]);
+        assertEquals(40L, stages[OverworldStages.OverworldStage.ANCHOR_BIOMES.ordinal()]);
+        assertEquals(300L + 100L, stages[OverworldStages.OverworldStage.BAND.ordinal()]);
+        assertEquals(0L, stages[OverworldStages.OverworldStage.EXACT_COLUMNS.ordinal()]);
+        assertEquals(500L, stages[OverworldStages.OverworldStage.CELLS.ordinal()]);
+        assertEquals(10L + 40L, stages[OverworldStages.OverworldStage.COMPOSE.ordinal()]);
     }
 
     @Test

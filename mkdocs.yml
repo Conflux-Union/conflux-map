@@ -1,0 +1,107 @@
+site_name: Conflux Map Wiki
+site_url: https://conflux-union.github.io/conflux-map/
+repo_url: https://github.com/Conflux-Union/conflux-map
+repo_name: Conflux-Union/conflux-map
+edit_uri: edit/master/docs/
+strict: true
+# Unicode-preserving slugs: the default ASCII slugify mangles zh headings
+# (#支持的版本 becomes _2) and silently breaks every zh anchor link.
+markdown_extensions:
+  - toc:
+      slugify: !!python/name:pymdownx.slugs._uslugify
+theme:
+  name: material
+  features:
+    - navigation.indexes
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+plugins:
+  - exclude:
+      glob:
+        - protocol.md
+        - paper-companion.md
+        - api.md
+        - prediction-quality.md
+        - i18n-glossary.md
+        - reference-specs/**
+        - research/**
+  - i18n:
+      docs_structure: folder
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+        - locale: zh
+          name: 简体中文
+          build: true
+          nav_translations:
+            Home: 首页
+            Getting started: 入门
+            Installation: 安装
+            Quick start: 快速上手
+            Features: 功能
+            Minimap: 小地图
+            World map: 世界地图
+            "Autofill & prediction": 地图补全
+            "Structure & biome search": 结构与群系搜索
+            Chest loot preview: 箱子战利品预览
+            Portal markers: 传送门标记
+            Waypoints: 路径点
+            Shared waypoints: 共享路径点
+            Entity radar: 实体雷达
+            "Drawings & export": 绘图与导出
+            Appearance: 显示与外观
+            Multi-server data: 多服务器数据管理
+            Reference: 参考
+            Keybinds: 按键绑定
+            Configuration: 配置参考
+            Technical: 技术文档
+            "Server companion (Fabric)": 服务端组件(Fabric)
+            Paper companion: Paper 组件
+            Network protocol: 网络协议
+            Public API: 公共 API
+            Prediction quality: 预测质量
+            Developing: 参与开发
+            "FAQ & compatibility": 常见问题与兼容性
+  - material/search:
+      separator: '[\s​\-_,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+nav:
+  - Home: index.md
+  - Getting started:
+      - Installation: getting-started/install.md
+      - Quick start: getting-started/quickstart.md
+  - Features:
+      - Minimap: features/minimap.md
+      - World map: features/world-map.md
+      - Autofill & prediction: features/autofill-prediction.md
+      - Structure & biome search: features/structure-biome-search.md
+      - Chest loot preview: features/chest-loot-preview.md
+      - Portal markers: features/portal-markers.md
+      - Waypoints: features/waypoints.md
+      - Shared waypoints: features/shared-waypoints.md
+      - Entity radar: features/entity-radar.md
+      - Drawings & export: features/drawings-export.md
+      - Appearance: features/appearance.md
+      - Multi-server data: features/multi-server.md
+  - Reference:
+      - Keybinds: reference/keybinds.md
+      - Configuration: config/index.md
+  - Technical:
+      - Server companion (Fabric): technical/server-companion.md
+      - Paper companion: technical/paper-companion.md
+      - Network protocol: technical/protocol.md
+      - Public API: technical/api.md
+      - Prediction quality: technical/prediction-quality.md
+      - Developing: technical/developing.md
+  - FAQ & compatibility: faq.md

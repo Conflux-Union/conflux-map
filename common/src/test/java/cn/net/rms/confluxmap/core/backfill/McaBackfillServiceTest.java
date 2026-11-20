@@ -71,16 +71,25 @@ class McaBackfillServiceTest {
         final AtomicLong mtime = new AtomicLong(MTIME);
         final AtomicInteger scanCount = new AtomicInteger();
         final CountDownLatch scanStarted = new CountDownLatch(1);
-        /** File-stat probes from the viewport patrol; the throttle test's observation point. */
+        /** File-stat probes: both the render-thread patrol and the scan-pool acceptance re-stat. */
         final AtomicInteger mtimeProbes = new AtomicInteger();
         final AtomicReference<CountDownLatch> scanGate = new AtomicReference<>();
         /** Thread the latest scan ran on; the scan-pool test's observation point. */
         final AtomicReference<String> lastScanThread = new AtomicReference<>();
+        /** Stretches each patrol pass like a slow runner; forces the same-push resubmit race. */
+        volatile boolean slowMtimeProbes;
         volatile boolean poisonMtimeDuringScan;
         volatile int missingMcaRegionX = Integer.MIN_VALUE;
 
         @Override
         public long mtimeMs(final DimensionId dimension, final int regionX, final int regionZ) {
+            if (slowMtimeProbes) {
+                try {
+                    Thread.sleep(1L);
+                } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
             mtimeProbes.incrementAndGet();
             return missingMcaRegionX == regionX ? 0L : mtime.get();
         }
@@ -254,6 +263,26 @@ class McaBackfillServiceTest {
             "mtime mismatch must discard the scan");
     }
 
+    /**
+     * Deterministic twin of {@link #fileChangedMidScanIsDiscarded()}: slow probes stretch the
+     * patrol's offer passes, so a discard that releases before the next pass would resubmit
+     * and rescan the region within this same viewport push.
+     */
+    @Test
+    void discardedMidScanChangeIsNotResubmittedWithinTheSamePush() throws Exception {
+        scanner.poisonMtimeDuringScan = true;
+        scanner.slowMtimeProbes = true;
+        service.reportViewport(DimensionId.OVERWORLD, 0, 0, 0, 0, 0);
+        assertTrue(scanner.scanStarted.await(5, TimeUnit.SECONDS), "scan must start");
+        executors.scans().shutdown();
+        assertTrue(executors.scans().awaitTermination(5, TimeUnit.SECONDS), "scan must finish");
+
+        assertEquals(1, scanner.scanCount.get(),
+            "a discarded scan must cool down, not resubmit inside the same push");
+        assertNull(mapWorlds.current().store(MapLayer.SURFACE).region(0, 0),
+            "mtime mismatch must discard the scan");
+    }
+
     @Test
     void missingMcaFileSkipsTheRegionSilently() {
         scanner.missingMcaRegionX = 0;
@@ -323,6 +352,9 @@ class McaBackfillServiceTest {
     @Test
     void patrolOffersAreThrottledToTheInterval() throws Exception {
         service.reportViewport(DimensionId.OVERWORLD, 0, 0, 0, 0, 0);
+        // Sample only after the scan lands: the scan-pool acceptance re-stat also probes
+        // mtimeMs and would race into the throttle assertion below.
+        awaitChunkSource(mapWorlds.current(), 0, 0, SampleSource.REAL_SCAN);
         final int probesAfterFirst = scanner.mtimeProbes.get();
         assertTrue(probesAfterFirst > 0, "the first push patrols");
 

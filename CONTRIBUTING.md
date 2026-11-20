@@ -9,7 +9,7 @@ Thanks for your interest in improving Conflux Map! This guide covers the practic
 - **Bug and compatibility reports** — open an issue using a template; they ask for exactly what triage needs. Templates are available in English and Chinese.
 - **Feature requests** — please open an issue and discuss the approach before writing code.
 - **Code fixes and features** — see the rest of this guide.
-- **Translations** — language files live in `src/main/resources/assets/confluxmap/lang/` (currently `en_us.json` and `zh_cn.json`); keep player-facing terminology consistent with [`docs/i18n-glossary.md`](docs/i18n-glossary.md).
+- **Translations** — language files live in `src/main/resources/assets/confluxmap/lang/` (currently `en_us.json` and `zh_cn.json`); keep player-facing terminology consistent with [`docs/en/technical/i18n-glossary.md`](docs/en/technical/i18n-glossary.md).
 
 For anything non-trivial, open an issue first, and keep each pull request focused on one issue or one change.
 
@@ -31,7 +31,7 @@ The clone must be recursive: `native/cubiomes` is a git submodule. If you cloned
 | --- | --- |
 | `common/` | Minecraft-free domain code: map stores, tile composition, waypoints, network protocol. Plain Java 16. |
 | `src/` | The Fabric client and server implementation, written against Minecraft 1.17.1 and preprocessed into every other version. |
-| `api/` | The experimental client-side API module (see [`docs/api.md`](docs/api.md)). |
+| `api/` | The experimental client-side API module (see [`docs/en/technical/api.md`](docs/en/technical/api.md)). |
 | `paper/` | The standalone Paper plugin. |
 | `versions/` | One Gradle subproject per supported Minecraft version. `versions/mainProject` names the source version; every other version is generated from `src/`. |
 | `native/` | The cubiomes git submodule and the prebuilt prediction binaries. |

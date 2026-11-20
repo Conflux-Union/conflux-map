@@ -387,4 +387,28 @@ final class CubiomesNative {
      * never throws for a bad handle or unknown structure type (returns 0 instead).
      */
     static native int cfxStructureViable(long handle, int structType, int blockX, int blockZ);
+
+    /**
+     * Chest loot metadata for one structure instance. The variant is recomputed internally the
+     * same way cfxViableStructures/cfxNearestStructure do it. Writes up to maxChests chests:
+     * outPositions as (x, y, z) triples, outSeeds one loot seed per chest, outTables one table
+     * name per chest ("chests/pillager_outpost" style). Returns the chest count, or a negative
+     * status: -1 pieces/chests unsupported for this type or version, -2 native fault.
+     */
+    static native int cfxStructureChests(long handle, int structType, int blockX, int blockZ,
+        int maxChests, int[] outPositions, long[] outSeeds, String[] outTables);
+
+    /**
+     * Rolls one loot table with one seed. Writes up to maxStacks stacks. outCounts[0] = stack
+     * count, then outCounts[1 + i] = enchantment count of stack i. outItemCounts[i] = the
+     * fork's per-stack item count of stack i (bounded by its own length; a null array is a
+     * -2 native fault, a shorter array just bounds the writes). outItemNames[i] = item name
+     * ("minecraft:iron_ingot"). outEffects[i] = effect descriptor "&lt;effect_name&gt; &lt;duration&gt;" or
+     * "" when the stack has none. outEnchantNames/outEnchantLevels are stack-major flattened
+     * (stack i's enchantments occupy the next outCounts[1 + i] slots). Returns the stack count,
+     * or a negative status: -1 table/version not rollable, -2 native fault.
+     */
+    static native int cfxRollChestLoot(long handle, String lootTable, long lootSeed, int maxStacks,
+        int[] outCounts, int[] outItemCounts, String[] outItemNames, String[] outEffects,
+        String[] outEnchantNames, int[] outEnchantLevels, int maxEnchants);
 }

@@ -1,10 +1,12 @@
 # Conflux Map
 
-[English](README.md) | **简体中文**
+[English](README.md) | **简体中文** | [Wiki(中文)](https://conflux-union.github.io/conflux-map/zh/)
 
 [![Modrinth 下载量](https://img.shields.io/modrinth/dt/conflux-map?logo=modrinth&label=Modrinth&color=1bd96a)](https://modrinth.com/mod/conflux-map) [![CurseForge 下载量](https://img.shields.io/curseforge/dt/1663891?logo=curseforge&label=CurseForge&color=f16436)](https://www.curseforge.com/minecraft/mc-mods/conflux-map) [![MC百科 ID](https://img.shields.io/badge/MC%E7%99%BE%E7%A7%91_ID-30075-3f85c6?logo=data%3Aimage%2Fpng%3Bbase64%2CiVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAYAAAAfSC3RAAAACXBIWXMAAAAAAAAAAQCEeRdzAAACfklEQVR4nHVS7UtTURy%2BHyoCP5TQfxN9DMt0vrSXu0VfAvsQCBmGVL5MdDrLyiB6IYgWFJSUM%2B%2Fm3K7bdTqzmQudd%2FfmnLqXtmmb07vmbsR8OndEH8IOPDz8OM9zzvM7v0NVVB6m2t7WdNz20ZsmTv2zb0ojHwRlb8BnyNwYrjJVVB6iFFPbXb8BvR41iOC%2FME3RMHPVMH7sRKPFZqIGZnWJPk5bMk%2FTpf4pbVmksNlLo9%2BrI7WWsB6D0zVo527t0wxfop2xbcrEaSSjW4V2tgo9XENZrHA7ewZGdy16OTU62NO44riJ6pEgzjMr0Nt4mepxN%2B5axSEEUhN46m9B52Q1Hs81YyFlByM8wZ1pGjNRK7h4BlziB0zzUajH%2BCJldNVLQtYHZS0kHWh1nMTcBlOuV1OL8Kes%2BC4DzPo2RtcyaHKtQGMTZarb1SAtZlxI70SRlsMY8jYhKUWwuScgEF9DIFfAy%2BUkTg0vof5DCDqbCL2dGI1OcmNuBrMRBpH8Z4S3lpCQluBed%2BBLKodP2V94EVSMQWLkoRrlQSvGrgmVFM0T4epr2MPPyhHfr4iwkFvC2QLYb3nEJRmPFlN4JW7hfiAJmgmRqGz9rjf2Bu%2F4QTzwXYKYS6PZHUP%2FfBwjkSwus2H403kI23sI78gYj%2B5AN7ZcJOPQ5rs9dejjzuIqe49ECUJL%2BtAwAhrGBKgJn7PyqCURawjqyn0KMvkAmpiZq91vmXxY0trXoR8nc7ILygP8hWH8K0GZ92lbqGRwRjLKl7t23fecnLxGmhb%2BQDwQOiaEi54Y6izuLupo5TFKZfG0XnBGNshpRSIoEOz9gwKJVySaBDF1HDl%2BgvoNorIyyNSoGRkAAAAASUVORK5CYII%3D)](https://www.mcmod.cn/class/30075.html) [![QQ 群](https://img.shields.io/badge/QQ%E7%BE%A4-362669270-eb1923?logo=qq&logoColor=white)](https://qun.qq.com/universal-share/share?ac=1&authKey=X68UEgKub%2FljNQ2gt977XUcHdklPbuSUlV0sxCFnvqWdDXXtDCGYleOTjPb1xYTY&busi_data=eyJncm91cENvZGUiOiIzNjI2NjkyNzAiLCJ0b2tlbiI6IjFaYXFmWjhQaHo0S0xHakhPdWM5c2lrM2t4L2ZpN2N5TmxGMi8yaGJJUFpjSWszcG9XdGlWUWZwL2Z6bGtnMTYiLCJ1aW4iOiIyNjI4ODgzNTc2In0%3D&data=spJ33k1yvhmWCjxI6bLw3xMXstlfzRC1iQRK2vP-g0aRaPb_ueNDl2haX1Z4AWNUh6pUSLIdjlv8IxQ3VStwng&svctype=4&tempid=h5_group_info)
 
-Conflux Map 是一款 Fabric 平台的小地图与世界地图模组。客户端可独立运行：小地图、全屏世界地图、群系图层、路径点、结构与群系搜索、地图绘图与 PNG 导出均集成于同一个 JAR。若服务器安装配套的服务端组件，整个服务器还可以共享同一份实时地图、一套公共路径点，以及一个通过浏览器访问的网页地图。
+Conflux Map 是一款 Fabric 平台的小地图与世界地图模组。客户端可独立运行:小地图、全屏世界地图、群系图层、路径点、结构与群系搜索、地图绘图与 PNG 导出均集成于同一个 JAR。若服务器安装配套的服务端组件,整个服务器还可以共享同一份实时地图、一套公共路径点,以及一个通过浏览器访问的网页地图。
+
+**完整文档位于 [Wiki](https://conflux-union.github.io/conflux-map/zh/)**——功能指南、按键绑定、自动生成的配置参考、服务端组件部署、网络协议与公共 API。
 
 ## 支持的版本
 
@@ -23,174 +25,45 @@ Conflux Map 是一款 Fabric 平台的小地图与世界地图模组。客户端
 | `1.21.11`  | 1.21.11               | ✓      | ✓          |
 | `26.1.2`   | 26.1、26.1.1、26.1.2   | ✓      | ✓          |
 | `26.2`     | 26.2                  | ✓      | ✓          |
-| `26.3`     | 26.3                   | ✓      | ✓          |
+| `26.3`     | 26.3                  | ✓      | ✓          |
 
 ## 安装
 
-从 [Releases](../../releases) 页面下载对应 Minecraft 版本的 JAR，与 [Fabric API](https://modrinth.com/mod/fabric-api) 一同放入 `mods/` 目录。自行构建的方法参见[构建](#构建)。
+从 [Releases](../../releases) 页面下载对应 Minecraft 版本的 JAR,与 [Fabric API](https://modrinth.com/mod/fabric-api) 一同放入 `mods/` 目录。[MaliLib](https://modrinth.com/mod/malilib) 为可选依赖,安装后按键支持多键组合。
 
-[MaliLib](https://modrinth.com/mod/malilib) 为可选依赖。安装后按键支持多键组合，Conflux Map 也会出现在 MaliLib 的 A+C 设置切换界面中。
-
-小地图、世界地图、路径点、绘图与导出功能仅依赖客户端。全服地图同步、公共路径点、区块加载等级与网页地图需要服务端组件，参见[服务端组件](#服务端组件)。
+模组完全在客户端运行。全服实时地图、共享路径点与网页地图由可选的[服务端组件](https://conflux-union.github.io/conflux-map/zh/technical/server-companion/)提供(Fabric 放入 `mods/`,或独立 Paper 插件)。
 
 ## 功能
 
-### 小地图
+- [小地图](https://conflux-union.github.io/conflux-map/zh/features/minimap/)——方形/圆形、自由摆放、HUD 避让
+- [世界地图](https://conflux-union.github.io/conflux-map/zh/features/world-map/)——地图/群系/加载等级图层,分维度高度层
+- [地图补全](https://conflux-union.github.io/conflux-map/zh/features/autofill-prediction/)——由世界种子预测地形,随探索替换为真实地图
+- [结构与群系搜索](https://conflux-union.github.io/conflux-map/zh/features/structure-biome-search/)——查找并标记原版结构与群系
+- [箱子战利品预览](https://conflux-union.github.io/conflux-map/zh/features/chest-loot-preview/)——支持结构的确定性战利品预测
+- [传送门标记](https://conflux-union.github.io/conflux-map/zh/features/portal-markers/)——你见过的下界传送门、末地传送门与折跃门
+- [路径点](https://conflux-union.github.io/conflux-map/zh/features/waypoints/)——分组、死亡点、跨维度显示、Xaero/VoxelMap 导入
+- [共享路径点](https://conflux-union.github.io/conflux-map/zh/features/shared-waypoints/)——全服一份列表,附游戏内命令
+- [实体雷达](https://conflux-union.github.io/conflux-map/zh/features/entity-radar/)——玩家与生物,可按类型控制可见性
+- [绘图与导出](https://conflux-union.github.io/conflux-map/zh/features/drawings-export/)——图形、测距、PNG 导出、Xaero 地形导入
+- [多服务器数据管理](https://conflux-union.github.io/conflux-map/zh/features/multi-server/)——子世界与地址关联
+- [显示与外观](https://conflux-union.github.io/conflux-map/zh/features/appearance/)——动画、资源包主题
 
-- 提供方形与圆形外观，位置、大小和旋转均可自由调整。
-- 坐标、当前群系和当前图层可按需显示。
-- 自动避让原版 HUD 元素，并可显示近期移动足迹。
+按键绑定与全部配置选项:参见[按键列表](https://conflux-union.github.io/conflux-map/zh/reference/keybinds/)与[配置参考](https://conflux-union.github.io/conflux-map/zh/config/)。
 
-### 世界地图
+## 开发者
 
-- 全屏地图支持连续缩放、平滑拖动与区块网格，缩放以光标为中心。
-- 提供地图、群系、加载等级三种图层。加载等级具有「状态分级」与「精确等级」两种显示精度。主世界分为地表、当前洞穴与固定高度三类，下界分为当前层、基岩顶层与基岩下方，末地使用适配虚空环境的背景；当前显示的高度标注在地图上。
-- 地图光照跟随原版亮度设置、游戏内昼夜与附近的方块光照。
-- 右键地图可创建路径点或分享坐标；服务器允许时亦可直接传送，默认支持跨维度目标。
-
-### 地图补全
-
-获取世界种子后，主世界、下界基岩顶层与末地会立即显示预测地形。随着探索推进，预测结果逐步被真实地图替换；安装服务端组件后，服务端还会下发真实地形数据主动校正。按 `P` 可在「全部预测 / 仅已生成 / 仅已探索」之间切换，按 `F9` 强制刷新。预测默认优先使用 GPU 计算，无可用 GPU 时自动回退 CPU；后端可在地图补全设置中切换。客户端也可以配置本地种子，生成仅对自己可见的预测地图。
-
-### 结构与群系搜索
-
-主世界、下界与末地的原版结构均有独立图标和分类开关；村庄群系、堡垒遗迹布局、僵尸村庄、带船末地城等变种使用单独的名称与图标。全屏地图的搜索界面提供「结构」与「群系」两种模式。可按名称搜索最近的结构，也可指定中心、半径、数量与变种筛选，列出指定区域内的候选位置并直接保存为路径点；群系同样按名称选择并定位，先扫描已探索地图，获取世界种子后还会延伸到未探索区域的预测结果。候选列表默认由近到远排序，也可切换为由远到近以优先显示最远的匹配。右键结构图标，位置菜单会在该结构的精确生成点打开。
-
-### 传送门标记
-
-你见过的已激活下界传送门、末地传送门与末地折跃门会在小地图和世界地图上标记出来：每个传送门在所在位置显示图标，并可选地为所在区块叠加半透明高亮；每种传送门的图标可指定任意纹理资源路径，图标大小、不透明度与高亮颜色均可在设置中调整。标记按世界和维度分别记忆，别处被拆除的传送门会在其区块重新加载后消失。检测完全在客户端完成，因此只有你加载过的区块中的传送门会被记录。
-
-### 路径点
-
-- 支持名称、颜色与分组；列表支持搜索、筛选与批量移动。
-- 每个维度自动记录死亡点，默认保留 5 个，可在 0 至 50 之间调整。
-- 路径点在世界内显示为光柱、名称与距离；视野外的路径点通过屏幕边缘指示器提示方向，显示距离上限可调。
-- 主世界与下界的路径点默认按 1:8 的传送门坐标换算跨维度显示，可在设置中关闭；末地路径点仅显示在末地。
-- 同一服务器下种子相同的多个子世界可以互相显示路径点。该功能默认关闭，可在设置中开启“显示同种子世界路径点”。
-- 在聊天中分享坐标前可预览 Conflux Map 与 Xaero 两种格式，其他玩家分享的坐标可一键导入。
-- 路径点支持从 Xaero's Minimap 与 VoxelMap 一键导入，重复项自动跳过，原文件保持不变。
-- 每个路径点可附带多行备注与预览图。备注在独立界面编辑，内置常用模板；预览图可来自游戏内截图或剪贴板粘贴。安装服务端组件后，备注与预览图会共享给其他玩家，全屏地图悬停路径点时以卡片形式显示缩略图与前六行备注。
-
-### 实体雷达
-
-玩家、敌对生物、友善生物与其他实体各有独立开关，默认全部显示；在雷达设置的“管理实体显示”中，还可以按实体类型强制显示或隐藏单个实体。安装服务端组件后，所有在线玩家在超出原版追踪距离后仍然可见，浏览其他维度时亦可查看对应维度的玩家。在全屏地图上右键一名玩家，可在地图与游戏世界中持续高亮追踪；对方切换维度后，其最后位置会短暂保留为半透明标记。小地图默认显示按生物生成的头像与按物品生成的图标，也可切换为按类别着色的小点，按住玩家列表键时临时展开；全屏地图始终显示详细图标。
-
-### 绘图与导出
-
-- 支持在地图上绘制直线、图形、自由笔迹与文字标签；绘制完成后可选中、移动、改色与删除，并支持撤销与重做。绘图内容随世界保存，亦可显示在小地图上。
-- 测距工具用左键在地图上标点，实时显示每段距离与总长度；右键或 Ctrl+Z 撤销上一点，测点按维度保留，撤销完即自动退出。
-- 在全屏地图上按住右键拖动即可框选范围，选框自动对齐区块边界，中心实时标注区块数与方块数；选区高亮保留到下一次任意操作。
-- 任意区域均可导出为指定分辨率的 PNG：可输入矩形两角的坐标，或直接在地图上框选范围。导出任务在后台运行，提供大小预估、进度显示与取消操作，完成后可复制到剪贴板或直接打开输出目录。
-- Xaero 世界地图记录的地形数据可以导入本地图：在地图屏幕的操作工具中选择导入入口。Conflux Map 会读取该安装自身数据文件中已探索的地形，按维度逐一合并进本地地图缓存（只填充尚无本模组捕获的位置），因此即使没有服务端组件，此前探索过的地形也能直接显示。重复导入不会覆盖 Conflux Map 自己捕获的地形；实机重访已导入区域时，实时捕获会自动替换导入数据。
-
-### 多服务器数据管理
-
-- 同一地址可能对应多个世界，例如代理网络。地图数据按世界分别保存；子世界界面支持新建、重命名与清除识别记录，可将旧的同种子地图缓存合并至当前世界，并迁移旧记录中的路径点。
-- 同一服务器拥有多个地址时，可将地址关联，共用地图缓存、路径点与本地种子。安装服务端组件后，服务端会直接告知客户端哪些地址指向同一世界。
-
-### 显示与外观
-
-- 模组自身的界面与弹窗打开时可淡入并轻微缩放。可在“设置 → 通用 → 界面”中关闭该动画，或在三档速度中选择。
-- 小地图、路径点、实体雷达、图层与信息栏均有独立的显示设置，改动即时生效。
-- 工具栏图标与小地图边框可通过普通资源包替换；Xaero 的 UI 资源包中的兼容素材可继续使用，支持的路径与限制参见 [UI 资源包说明](docs/reference-specs/ui-resource-packs.md)。
-- 可选的更新检查会在聊天中提示新版本。累计游玩数小时后会出现一次问卷邀请，提示中可关闭后续通知。
-
-## 按键绑定
-
-所有按键均可在原版控制设置的「Conflux Map」分类下修改。安装 MaliLib 后，按键迁移至其热键界面并支持多键组合；1.21.1 及以上版本还会出现在 A+C 设置切换界面中。
-
-| 默认按键 | 功能 |
-|---|---|
-| `H` | 开关小地图 |
-| `]` | 循环切换小地图缩放 |
-| `M` | 打开全屏地图 |
-| `Y` | 循环切换自动、地表/顶层、当前高度和配置的固定高度图层 |
-| `U` | 打开路径点列表 |
-| `B` | 在当前位置新建路径点 |
-| `J` | 显示或隐藏本地路径点 |
-| `,` | 打开设置 |
-| `P` | 切换地图补全范围（全部 / 仅已生成 / 仅已探索） |
-| `F9` | 刷新地图补全瓦片 |
-
-## 共享路径点
-
-共享路径点需要服务端组件，默认启用。普通玩家可以发布全员可见的路径点，并管理自己发布的条目；管理员可以管理所有条目。
-
-未安装 Conflux Map 的玩家也可通过命令操作同一份列表：
-
-- `/confluxmap waypoints add <name>`：在当前位置发布路径点
-- `/confluxmap waypoints list [page]`：分页查看，每条附带 Xaero 聊天格式，便于一键导入
-- `/confluxmap waypoints edit <id> <name>` / `move <id>` / `delete <id>`：使用列表显示的短 ID 修改、移动或删除
-- `/confluxmap waypoints group list` / `create <name>` / `rename <id> <name>` / `delete <id>`：管理路径点集；安装 Conflux Map 的客户端可直接在路径点界面的“公共”页新建、重命名、删除路径点集
-- `/confluxmap waypoints group assign <waypoint> <group|none>`：把条目移入某个路径点集，或移回未分组；安装 Conflux Map 的客户端可在“公共”页勾选条目后批量移动
-- 管理员可通过 `/confluxmap waypoints disable`、`enable`、`status` 控制该功能
-
-每个世界与每位玩家可发布的数量上限可在 `config/confluxmap/server.json` 中调整。
-
-聊天坐标分享无需服务端组件，可在任何服务器上使用。
-
-## 服务端组件
-
-安装组件后，全服共用同一份实时地图与同一份路径点列表。
-
-- Fabric 服务端：将对应版本的 JAR 放入 `mods/` 目录。
-- Paper 服务端：将 `confluxmap-paper-<version>.jar` 放入 `plugins/` 目录，支持 Paper 1.21.1 至 26.3。
-
-客户端与服务端可以分别升级：两侧预测算法一致时采用体积较小的差分同步，不一致时回退至完整数据同步，旧协议客户端始终可以获得基础地图服务。
-
-运行 [quadra-gen](https://github.com/Fallen-Breath/quadra-gen) 的服务器会被自动支持：安装组件后，预测地图会按其四个象限的世界样式（自然地形、玻璃超平坦、群系虚空、虚空）分别计算，而不是整图按自然地形绘制。单人世界中 quadra-gen 接管世界生成时同样生效。
-
-组件还提供一个独立的网页地图，可在浏览器中查看已探索地形、预测地形与共享路径点。玩家位置、名称、维度与界面语言均可配置；玩家可在游戏内执行 `/confluxmap webmap hide` 将自己从网页地图中隐藏，`show` 恢复显示。
-
-所有共享内容由 `config/confluxmap/server.json` 控制：
-
-- `enabled` 为总开关；`checkForUpdates` 在服务端启动时于控制台提示新版本。
-- `shareSeed` 将世界种子发送至客户端，供预测群系与结构使用。默认关闭，因为共享后种子会暴露给所有玩家；`allowBiomeMap` 与 `allowStructureSearch` 分别控制群系图层与结构查找。
-- `shareCorrections` 将服务端掌握的真实地形发送至客户端，用于修正预测结果。
-- `fullSyncEnabled` 允许管理员执行 `/confluxmap fullsync`，把当前维度全部已生成区域一次性同步到自己的客户端（`/confluxmap fullsync cancel` 可中止）。该操作会暴露整张已生成地图，因此默认关闭，且需要管理员权限与 Fabric 组件。
-- `shareChunkLoadState` 公开服务端保持加载的区块，默认关闭，以减少玩家活动与农场位置的暴露。
-- `allowEntityRadar` 默认开启，向客户端发送所有在线玩家的实时位置；关闭后位置流停止，客户端实体雷达不可用。
-- `allowMinimap`、`allowWorldMap`、`allowWaypoints`、`allowPrediction` 可逐项关闭客户端功能：HUD 小地图、全屏世界地图（含地图导出、标注与地图标记）、本地路径点、种子预测图层。全部默认开启；功能被关闭时，兼容的客户端会隐藏该功能，设置界面也会显示"此服务器已禁用"提示。与所有客户端限制一样，这只对配合的客户端生效。
-- `restrictionMessage` 设置玩家尝试打开受限地图或切换受限小地图时显示的纯文本说明。留空时使用客户端语言对应的默认提示；消息最多保留 256 个 UTF-8 字节。第三方服务端插件无需安装 companion,按 [`docs/protocol.md`](docs/protocol.md) 文档化的协议即可直接下发以上全部限制。
-- `shareWaypoints` 启用共享路径点列表，默认开启；`allowNonOperatorSharedWaypointManagement` 默认允许普通玩家管理自己发布的条目。
-- `webMap.*` 控制网页地图，默认开启：监听 `127.0.0.1:8123`，不显示玩家位置。如需公开访问，应置于保留原始 `Host` 请求头的 HTTPS 反向代理之后；`sharePlayers` 控制是否包含玩家位置。
-
-每位玩家的流量限制与带宽预算位于同一配置文件。玩家可在游戏内执行 `/confluxmap performance` 查看当前连接的同步统计。Paper 特有的安装与数据存储细节参见 [`docs/paper-companion.md`](docs/paper-companion.md)。
-
-### 网页标题与图标
-
-在 `server.json` 的 `webMap` 中设置 `"title": "Conflux Map"` 和 `"favicon": "favicon.png"`。
-图标只填写文件名，并放在 `server.json` 同一目录（通常为 `config/confluxmap/`），支持 PNG、ICO，最大 1 MiB；不支持路径或网络地址。
-标题为空时使用 `Conflux Map`，图标为空时保持原有无自定义图标行为。图标读取失败会记录警告，不影响地图启动。
-修改后重启服务端；图标的浏览器缓存为五分钟。
-该配置只修改浏览器标签页标题，地图内的 `Conflux Map` 标识保持不变。
-
-## 构建
-
-需要 JDK 21 或更高版本。Minecraft、映射表、Fabric API，以及 26.x 构建所需的 JDK 25 工具链均由 Gradle 按需下载。
-
-```sh
-./gradlew :1.21.11:build
-./gradlew :paper:build
-./gradlew :paper:runServer
-```
-
-`1.21.11` 可替换为上表中的任意版本。构建产物分别输出至 `versions/<版本>/build/libs/` 与 `paper/build/libs/`。`:paper:runServer` 会下载本地 Paper 1.21.1 开发服务器并安装刚构建的插件；首次运行需在 `paper/run/eula.txt` 中接受 EULA，然后重新执行该任务。
-
-## 模组开发者
-
-Conflux Map 提供客户端 API（路径点、地图数据查询、自定义地图标记、动作与事件）。API 目前为实验性，单个依赖即可覆盖所有受支持的 Minecraft 版本。接入方式与用法见 [`docs/api.md`](docs/api.md)。
+源码构建与开发流程见 Wiki:[参与开发](https://conflux-union.github.io/conflux-map/zh/technical/developing/)。实验性客户端 API 见[公共 API](https://conflux-union.github.io/conflux-map/technical/api/),同步协议见[网络协议](https://conflux-union.github.io/conflux-map/technical/protocol/)。
 
 ## 联系我们
 
-如需反馈问题、提出建议或参与交流，欢迎通过官方渠道联系我们：
+如需反馈问题、提出建议或参与交流,欢迎通过官方渠道联系我们:
 
-- 邮箱：[contact@cxu.org.cn](mailto:contact@cxu.org.cn)
+- 邮箱:[contact@cxu.org.cn](mailto:contact@cxu.org.cn)
 - QQ 群：[362669270](https://qun.qq.com/universal-share/share?ac=1&authKey=X68UEgKub%2FljNQ2gt977XUcHdklPbuSUlV0sxCFnvqWdDXXtDCGYleOTjPb1xYTY&busi_data=eyJncm91cENvZGUiOiIzNjI2NjkyNzAiLCJ0b2tlbiI6IjFaYXFmWjhQaHo0S0xHakhPdWM5c2lrM2t4L2ZpN2N5TmxGMi8yaGJJUFpjSWszcG9XdGlWUWZwL2Z6bGtnMTYiLCJ1aW4iOiIyNjI4ODgzNTc2In0%3D&data=spJ33k1yvhmWCjxI6bLw3xMXstlfzRC1iQRK2vP-g0aRaPb_ueNDl2haX1Z4AWNUh6pUSLIdjlv8IxQ3VStwng&svctype=4&tempid=h5_group_info)
 
 ## 许可证
 
-GPL-3.0，详见 [`LICENSE`](LICENSE)。第三方组件与参考来源记录于 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+GPL-3.0,详见 [`LICENSE`](LICENSE)。第三方组件与参考来源记录于 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
 ## 贡献者
 
