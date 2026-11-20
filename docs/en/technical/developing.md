@@ -14,7 +14,7 @@ API, and the JDK 25 toolchain the 26.x builds target, on demand.
 ```
 
 Swap `1.21.11` for any version from the
-[supported versions table](../getting-started/install.md#supported-versions).
+[supported versions table](../getting-started/install.md#Supported-versions).
 Jars are written to `versions/<minecraft-version>/build/libs/` and the
 standalone Paper plugin to `paper/build/libs/`. `:paper:runServer` downloads
 a local Paper 1.21.1 development server and installs the freshly built

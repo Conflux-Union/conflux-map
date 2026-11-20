@@ -4,6 +4,11 @@ repo_url: https://github.com/Conflux-Union/conflux-map
 repo_name: Conflux-Union/conflux-map
 edit_uri: edit/master/docs/
 strict: true
+# Unicode-preserving slugs: the default ASCII slugify mangles zh headings
+# (#支持的版本 becomes _2) and silently breaks every zh anchor link.
+markdown_extensions:
+  - toc:
+      slugify: !!python/name:pymdownx.slugs._uslugify
 theme:
   name: material
   features:

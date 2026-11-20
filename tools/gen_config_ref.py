@@ -23,9 +23,30 @@ BLOCKLIST = {
     "confluxmap.config.player_marker.disabled_by_resource_pack",
 }
 
-# Tooltips that are dynamic format strings, not prose.
+# Enum-value labels (4-segment keys) and the 3-segment entry they belong to.
+# Names must match ConfigValueLabels.java; "Values:" lines render from these.
+ENUM_PARENTS = {
+    "confluxmap.config.shape.circle": "confluxmap.config.minimap.shape",
+    "confluxmap.config.shape.square": "confluxmap.config.minimap.shape",
+    "confluxmap.config.layer_override.auto": "confluxmap.config.layers.override",
+    "confluxmap.config.layer_override.force_surface": "confluxmap.config.layers.override",
+    "confluxmap.config.layer_override.force_underground": "confluxmap.config.layers.override",
+    "confluxmap.config.layer_override.force_slice": "confluxmap.config.layers.override",
+    "confluxmap.config.prediction.mode.everywhere": "confluxmap.config.prediction.view_mode",
+    "confluxmap.config.prediction.mode.generated_only": "confluxmap.config.prediction.view_mode",
+    "confluxmap.config.prediction.mode.visited_only": "confluxmap.config.prediction.view_mode",
+}
+
+# 4-segment keys that are real per-object entries, not enum values: the parent
+# prefix names a family of sibling settings sharing one tooltip.
+SUB_ENTRIES = {
+    "confluxmap.config.portals.icon_texture",
+}
+
+# Tooltips that are dynamic format strings, not prose. zoom_limit's tooltip
+# lives only on the unmerged 26.3 branch (master-half1); kept as a guard for
+# when that branch merges.
 SKIP_TOOLTIPS = {
-    # "Original limit (100%%): %s\nCurrent limit: %s"
     "confluxmap.config.map.zoom_limit.tooltip",
 }
 
@@ -58,9 +79,16 @@ def strip_label(label: str) -> str:
 
 def is_entry(key: str, blocklist: set) -> bool:
     rest = key.removeprefix(PREFIX)
-    if key == rest or rest.count(".") != 1:
+    if key == rest or key in blocklist or key in ENUM_PARENTS:
         return False
-    return key not in blocklist
+    if rest.count(".") == 1:
+        return True
+    if rest.count(".") == 2:
+        if rest.endswith(".tooltip"):
+            return False
+        parent = rest.rsplit(".", 1)[0]
+        return PREFIX + parent in SUB_ENTRIES
+    return False
 
 
 def collect_entries(lang: dict) -> dict:
@@ -68,13 +96,32 @@ def collect_entries(lang: dict) -> dict:
     for key in lang:
         if not is_entry(key, BLOCKLIST):
             continue
-        _prefix, group, name = key.rsplit(".", 2)
-        tooltip_key = key + ".tooltip"
+        rest = key.removeprefix(PREFIX)
+        if rest.count(".") == 1:
+            group, name = rest.split(".")
+            tooltip_key = key + ".tooltip"
+        else:
+            # SUB_ENTRIES member: group is the first segment, tooltip lives
+            # on the 3-segment family prefix.
+            group, name = rest.split(".", 1)
+            tooltip_key = PREFIX + rest.rsplit(".", 1)[0] + ".tooltip"
         tooltip = "" if tooltip_key in SKIP_TOOLTIPS else lang.get(tooltip_key, "")
-        entries.setdefault(group, []).append((name, strip_label(lang[key]), tooltip))
+        entries.setdefault(group, []).append(
+            [name, strip_label(lang[key]), tooltip]
+        )
+    by_parent = {}
+    for enum_key, parent in ENUM_PARENTS.items():
+        if enum_key in lang and parent in lang:
+            by_parent.setdefault(parent, []).append(lang[enum_key])
+    for parent, values in by_parent.items():
+        parent_group, parent_name = parent.removeprefix(PREFIX).split(".")
+        for item in entries.get(parent_group, ()):
+            if item[0] == parent_name:
+                joined = "Values: " + ", ".join(values) + "."
+                item[2] = (item[2] + " " if item[2] else "") + joined
     for group in entries:
         entries[group].sort()
-    return entries
+    return {g: [tuple(i) for i in items] for g, items in entries.items()}
 
 
 def _cell(text: str) -> str:

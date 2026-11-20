@@ -23,22 +23,13 @@ title: 配置参考
 | 界面过渡动画 | `confluxmap.config.interface.animations` | — |
 | 控件风格 | `confluxmap.config.interface.control_style` | — |
 
-## layer_override
-
-| Option | Key | Description |
-| --- | --- | --- |
-| 自动 | `confluxmap.config.layer_override.auto` | — |
-| 配置的固定高度 | `confluxmap.config.layer_override.force_slice` | — |
-| 地表 | `confluxmap.config.layer_override.force_surface` | — |
-| 主世界洞穴 / 下界顶层 | `confluxmap.config.layer_override.force_underground` | — |
-
 ## layers
 
 | Option | Key | Description |
 | --- | --- | --- |
 | 洞穴固定高度 | `confluxmap.config.layers.cave_slice_y` | — |
 | 下界固定高度 | `confluxmap.config.layers.nether_slice_y` | — |
-| 地图图层 | `confluxmap.config.layers.override` | — |
+| 地图图层 | `confluxmap.config.layers.override` | Values: 自动, 地表, 主世界洞穴 / 下界顶层, 配置的固定高度. |
 
 ## map
 
@@ -60,7 +51,7 @@ title: 配置参考
 | 自动避让 HUD | `confluxmap.config.minimap.hud_avoidance` | — |
 | 调整小地图位置…… | `confluxmap.config.minimap.position` | — |
 | 跟随视角旋转 | `confluxmap.config.minimap.rotate` | — |
-| 形状 | `confluxmap.config.minimap.shape` | — |
+| 形状 | `confluxmap.config.minimap.shape` | Values: 圆形, 方形. |
 | 显示生物群系 | `confluxmap.config.minimap.show_biome` | — |
 | 显示坐标 | `confluxmap.config.minimap.show_coordinates` | — |
 | 显示图层标签 | `confluxmap.config.minimap.show_layer_label` | — |
@@ -102,6 +93,9 @@ title: 配置参考
 | 缩放到 %s 以下时隐藏传送门图标 | `confluxmap.config.portals.icon_detail_limit` | — |
 | 传送门图标不透明度 | `confluxmap.config.portals.icon_opacity` | — |
 | 传送门图标大小 | `confluxmap.config.portals.icon_size` | — |
+| 末地传送门图标 | `confluxmap.config.portals.icon_texture.end` | 自定义图标纹理的资源路径，例如 minecraft:textures/block/crying_obsidian.png（命名空间可省略）。留空使用内置图标；纹理不存在时回退为内置图标。 |
+| 末地折跃门图标 | `confluxmap.config.portals.icon_texture.gateway` | 自定义图标纹理的资源路径，例如 minecraft:textures/block/crying_obsidian.png（命名空间可省略）。留空使用内置图标；纹理不存在时回退为内置图标。 |
+| 下界传送门图标 | `confluxmap.config.portals.icon_texture.nether` | 自定义图标纹理的资源路径，例如 minecraft:textures/block/crying_obsidian.png（命名空间可省略）。留空使用内置图标；纹理不存在时回退为内置图标。 |
 | 传送门图标 | `confluxmap.config.portals.show_icons` | — |
 
 ## prediction
@@ -115,7 +109,7 @@ title: 配置参考
 | 使用服务器地图改善补全 | `confluxmap.config.prediction.network_sync` | — |
 | 显示可能存在的结构 | `confluxmap.config.prediction.show_structures` | — |
 | 缩放到 %s 以下时隐藏结构图标 | `confluxmap.config.prediction.structure_icon_detail_limit` | — |
-| 补全显示范围 | `confluxmap.config.prediction.view_mode` | — |
+| 补全显示范围 | `confluxmap.config.prediction.view_mode` | Values: 全部区域, 仅已生成区域, 关闭（仅已探索区域）. |
 
 ## radar
 
@@ -135,13 +129,6 @@ title: 配置参考
 | 显示友善生物 | `confluxmap.config.radar.show_passive` | — |
 | 显示玩家名称 | `confluxmap.config.radar.show_player_names` | — |
 | 显示玩家 | `confluxmap.config.radar.show_players` | — |
-
-## shape
-
-| Option | Key | Description |
-| --- | --- | --- |
-| 圆形 | `confluxmap.config.shape.circle` | — |
-| 方形 | `confluxmap.config.shape.square` | — |
 
 ## waypoints
 

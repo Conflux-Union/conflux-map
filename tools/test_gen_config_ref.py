@@ -71,6 +71,30 @@ class CollectEntriesTest(unittest.TestCase):
             entries["map"], [("zoom_limit", "Zoom Limit", "")]
         )
 
+    def test_enum_values_attach_to_parent_entry(self):
+        lang = {
+            "confluxmap.config.minimap.shape": "Shape: %s",
+            "confluxmap.config.shape.circle": "Circle",
+            "confluxmap.config.shape.square": "Square",
+        }
+        entries = collect_entries(lang)
+        self.assertEqual(sorted(entries), ["minimap"])
+        self.assertNotIn("shape", entries)
+        self.assertEqual(
+            entries["minimap"], [("shape", "Shape", "Values: Circle, Square.")]
+        )
+
+    def test_sub_entries_render_as_entries_with_shared_tooltip(self):
+        lang = {
+            "confluxmap.config.portals.icon_texture.end": "End Portal Icon",
+            "confluxmap.config.portals.icon_texture.tooltip": "Custom texture.",
+        }
+        entries = collect_entries(lang)
+        self.assertEqual(
+            entries["portals"],
+            [("icon_texture.end", "End Portal Icon", "Custom texture.")],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

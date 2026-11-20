@@ -23,22 +23,13 @@ Every option below is available in the in-game settings screen (`Mod Menu → Co
 | Interface Animations | `confluxmap.config.interface.animations` | — |
 | Control Style | `confluxmap.config.interface.control_style` | — |
 
-## layer_override
-
-| Option | Key | Description |
-| --- | --- | --- |
-| Auto | `confluxmap.config.layer_override.auto` | — |
-| Configured Fixed Height | `confluxmap.config.layer_override.force_slice` | — |
-| Surface | `confluxmap.config.layer_override.force_surface` | — |
-| Overworld Cave / Nether Roof | `confluxmap.config.layer_override.force_underground` | — |
-
 ## layers
 
 | Option | Key | Description |
 | --- | --- | --- |
 | Fixed Cave Height | `confluxmap.config.layers.cave_slice_y` | — |
 | Fixed Nether Height | `confluxmap.config.layers.nether_slice_y` | — |
-| Map Layer | `confluxmap.config.layers.override` | — |
+| Map Layer | `confluxmap.config.layers.override` | Values: Auto, Surface, Overworld Cave / Nether Roof, Configured Fixed Height. |
 
 ## map
 
@@ -60,7 +51,7 @@ Every option below is available in the in-game settings screen (`Mod Menu → Co
 | Avoid HUD Overlap | `confluxmap.config.minimap.hud_avoidance` | — |
 | Adjust Minimap Position... | `confluxmap.config.minimap.position` | — |
 | Rotate With Player | `confluxmap.config.minimap.rotate` | — |
-| Shape | `confluxmap.config.minimap.shape` | — |
+| Shape | `confluxmap.config.minimap.shape` | Values: Circle, Square. |
 | Show Biome | `confluxmap.config.minimap.show_biome` | — |
 | Show Coordinates | `confluxmap.config.minimap.show_coordinates` | — |
 | Show Layer Label | `confluxmap.config.minimap.show_layer_label` | — |
@@ -102,6 +93,9 @@ Every option below is available in the in-game settings screen (`Mod Menu → Co
 | Hide Portal Icons Below Zoom | `confluxmap.config.portals.icon_detail_limit` | — |
 | Portal Icon Opacity | `confluxmap.config.portals.icon_opacity` | — |
 | Portal Icon Size | `confluxmap.config.portals.icon_size` | — |
+| End Portal Icon | `confluxmap.config.portals.icon_texture.end` | Custom icon texture as a resource location, e.g. minecraft:textures/block/crying_obsidian.png (namespace optional). Leave empty for the built-in icon; a texture no loaded pack provides falls back to the built-in one. |
+| End Gateway Icon | `confluxmap.config.portals.icon_texture.gateway` | Custom icon texture as a resource location, e.g. minecraft:textures/block/crying_obsidian.png (namespace optional). Leave empty for the built-in icon; a texture no loaded pack provides falls back to the built-in one. |
+| Nether Portal Icon | `confluxmap.config.portals.icon_texture.nether` | Custom icon texture as a resource location, e.g. minecraft:textures/block/crying_obsidian.png (namespace optional). Leave empty for the built-in icon; a texture no loaded pack provides falls back to the built-in one. |
 | Portal Icons | `confluxmap.config.portals.show_icons` | — |
 
 ## prediction
@@ -115,7 +109,7 @@ Every option below is available in the in-game settings screen (`Mod Menu → Co
 | Improve Autofill with Server Map | `confluxmap.config.prediction.network_sync` | — |
 | Show Possible Structures | `confluxmap.config.prediction.show_structures` | — |
 | Hide Structure Icons Below Zoom | `confluxmap.config.prediction.structure_icon_detail_limit` | — |
-| Autofill Area | `confluxmap.config.prediction.view_mode` | — |
+| Autofill Area | `confluxmap.config.prediction.view_mode` | Values: Everywhere, Generated Only, Off (Explored Only). |
 
 ## radar
 
@@ -135,13 +129,6 @@ Every option below is available in the in-game settings screen (`Mod Menu → Co
 | Show Friendly Mobs | `confluxmap.config.radar.show_passive` | — |
 | Show Player Names | `confluxmap.config.radar.show_player_names` | — |
 | Show Players | `confluxmap.config.radar.show_players` | — |
-
-## shape
-
-| Option | Key | Description |
-| --- | --- | --- |
-| Circle | `confluxmap.config.shape.circle` | — |
-| Square | `confluxmap.config.shape.square` | — |
 
 ## waypoints
 

@@ -12,7 +12,7 @@ chunk load-level map.
 
 **Which Minecraft versions are supported?**
 One build per version line from 1.17.1 through 26.3 — see the
-[supported versions table](getting-started/install.md#supported-versions).
+[supported versions table](getting-started/install.md#Supported-versions).
 Paper servers are supported from 1.21.1 onward via the standalone plugin.
 
 **Is MaliLib required?**
