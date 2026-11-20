@@ -82,6 +82,7 @@ public final class SharedWaypointCodec {
                 writeWaypointType(out, m.type());
                 writeMarkerStyle(out, negotiatedMinor, m.iconItemId(), m.markerLabel());
                 writeNewWaypointGroup(out, negotiatedMinor, m.groupId());
+                writeWaypointNotes(out, negotiatedMinor, m.description(), m.imageId());
             } else if (message instanceof final DeleteC2S m) {
                 s2c = false;
                 out.writeByte(SharedWaypointProto.MSG_DELETE_C2S);
@@ -108,6 +109,7 @@ public final class SharedWaypointCodec {
                 writeWaypointType(out, m.type());
                 writeMarkerStyle(out, negotiatedMinor, m.iconItemId(), m.markerLabel());
                 writeUpdatedWaypointGroup(out, negotiatedMinor, m.groupId(), m.groupSpecified());
+                writeWaypointNotes(out, negotiatedMinor, m.description(), m.imageId());
             } else if (message instanceof final GroupCreateC2S m) {
                 s2c = false;
                 requireGroupMutationSupport(negotiatedMinor);
@@ -274,34 +276,52 @@ public final class SharedWaypointCodec {
                 case SharedWaypointProto.MSG_HELLO_C2S -> new HelloC2S(in.readInt(), in.readInt());
                 case SharedWaypointProto.MSG_STATUS_S2C -> readStatus(in);
                 case SharedWaypointProto.MSG_SUBSCRIBE_C2S -> new SubscribeC2S();
-                case SharedWaypointProto.MSG_CREATE_C2S -> new CreateC2S(
-                    readUuid(in),
-                    in.readLong(),
-                    readUtf(in, "name"),
-                    readDimension(in),
-                    readFiniteDouble(in, "x"),
-                    readFiniteDouble(in, "y"),
-                    readFiniteDouble(in, "z"),
-                    in.readInt(),
-                    readWaypointType(in),
-                    readIconItemId(in, negotiatedMinor),
-                    readMarkerLabel(in, negotiatedMinor),
-                    readNewWaypointGroup(in, negotiatedMinor)
-                );
+                case SharedWaypointProto.MSG_CREATE_C2S -> {
+                    final UUID operationId = readUuid(in);
+                    final long expectedRevision = in.readLong();
+                    final String name = readUtf(in, "name");
+                    final DimensionId dimensionId = readDimension(in);
+                    final double x = readFiniteDouble(in, "x");
+                    final double y = readFiniteDouble(in, "y");
+                    final double z = readFiniteDouble(in, "z");
+                    final int color = in.readInt();
+                    final Waypoint.Type type = readWaypointType(in);
+                    final String iconItemId = readIconItemId(in, negotiatedMinor);
+                    final String markerLabel = readMarkerLabel(in, negotiatedMinor);
+                    final UUID groupId = readNewWaypointGroup(in, negotiatedMinor);
+                    yield new CreateC2S(
+                        operationId, expectedRevision, name, dimensionId, x, y, z, color, type,
+                        iconItemId, markerLabel,
+                        readDescription(in, negotiatedMinor), readImageId(in, negotiatedMinor), groupId
+                    );
+                }
                 case SharedWaypointProto.MSG_DELETE_C2S -> new DeleteC2S(
                     readUuid(in), readUuid(in), in.readLong()
                 );
                 case SharedWaypointProto.MSG_LOCK_C2S -> new LockC2S(
                     readUuid(in), readUuid(in), in.readLong(), readBoolean(in, "locked")
                 );
-                case SharedWaypointProto.MSG_UPDATE_C2S -> new UpdateC2S(
-                    readUuid(in), readUuid(in), in.readLong(), readUtf(in, "name"),
-                    readDimension(in), readFiniteDouble(in, "x"), readFiniteDouble(in, "y"),
-                    readFiniteDouble(in, "z"), in.readInt(), readWaypointType(in),
-                    readIconItemId(in, negotiatedMinor), readMarkerLabel(in, negotiatedMinor),
-                    readUpdatedWaypointGroup(in, negotiatedMinor), negotiatedMinor
-                        >= SharedWaypointProto.PROTO_MINOR_BATCH_MOVE
-                );
+                case SharedWaypointProto.MSG_UPDATE_C2S -> {
+                    final UUID operationId = readUuid(in);
+                    final UUID id = readUuid(in);
+                    final long expectedRevision = in.readLong();
+                    final String name = readUtf(in, "name");
+                    final DimensionId dimensionId = readDimension(in);
+                    final double x = readFiniteDouble(in, "x");
+                    final double y = readFiniteDouble(in, "y");
+                    final double z = readFiniteDouble(in, "z");
+                    final int color = in.readInt();
+                    final Waypoint.Type type = readWaypointType(in);
+                    final String iconItemId = readIconItemId(in, negotiatedMinor);
+                    final String markerLabel = readMarkerLabel(in, negotiatedMinor);
+                    final UUID groupId = readUpdatedWaypointGroup(in, negotiatedMinor);
+                    yield new UpdateC2S(
+                        operationId, id, expectedRevision, name, dimensionId, x, y, z, color, type,
+                        iconItemId, markerLabel,
+                        readDescription(in, negotiatedMinor), readImageId(in, negotiatedMinor),
+                        groupId, negotiatedMinor >= SharedWaypointProto.PROTO_MINOR_BATCH_MOVE
+                    );
+                }
                 case SharedWaypointProto.MSG_SNAPSHOT_S2C -> new SnapshotS2C(
                     in.readLong(), readBoolean(in, "operator"), readSnapshot(in, negotiatedMinor),
                     negotiatedMinor >= 4 ? readGroups(in) : List.<SharedWaypointGroup>of()
@@ -440,6 +460,7 @@ public final class SharedWaypointCodec {
         out.writeLong(waypoint.revision());
         writeMarkerStyle(out, negotiatedMinor, waypoint.iconItemId(), waypoint.markerLabel());
         writeWaypointGroup(out, negotiatedMinor, waypoint.groupId());
+        writeWaypointNotes(out, negotiatedMinor, waypoint.description(), waypoint.imageId());
     }
 
     private static SharedWaypoint readWaypoint(
@@ -460,10 +481,14 @@ public final class SharedWaypointCodec {
         readBoolean(in, "legacyLocked");
         final long createdAtEpochMs = in.readLong();
         final long revision = in.readLong();
+        final String iconItemId = readIconItemId(in, negotiatedMinor);
+        final String markerLabel = readMarkerLabel(in, negotiatedMinor);
+        final UUID groupId = readWaypointGroup(in, negotiatedMinor);
         return new SharedWaypoint(
             id, publisherId, publisherName, name, dimensionId, x, y, z,
-            color, type, readIconItemId(in, negotiatedMinor), readMarkerLabel(in, negotiatedMinor),
-            createdAtEpochMs, revision, readWaypointGroup(in, negotiatedMinor)
+            color, type, iconItemId, markerLabel,
+            readDescription(in, negotiatedMinor), readImageId(in, negotiatedMinor),
+            createdAtEpochMs, revision, groupId
         );
     }
 
@@ -671,6 +696,34 @@ public final class SharedWaypointCodec {
         }
     }
 
+    /** Description and preview-image reference, appended last so minor-6 frames keep their exact bytes. */
+    private static void writeWaypointNotes(
+        final DataOutputStream out,
+        final int negotiatedMinor,
+        final String description,
+        final String imageId
+    ) throws IOException, SharedWaypointProtocolException {
+        if (negotiatedMinor < SharedWaypointProto.PROTO_MINOR_WAYPOINT_DESCRIPTION) {
+            return;
+        }
+        writeUtf(out, description, "description", SharedWaypointProto.MAX_DESCRIPTION_UTF8_BYTES);
+        writeUtf(out, imageId, "imageId");
+    }
+
+    private static String readDescription(final DataInputStream in, final int negotiatedMinor)
+        throws IOException, SharedWaypointProtocolException {
+        return negotiatedMinor >= SharedWaypointProto.PROTO_MINOR_WAYPOINT_DESCRIPTION
+            ? readUtf(in, "description", SharedWaypointProto.MAX_DESCRIPTION_UTF8_BYTES)
+            : "";
+    }
+
+    private static String readImageId(final DataInputStream in, final int negotiatedMinor)
+        throws IOException, SharedWaypointProtocolException {
+        return negotiatedMinor >= SharedWaypointProto.PROTO_MINOR_WAYPOINT_DESCRIPTION
+            ? readUtf(in, "imageId")
+            : "";
+    }
+
     private static String readIconItemId(
         final DataInputStream in,
         final int negotiatedMinor
@@ -784,6 +837,15 @@ public final class SharedWaypointCodec {
         final String value,
         final String field
     ) throws IOException, SharedWaypointProtocolException {
+        writeUtf(out, value, field, SharedWaypointProto.MAX_UTF8_BYTES);
+    }
+
+    private static void writeUtf(
+        final DataOutputStream out,
+        final String value,
+        final String field,
+        final int maxBytes
+    ) throws IOException, SharedWaypointProtocolException {
         if (value == null) {
             throw new SharedWaypointProtocolException("null " + field);
         }
@@ -798,10 +860,9 @@ public final class SharedWaypointCodec {
         } catch (final CharacterCodingException e) {
             throw new SharedWaypointProtocolException("invalid Unicode in " + field, e);
         }
-        if (bytes.length > SharedWaypointProto.MAX_UTF8_BYTES) {
+        if (bytes.length > maxBytes) {
             throw new SharedWaypointProtocolException(
-                field + " UTF-8 length " + bytes.length + " above cap "
-                    + SharedWaypointProto.MAX_UTF8_BYTES
+                field + " UTF-8 length " + bytes.length + " above cap " + maxBytes
             );
         }
         out.writeShort(bytes.length);
@@ -810,11 +871,19 @@ public final class SharedWaypointCodec {
 
     private static String readUtf(final DataInputStream in, final String field)
         throws IOException, SharedWaypointProtocolException {
+        return readUtf(in, field, SharedWaypointProto.MAX_UTF8_BYTES);
+    }
+
+    private static String readUtf(
+        final DataInputStream in,
+        final String field,
+        final int maxBytes
+    )
+        throws IOException, SharedWaypointProtocolException {
         final int length = in.readUnsignedShort();
-        if (length > SharedWaypointProto.MAX_UTF8_BYTES) {
+        if (length > maxBytes) {
             throw new SharedWaypointProtocolException(
-                field + " UTF-8 length " + length + " above cap "
-                    + SharedWaypointProto.MAX_UTF8_BYTES
+                field + " UTF-8 length " + length + " above cap " + maxBytes
             );
         }
         final byte[] bytes = new byte[length];

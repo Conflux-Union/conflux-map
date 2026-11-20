@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.paper;
 
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointCodec;
+import cn.net.rms.confluxmap.core.net.shared.SharedWaypointFraming;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointMessage;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProtocolException;
@@ -73,6 +74,19 @@ final class PaperSharedWaypointNetworking implements PluginMessageListener {
 
     void disconnect(final UUID playerId) {
         sessions.disconnect(playerId);
+    }
+
+    /** Session view for companion channels that share the waypoints trust domain. */
+    boolean isMuted(final UUID playerId) {
+        return sessions.isMuted(playerId);
+    }
+
+    int negotiatedMinor(final UUID playerId) {
+        return sessions.negotiatedMinor(playerId);
+    }
+
+    SharedWaypointSessionHandler.MalformedOutcome recordMalformed(final UUID playerId) {
+        return sessions.recordMalformed(playerId);
     }
 
     void featureStateChanged() {
@@ -177,20 +191,24 @@ final class PaperSharedWaypointNetworking implements PluginMessageListener {
     }
 
     private void send(final Player player, final SharedWaypointMessage message) {
+        final byte[] payload;
         try {
-            messages.send(
-                PaperPluginMessageDispatcher.recipient(plugin, player),
-                CHANNEL,
-                SharedWaypointCodec.encode(
-                    message,
-                    sessions.negotiatedMinor(player.getUniqueId())
-                )
+            payload = SharedWaypointCodec.encode(
+                message,
+                sessions.negotiatedMinor(player.getUniqueId())
             );
         } catch (final SharedWaypointProtocolException | RuntimeException e) {
             plugin.getSLF4JLogger().error(
                 "Failed to encode {} for {}",
                 message.getClass().getSimpleName(), player.getName(), e
             );
+            return;
+        }
+        final var recipient = PaperPluginMessageDispatcher.recipient(plugin, player);
+        for (final byte[] frame : SharedWaypointFraming.outgoing(
+            payload, sessions.negotiatedMinor(player.getUniqueId())
+        )) {
+            messages.send(recipient, CHANNEL, frame);
         }
     }
 }

@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.net.image.WaypointImageProto;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
 import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointService;
@@ -89,6 +90,12 @@ public final class ServerConfig {
     public int maxSharedWaypointsPerPlayer = 64;
     /** Per-player shared-waypoint mutation rate; a small burst is allowed. */
     public int sharedWaypointMutationsPerMinute = 30;
+    /** Total waypoint-image bytes retained for one world. */
+    public int maxWaypointImageBytesPerWorld = 2 * 1024 * 1024;
+    /** Total waypoint-image bytes retained per player within one world. */
+    public int maxWaypointImageBytesPerPlayer = 512 * 1024;
+    /** Per-player whole-image upload rate; fetches are fixed at 60/min. */
+    public int waypointImageUploadsPerMinute = 10;
     /** One MAP_VIEW_REQ carries at most this many tiles. */
     public int maxTilesPerRequest = Proto.DEFAULT_MAX_TILES_PER_REQ;
     /** Per-player cap on tiles queued for paced delivery; defaults to one full subscribed viewport. */
@@ -143,6 +150,17 @@ public final class ServerConfig {
         );
         maxSharedWaypointsPerPlayer = clamp(maxSharedWaypointsPerPlayer, 1, maxSharedWaypointsPerWorld);
         sharedWaypointMutationsPerMinute = clamp(sharedWaypointMutationsPerMinute, 1, 6_000);
+        maxWaypointImageBytesPerWorld = clamp(
+            maxWaypointImageBytesPerWorld,
+            WaypointImageProto.MAX_IMAGE_BYTES,
+            64 * 1024 * 1024
+        );
+        maxWaypointImageBytesPerPlayer = clamp(
+            maxWaypointImageBytesPerPlayer,
+            WaypointImageProto.MAX_IMAGE_BYTES,
+            maxWaypointImageBytesPerWorld
+        );
+        waypointImageUploadsPerMinute = clamp(waypointImageUploadsPerMinute, 1, 600);
     }
 
     public SharedWaypointService.AccessPolicy sharedWaypointAccessPolicy() {

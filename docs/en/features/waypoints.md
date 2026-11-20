@@ -22,6 +22,11 @@ title: Waypoints
   imported with one click.
 - Waypoints can be imported from Xaero's Minimap and VoxelMap with one
   click; duplicates are skipped and the original files remain unchanged.
+- Each waypoint can carry multi-line notes and a preview image. Notes are
+  edited in a dedicated screen with built-in templates; the image comes from
+  an in-game screenshot or a clipboard paste. On servers with the companion,
+  notes and images are shared with other players, and the fullscreen map
+  shows them in a hover card (thumbnail plus the first six lines).
 
 See also: [Shared waypoints](shared-waypoints.md),
 [Portal markers](portal-markers.md), [Keybinds](../reference/keybinds.md)

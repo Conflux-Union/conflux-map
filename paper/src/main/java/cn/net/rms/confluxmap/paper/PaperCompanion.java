@@ -142,6 +142,7 @@ final class PaperCompanion implements Listener {
     private SharedWaypointService sharedWaypoints;
     private PaperNetworking networking;
     private PaperSharedWaypointNetworking sharedNetworking;
+    private PaperWaypointImageNetworking imageNetworking;
     private PaperPluginMessageDispatcher pluginMessages;
     private BukkitTask tickTask;
     private WebMapServer webMap;
@@ -223,8 +224,10 @@ final class PaperCompanion implements Listener {
         pluginMessages = new PaperPluginMessageDispatcher();
         networking = new PaperNetworking(plugin, this, pluginMessages);
         sharedNetworking = new PaperSharedWaypointNetworking(plugin, this, pluginMessages);
+        imageNetworking = new PaperWaypointImageNetworking(plugin, this, sharedNetworking, pluginMessages);
         networking.register();
         sharedNetworking.register();
+        imageNetworking.register();
         Bukkit.getPluginManager().registerEvents(this, plugin);
         for (final PaperWorldDirectory.Entry entry : worlds.entries()) {
             plugin.getSLF4JLogger().info(
@@ -277,6 +280,9 @@ final class PaperCompanion implements Listener {
         }
         if (sharedNetworking != null) {
             sharedNetworking.unregister();
+        }
+        if (imageNetworking != null) {
+            imageNetworking.unregister();
         }
         if (pluginMessages != null) {
             pluginMessages.clear();
@@ -524,6 +530,7 @@ final class PaperCompanion implements Listener {
             chunkLoadStates.tick();
         }
         sharedNetworking.tick();
+        imageNetworking.tick();
         if (playerPositionBroadcast.tick(config.allowEntityRadar)) {
             networking.broadcastPlayerPositions();
         }

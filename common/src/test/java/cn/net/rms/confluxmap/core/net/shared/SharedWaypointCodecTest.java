@@ -28,6 +28,99 @@ class SharedWaypointCodecTest {
     private static final UUID WAYPOINT_ID = UUID.fromString("12345678-1234-5678-9abc-def012345678");
     private static final UUID PUBLISHER_ID = UUID.fromString("fedcba98-7654-3210-fedc-ba9876543210");
     private static final UUID GROUP_ID = UUID.fromString("0f0e0d0c-0b0a-4909-8877-665544332211");
+    private static final String IMAGE_ID = "0123abcd-4567-789a-bcde-f0123456789a";
+
+    @Test
+    void descriptionsAndImageIdsRoundTripAtMinorSevenAndVanishBelowIt() throws Exception {
+        final CreateC2S notedCreate = new CreateC2S(
+            OPERATION_ID, 41L, "Village", DimensionId.NETHER, 1.25, -64.0, 99.5,
+            0xFF12AB34, Waypoint.Type.NORMAL, "minecraft:diamond", "V",
+            "产物:\n钻石 ×3", IMAGE_ID, GROUP_ID
+        );
+        final CreateC2S plainCreate = new CreateC2S(
+            OPERATION_ID, 41L, "Village", DimensionId.NETHER, 1.25, -64.0, 99.5,
+            0xFF12AB34, Waypoint.Type.NORMAL, "minecraft:diamond", "V", GROUP_ID
+        );
+
+        assertEquals(notedCreate, SharedWaypointCodec.decodeC2S(SharedWaypointCodec.encode(notedCreate, 7), 7));
+        assertArrayEquals(
+            SharedWaypointCodec.encode(plainCreate, 6),
+            SharedWaypointCodec.encode(notedCreate, 6)
+        );
+        final CreateC2S legacyCreate = (CreateC2S) SharedWaypointCodec.decodeC2S(
+            SharedWaypointCodec.encode(notedCreate, 6), 6
+        );
+        assertEquals("", legacyCreate.description());
+        assertEquals("", legacyCreate.imageId());
+
+        final SharedWaypoint notedWaypoint = new SharedWaypoint(
+            WAYPOINT_ID, PUBLISHER_ID, "Builder", "Spawn", DimensionId.OVERWORLD,
+            12.5, -4.25, 88.0, 0xFFAABBCC, Waypoint.Type.NORMAL,
+            "minecraft:compass", "S", "产物:\n钻石 ×3", IMAGE_ID,
+            1_721_555_200_000L, 41L, GROUP_ID
+        );
+        final UpsertS2C upsert = new UpsertS2C(42L, notedWaypoint);
+        assertEquals(upsert, SharedWaypointCodec.decodeS2C(SharedWaypointCodec.encode(upsert, 7), 7));
+        final SharedWaypoint legacyWaypoint = ((UpsertS2C) SharedWaypointCodec.decodeS2C(
+            SharedWaypointCodec.encode(upsert, 6), 6
+        )).waypoint();
+        assertEquals("", legacyWaypoint.description());
+        assertEquals("", legacyWaypoint.imageId());
+
+        final SnapshotS2C snapshot = new SnapshotS2C(43L, true, List.of(notedWaypoint));
+        assertEquals(
+            snapshot,
+            SharedWaypointCodec.decodeS2C(SharedWaypointCodec.encode(snapshot, 7), 7)
+        );
+    }
+
+    @Test
+    void createAndUpdateRejectDescriptionsBeyondTheNormalizedCap() {
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new CreateC2S(
+                OPERATION_ID, 41L, "Village", DimensionId.NETHER, 1.25, -64.0, 99.5,
+                0xFF12AB34, Waypoint.Type.NORMAL, "minecraft:diamond", "V",
+                "a".repeat(513), "", GROUP_ID
+            )
+        );
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new UpdateC2S(
+                OPERATION_ID, WAYPOINT_ID, 40L, "Updated", DimensionId.END,
+                8d, 70d, 9d, 0xFF3498DB, Waypoint.Type.NORMAL, "minecraft:diamond", "V",
+                "a".repeat(513), "", null, true
+            )
+        );
+    }
+
+    @Test
+    void descriptionLengthPrefixAboveTheWireCapIsRejectedOnDecode() throws IOException {
+        final ByteArrayOutputStream raw = new ByteArrayOutputStream();
+        final DataOutputStream out = new DataOutputStream(raw);
+        out.writeByte(SharedWaypointProto.MSG_UPSERT_S2C);
+        out.writeLong(42L);
+        writeUuid(out, WAYPOINT_ID);
+        writeUuid(out, PUBLISHER_ID);
+        out.writeShort(0);
+        out.writeShort(0);
+        out.writeShort(0);
+        out.writeDouble(0);
+        out.writeDouble(0);
+        out.writeDouble(0);
+        out.writeInt(0);
+        out.writeByte(0);
+        out.writeByte(0);
+        out.writeLong(1L);
+        out.writeLong(1L);
+        out.writeShort(0);
+        out.writeShort(0);
+        out.writeByte(0);
+        out.writeShort(SharedWaypointProto.MAX_DESCRIPTION_UTF8_BYTES + 1);
+        assertThrows(SharedWaypointProtocolException.class,
+            () -> SharedWaypointCodec.decodeS2C(raw.toByteArray(), 7));
+    }
+
 
     @Test
     void everyMessageTypeRoundTrips() throws SharedWaypointProtocolException {

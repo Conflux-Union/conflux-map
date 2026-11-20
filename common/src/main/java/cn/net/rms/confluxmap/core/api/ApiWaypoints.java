@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import cn.net.rms.confluxmap.core.waypoint.WaypointDescription;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
 import java.util.List;
@@ -90,6 +91,16 @@ final class ApiWaypoints implements WaypointApi {
             waypoint.crossDimensionVisible = edit.crossDimensionVisible() != null && edit.crossDimensionVisible();
             waypoint.iconItemId = edit.iconItemId() == null ? "" : edit.iconItemId();
             waypoint.markerLabel = edit.markerLabel() == null ? "" : edit.markerLabel();
+            final String description;
+            final String imageId;
+            try {
+                description = WaypointDescription.normalize(edit.description());
+                imageId = WaypointDescription.normalizeImageId(edit.imageId());
+            } catch (final IllegalArgumentException e) {
+                return new WaypointMutation(WaypointMutation.Result.INVALID, null);
+            }
+            waypoint.description = description;
+            waypoint.imageId = imageId;
             store.add(waypoint);
             return new WaypointMutation(WaypointMutation.Result.APPLIED, ApiMappers.toApi(waypoint));
         });
@@ -153,6 +164,20 @@ final class ApiWaypoints implements WaypointApi {
             }
             if (changes.markerLabel() != null) {
                 existing.markerLabel = changes.markerLabel();
+            }
+            if (changes.description() != null) {
+                try {
+                    existing.description = WaypointDescription.normalize(changes.description());
+                } catch (final IllegalArgumentException e) {
+                    return new WaypointMutation(WaypointMutation.Result.INVALID, null);
+                }
+            }
+            if (changes.imageId() != null) {
+                try {
+                    existing.imageId = WaypointDescription.normalizeImageId(changes.imageId());
+                } catch (final IllegalArgumentException e) {
+                    return new WaypointMutation(WaypointMutation.Result.INVALID, null);
+                }
             }
             store.update(existing);
             return new WaypointMutation(WaypointMutation.Result.APPLIED, ApiMappers.toApi(existing));

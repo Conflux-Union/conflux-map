@@ -27,6 +27,8 @@ final class ApiMappers {
             fromCore(waypoint.type),
             waypoint.iconItemId,
             waypoint.markerLabel,
+            waypoint.description,
+            waypoint.imageId,
             waypoint.createdAtEpochMs
         );
     }

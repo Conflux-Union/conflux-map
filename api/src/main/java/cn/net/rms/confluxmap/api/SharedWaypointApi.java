@@ -37,6 +37,8 @@ public interface SharedWaypointApi {
         WaypointApi.WaypointType type,
         String iconItemId,
         String markerLabel,
+        String description,
+        String imageId,
         long createdAtEpochMs
     ) {
     }

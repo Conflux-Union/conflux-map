@@ -20,6 +20,8 @@ public record WaypointRenderEntry(
     int colorArgb,
     String iconItemId,
     String markerLabel,
+    String description,
+    String imageId,
     Waypoint.Type type,
     Source source,
     boolean crossDimensionVisible,
@@ -34,6 +36,8 @@ public record WaypointRenderEntry(
         Objects.requireNonNull(dimensionId, "dimensionId");
         iconItemId = iconItemId == null ? "" : iconItemId;
         markerLabel = markerLabel == null ? "" : markerLabel;
+        description = description == null ? "" : description;
+        imageId = imageId == null ? "" : imageId;
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(source, "source");
         originWorldLabel = originWorldLabel == null ? "" : originWorldLabel;
@@ -55,7 +59,7 @@ public record WaypointRenderEntry(
         final Waypoint.Type type,
         final Source source
     ) {
-        this(id, name, dimensionId, x, y, z, colorArgb, "", "", type, source, false);
+        this(id, name, dimensionId, x, y, z, colorArgb, "", "", "", "", type, source, false, "", null);
     }
 
     public WaypointRenderEntry(
@@ -71,8 +75,8 @@ public record WaypointRenderEntry(
         final boolean crossDimensionVisible
     ) {
         this(
-            id, name, dimensionId, x, y, z, colorArgb, "", "", type, source,
-            crossDimensionVisible
+            id, name, dimensionId, x, y, z, colorArgb, "", "", "", "", type, source,
+            crossDimensionVisible, "", null
         );
     }
 
@@ -91,8 +95,8 @@ public record WaypointRenderEntry(
         final boolean crossDimensionVisible
     ) {
         this(
-            id, name, dimensionId, x, y, z, colorArgb, iconItemId, markerLabel,
-            type, source, crossDimensionVisible, ""
+            id, name, dimensionId, x, y, z, colorArgb, iconItemId, markerLabel, "", "",
+            type, source, crossDimensionVisible, "", null
         );
     }
 
@@ -113,7 +117,7 @@ public record WaypointRenderEntry(
         final String originWorldLabel
     ) {
         this(
-            id, name, dimensionId, x, y, z, colorArgb, iconItemId, markerLabel,
+            id, name, dimensionId, x, y, z, colorArgb, iconItemId, markerLabel, "", "",
             type, source, crossDimensionVisible, originWorldLabel, null
         );
     }

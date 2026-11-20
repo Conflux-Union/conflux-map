@@ -250,7 +250,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final double NAME_LABEL_MAX_SCALE = 2.0;
     private static final double HOVER_RADIUS_PX = 6.0;
     private static final double DEFAULT_CREATE_Y = 64.0;
-    /** Cursor travel between left-press and left-release below which a hovered marker click edits it, not pans (see {@link #mouseReleased}). */
+
+/** Cursor travel between left-press and left-release below which a hovered marker click edits it, not pans (see {@link #mouseReleased}). */
     static final double CLICK_DRAG_TOLERANCE_PX = 4.0;
     /** Radar markers are ~12px across; cull with enough margin that one straddling the edge doesn't pop. */
     private static final float RADAR_CULL_MARGIN = 8f;
@@ -2990,6 +2991,15 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     );
                 }
             }
+        }
+
+        // Notes card is topmost: nearby markers and name labels must not cover it.
+        if (hovered != null
+            && (!hovered.description().isEmpty() || !hovered.imageId().isEmpty())) {
+            WaypointNotesCard.draw(
+                draw, this.textRenderer, hovered.description(), hovered.imageId(),
+                mouseX, mouseY, width, height
+            );
         }
     }
 

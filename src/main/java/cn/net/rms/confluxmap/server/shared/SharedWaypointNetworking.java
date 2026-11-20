@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.PlayNetworking;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointCodec;
+import cn.net.rms.confluxmap.core.net.shared.SharedWaypointFraming;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointMessage;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProtocolException;
@@ -164,6 +165,21 @@ public final class SharedWaypointNetworking {
         }
     }
 
+    /** Session view for companion channels that share the waypoints trust domain. */
+    public boolean isMuted(final UUID playerId) {
+        return sessions.isMuted(playerId);
+    }
+
+    /** Negotiated waypoints_v1 minor for one player, 0 when unknown. */
+    public int negotiatedMinor(final UUID playerId) {
+        return sessions.negotiatedMinor(playerId);
+    }
+
+    /** One malformed strike on the shared trust domain. */
+    public SharedWaypointSessionHandler.MalformedOutcome recordMalformed(final UUID playerId) {
+        return sessions.recordMalformed(playerId);
+    }
+
     /** Publishes a command-originated mutation to clients subscribed through the binary protocol. */
     public void onCommandMutation(
         final MinecraftServer server,
@@ -220,6 +236,9 @@ public final class SharedWaypointNetworking {
             );
             return;
         }
-        PlayNetworking.sendServer(player, CHANNEL, payload);
+        final int negotiatedMinor = sessions.negotiatedMinor(player.getUuid());
+        for (final byte[] frame : SharedWaypointFraming.outgoing(payload, negotiatedMinor)) {
+            PlayNetworking.sendServer(player, CHANNEL, frame);
+        }
     }
 }

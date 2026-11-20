@@ -81,6 +81,39 @@ final class WaypointRenderCatalogTest {
     }
 
     @Test
+    void renderEntriesCarryDescriptionAndImageIdFromLocalAndSiblingWaypoints() {
+        final Waypoint local = local("Home", true);
+        local.description = "产物:\n钻石 ×3";
+        local.imageId = "0123abcd-4567-789a-bcde-f0123456789a";
+        final Waypoint siblingWaypoint = local("Twin", true);
+        siblingWaypoint.description = "Twin notes";
+        // Distinct block even after the Overworld→Nether /8 conversion, so the
+        // rendered-block collapse keeps both entries.
+        siblingWaypoint.x = 16.0;
+        siblingWaypoint.z = 12.0;
+        local.crossDimensionVisible = true;
+        siblingWaypoint.crossDimensionVisible = true;
+        final List<WaypointRenderEntry> entries = WaypointRenderCatalog.merge(
+            List.of(local), List.of(),
+            List.of(new SiblingWaypoint(siblingWaypoint, "Twin world")),
+            true, true, id -> false
+        );
+
+        assertEquals(2, entries.size());
+        assertEquals("产物:\n钻石 ×3", entries.get(0).description());
+        assertEquals("0123abcd-4567-789a-bcde-f0123456789a", entries.get(0).imageId());
+        assertEquals("Twin notes", entries.get(1).description());
+        assertEquals("", entries.get(1).imageId());
+
+        final List<WaypointRenderEntry> crossDimension = WaypointRenderCatalog.visibleFrom(
+            entries, DimensionId.NETHER
+        );
+        assertEquals(2, crossDimension.size());
+        assertEquals("产物:\n钻石 ×3", crossDimension.get(0).description());
+        assertEquals("0123abcd-4567-789a-bcde-f0123456789a", crossDimension.get(0).imageId());
+    }
+
+    @Test
     void filtersEachEntryByItsOwnCrossDimensionPreference() {
         final WaypointRenderEntry overworld = WaypointRenderCatalog.merge(
             List.of(local("Home", true)), List.of(), true, true

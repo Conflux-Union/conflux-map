@@ -43,6 +43,8 @@ public interface WaypointApi {
         WaypointType type,
         String iconItemId,
         String markerLabel,
+        String description,
+        String imageId,
         long createdAtEpochMs
     ) {
     }
@@ -86,7 +88,9 @@ public interface WaypointApi {
         Boolean crossDimensionVisible,
         WaypointType type,
         String iconItemId,
-        String markerLabel
+        String markerLabel,
+        String description,
+        String imageId
     ) {
         public static Builder builder() {
             return new Builder();
@@ -106,6 +110,8 @@ public interface WaypointApi {
             private WaypointType type;
             private String iconItemId;
             private String markerLabel;
+            private String description;
+            private String imageId;
 
             public Builder name(final String name) {
                 this.name = name;
@@ -159,10 +165,21 @@ public interface WaypointApi {
                 return this;
             }
 
+            public Builder description(final String description) {
+                this.description = description;
+                return this;
+            }
+
+            public Builder imageId(final String imageId) {
+                this.imageId = imageId;
+                return this;
+            }
+
             public WaypointEdit build() {
                 return new WaypointEdit(
                     name, dimensionId, x, y, z, colorArgb, group, visible,
-                    crossDimensionVisible, type, iconItemId, markerLabel
+                    crossDimensionVisible, type, iconItemId, markerLabel,
+                    description, imageId
                 );
             }
         }
