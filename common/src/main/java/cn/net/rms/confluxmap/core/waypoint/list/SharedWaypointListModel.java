@@ -160,6 +160,8 @@ public final class SharedWaypointListModel implements WaypointListModel {
                 waypoint.type(),
                 waypoint.iconItemId(),
                 waypoint.markerLabel(),
+                waypoint.description(),
+                waypoint.imageId(),
                 groupKey(waypoint),
                 preferences.isWaypointHidden(waypoint.id()),
                 false,

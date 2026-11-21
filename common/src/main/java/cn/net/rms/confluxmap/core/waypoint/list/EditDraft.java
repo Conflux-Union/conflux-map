@@ -24,6 +24,8 @@ public record EditDraft(
     Waypoint.Type type,
     String iconItemId,
     String markerLabel,
+    String description,
+    String imageId,
     boolean crossDimensionVisible,
     Double crossDimensionY,
     String groupKey
@@ -34,6 +36,8 @@ public record EditDraft(
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(iconItemId, "iconItemId");
         Objects.requireNonNull(markerLabel, "markerLabel");
+        Objects.requireNonNull(description, "description");
+        Objects.requireNonNull(imageId, "imageId");
         Objects.requireNonNull(groupKey, "groupKey");
     }
 }

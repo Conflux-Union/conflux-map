@@ -120,7 +120,7 @@ class LocalWaypointListModelTest {
     void createWaypointAppliesDraftIncludingGroupAndMarkerStyle() {
         assertTrue(model.createWaypoint(new EditDraft(
             "New", DimensionId.OVERWORLD, 1, 2, 3, 0xFF00FF00, Waypoint.Type.NORMAL,
-            "minecraft:compass", "NN", true, 64.0, "Bases"
+            "minecraft:compass", "NN", "", "", true, 64.0, "Bases"
         )));
         final Waypoint created = store.list().stream()
             .filter(waypoint -> waypoint.name.equals("New"))
@@ -133,10 +133,35 @@ class LocalWaypointListModelTest {
     }
 
     @Test
+    void draftsCarryDescriptionAndImageIdThroughCreateAndUpdate() {
+        assertTrue(model.createWaypoint(new EditDraft(
+            "Base", DimensionId.OVERWORLD, 1, 2, 3, 0xFF00FF00, Waypoint.Type.NORMAL,
+            "", "", "产物:\n钻石 ×3  \r\n获取方式:挖矿", "0123ABCD-4567-789A-BCDE-F0123456789A",
+            false, null, ""
+        )));
+        final Waypoint created = store.list().stream()
+            .filter(waypoint -> waypoint.name.equals("Base"))
+            .findFirst().orElseThrow();
+        assertEquals("产物:\n钻石 ×3\n获取方式:挖矿", created.description);
+        assertEquals("0123abcd-4567-789a-bcde-f0123456789a", created.imageId);
+
+        assertTrue(model.updateWaypoint(model.rowById(created.id), new EditDraft(
+            "Base", DimensionId.OVERWORLD, 1, 2, 3, 0xFF00FF00, Waypoint.Type.NORMAL,
+            "", "", "危险提示:\n凋灵", "FEDCBA98-7654-3210-BA98-76543210FEDC",
+            false, null, ""
+        )));
+        final Waypoint updated = store.list().stream()
+            .filter(waypoint -> waypoint.name.equals("Base"))
+            .findFirst().orElseThrow();
+        assertEquals("危险提示:\n凋灵", updated.description);
+        assertEquals("fedcba98-7654-3210-ba98-76543210fedc", updated.imageId);
+    }
+
+    @Test
     void temporaryDraftCreatesInMemoryOnlyRowAndTypeFlipsCrossTheBoundary() {
         assertTrue(model.createWaypoint(new EditDraft(
             "Pin", DimensionId.OVERWORLD, 1, 2, 3, 0xFF00FF00, Waypoint.Type.TEMPORARY,
-            "", "", false, null, ""
+            "", "", "", "", false, null, ""
         )));
         assertEquals(Waypoint.Type.TEMPORARY, model.rowById(idOf("Pin")).type());
         assertTrue(store.list().stream().anyMatch(waypoint -> waypoint.name.equals("Pin")));
@@ -144,7 +169,7 @@ class LocalWaypointListModelTest {
 
         assertTrue(model.updateWaypoint(model.rowById(idOf("Pin")), new EditDraft(
             "Pin", DimensionId.OVERWORLD, 1, 2, 3, 0xFF00FF00, Waypoint.Type.NORMAL,
-            "", "", false, null, ""
+            "", "", "", "", false, null, ""
         )));
         assertTrue(store.state().waypoints().stream().anyMatch(waypoint -> waypoint.name.equals("Pin")));
     }
@@ -171,7 +196,7 @@ class LocalWaypointListModelTest {
         ));
         assertFalse(model.createWaypoint(new EditDraft(
             "X", DimensionId.OVERWORLD, 0, 0, 0, 0xFFFFFFFF,
-            Waypoint.Type.NORMAL, "", "", false, null, ""
+            Waypoint.Type.NORMAL, "", "", "", "", false, null, ""
         )));
     }
 

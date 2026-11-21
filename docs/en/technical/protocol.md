@@ -519,7 +519,7 @@ regions through the normal region-page path.
 ## 6. `waypoints_v1`: session and versioning
 
 The shared-waypoint channel is fully independent of `map_sync` (it works even when map
-corrections are off). Protocol version: **major 1, minor 6**.
+corrections are off). Protocol version: **major 1, minor 7**.
 
 Lifecycle:
 
@@ -532,7 +532,7 @@ Lifecycle:
    for the originator plus broadcast deltas (0x08/0x09/0x0C/0x0D) for every other subscribed
    peer. Results are idempotent per `operationId` and deliberately survive reconnects.
 
-Version negotiation: the server negotiates `minor = min(client minor, 6)` and encodes every
+Version negotiation: the server negotiates `minor = min(client minor, 7)` and encodes every
 later frame in the shape of that minor. The minor ladder:
 
 | Negotiated ≥ | Added on the wire |
@@ -543,6 +543,7 @@ later frame in the shape of that minor. The minor ladder:
 | 4 | groups: snapshot group list, waypoint `groupId`, GROUP_UPSERT/GROUP_REMOVE |
 | 5 | group mutations C2S (0x0E–0x11) |
 | 6 | MOVE_BATCH (0x12); CREATE/UPDATE carry an explicit group selection |
+| 7 | waypoint `description` + `imageId` strings (waypoints, CREATE, UPDATE); S2C fragment envelopes |
 
 Server-side limits: HELLO and SUBSCRIBE share a token bucket (burst 8, 60/min per
 connection); mutations are additionally rate-limited by server config (default 30/min) and
@@ -594,6 +595,8 @@ waypoint (negotiated minor in brackets):
     [≥3] utf8 iconItemId       item id, e.g. "minecraft:red_banner"; "" = default icon
     [≥3] utf8 markerLabel      custom label override; "" = none
     [≥4] bool hasGroup [+ uuid groupId]
+    [≥7] utf8 description      multi-line notes, ≤512 code points / ≤2048 UTF-8 bytes
+    [≥7] utf8 imageId          canonical UUID of the preview image, or "" = none
 
 group:
     uuid id · uuid creatorId · utf8 name · i64 createdAtEpochMs · i64 revision
@@ -602,7 +605,7 @@ group:
 ### HELLO (0x01, C2S)
 
 ```
-i32 major = 1 · i32 minor = 6
+i32 major = 1 · i32 minor = 7
 ```
 
 ### STATUS (0x02, S2C)
@@ -631,6 +634,12 @@ u16 waypointCount (≤ 512) × waypoint
 [≥4] u16 groupCount (≤ 64) × group
 ```
 
+A snapshot whose encoded size exceeds 512 KiB is split into transport-level fragment
+envelopes (minor ≥ 7 only; below that a full snapshot always fits the S2C cap). Each
+envelope is `[0x00] u8 seq · u8 count · bytes[≤ 512 KiB]` on the same channel; `0x00` is
+never a valid legacy message type id, so unfragmented frames are unchanged. The receiver
+concatenates the fragments in order and decodes the result as one message.
+
 ### CREATE (0x04, C2S) / UPDATE (0x0B, C2S)
 
 ```
@@ -638,6 +647,7 @@ uuid operationId · [UPDATE only: uuid id] · i64 expectedRevision
 utf8 name · utf8 dimensionId · f64 x · f64 y · f64 z · i32 colorArgb · u8 type
 [≥3] utf8 iconItemId · utf8 markerLabel
 [≥6] bool hasGroup [+ uuid groupId]     explicit target group; false = ungroup
+[≥7] utf8 description · utf8 imageId
 ```
 
 ### DELETE (0x05, C2S) / LOCK (0x06, C2S)
@@ -833,3 +843,74 @@ your radar policy allows. If you also select capability 10, clients will send yo
 
 Detection of Conflux Map clients in general: a HELLO on either channel is the signal. Parse
 `modVersion` from `0x01` if you need the client version.
+
+## 10. `waypoint_images_v1`
+
+An independent companion channel carrying waypoint preview images as opaque
+PNG containers. It shares the shared-waypoint session's trust domain and
+negotiation: the channel only answers clients whose `waypoints_v1`
+negotiated minor reached 7, and it never negotiates on its own. Protocol
+version: **major 1, minor 1**.
+
+Availability: when the negotiated `waypoints_v1` minor is below 7 (old
+server or old client), clients never send and servers never reply — the
+channel is silent by construction.
+
+### Messages
+
+```
+0x01 IMAGE_UPLOAD_BEGIN  (C2S): uuid imageId · u8 formatTag · i32 width · i32 height · i32 totalBytes (1..65536)
+0x02 IMAGE_UPLOAD_CHUNK  (C2S): uuid imageId · i32 seq · u16 byteLen (1..16384) · bytes
+0x03 IMAGE_FETCH         (C2S): uuid imageId
+0x04 IMAGE_UPLOAD_RESULT (S2C): uuid imageId · u8 status
+0x05 IMAGE_DATA          (S2C): uuid imageId · u8 formatTag · i32 byteLen (1..65536) · bytes
+0x06 IMAGE_MISSING       (S2C): uuid imageId
+```
+
+`formatTag`: `1` = PNG (the only defined format). `status`: `0` OK,
+`1` TOO_LARGE, `2` RATE_LIMITED, `3` QUOTA_EXCEEDED,
+`4` DUPLICATE_OWNER_CONFLICT, `5` INVALID_FORMAT, `6` STORAGE_ERROR.
+Receivers must treat any non-zero status as a generic failure; STORAGE_ERROR
+covers a server-side persist fault and says nothing about the player's
+quota.
+
+Upload flow: BEGIN declares the full size and dimensions, CHUNKs follow in
+order (each ≤ 16 KiB); every non-final chunk gets no reply, the completing
+chunk gets RESULT. BEGIN is idempotent — re-declaring an image that already
+exists under the same owner reports OK (safe against reconnect retries); the
+same imageId under a different owner is refused with
+DUPLICATE_OWNER_CONFLICT, so nobody can poison an image another player's
+waypoint references. FETCH answers DATA or MISSING.
+
+### Limits and quotas
+
+- One image: 64 KiB on the wire; the vanilla C2S payload cap bounds a chunk
+  frame at 32 KiB.
+- Per player: 512 KiB of stored bytes (configurable), at most four concurrent
+  pending uploads and 128 KiB of pending bytes.
+- Per world: 2 MiB of stored bytes (configurable).
+- Rates: uploads 10/min per player (whole images, not chunks; configurable),
+  fetches 60/min per player.
+- Malformed payloads strike the same three-strike mute as `waypoints_v1`.
+
+Servers never decode image bytes — the container payload is opaque, which is
+why BEGIN carries the true width/height for the stored header.
+
+### Storage and GC
+
+Server containers live at `<world>/confluxmap/images/<uuid>.img`, a
+`CFXWIMG1` header (version, format, dimensions, owner) followed by the bytes.
+The server waypoint file is the single source of truth for references:
+periodically (and after edits) every non-empty `imageId` in it is collected
+and unreferenced images older than 24 hours are deleted. The grace window
+covers crash-after-upload-before-upsert and in-progress editing. Clients keep
+fetched shared images memory-only and store only their own uploads under
+`<gameDir>/confluxmap/waypoints/<serverId>/images/`.
+
+### Ordering rule
+
+A waypoint payload may reference an imageId before the image bytes arrive
+(EDITOR → other clients): clients render a placeholder and fetch on demand.
+Publishers upload the image before (or with) the waypoint mutation — the
+shipped client uploads at capture/paste time, which satisfies the ordering
+for every downstream path.

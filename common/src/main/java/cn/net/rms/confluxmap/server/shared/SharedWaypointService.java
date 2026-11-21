@@ -95,6 +95,8 @@ public final class SharedWaypointService {
         Waypoint.Type type,
         String iconItemId,
         String markerLabel,
+        String description,
+        String imageId,
         UUID groupId
     ) {
         public CreateRequest {
@@ -112,9 +114,32 @@ public final class SharedWaypointService {
             final int colorArgb,
             final Waypoint.Type type,
             final String iconItemId,
+            final String markerLabel,
+            final UUID groupId
+        ) {
+            this(
+                operationId, expectedRevision, name, dimensionId, x, y, z, colorArgb, type,
+                iconItemId, markerLabel, "", "", groupId
+            );
+        }
+
+        public CreateRequest(
+            final UUID operationId,
+            final long expectedRevision,
+            final String name,
+            final DimensionId dimensionId,
+            final double x,
+            final double y,
+            final double z,
+            final int colorArgb,
+            final Waypoint.Type type,
+            final String iconItemId,
             final String markerLabel
         ) {
-            this(operationId, expectedRevision, name, dimensionId, x, y, z, colorArgb, type, iconItemId, markerLabel, null);
+            this(
+                operationId, expectedRevision, name, dimensionId, x, y, z, colorArgb, type,
+                iconItemId, markerLabel, null
+            );
         }
 
         public CreateRequest(
@@ -210,12 +235,36 @@ public final class SharedWaypointService {
         Waypoint.Type type,
         String iconItemId,
         String markerLabel,
+        String description,
+        String imageId,
         UUID groupId,
         boolean groupSpecified
     ) {
         public UpdateRequest {
             Objects.requireNonNull(operationId, "operationId");
             Objects.requireNonNull(waypointId, "waypointId");
+        }
+
+        public UpdateRequest(
+            final UUID operationId,
+            final long expectedRevision,
+            final UUID waypointId,
+            final String name,
+            final DimensionId dimensionId,
+            final double x,
+            final double y,
+            final double z,
+            final int colorArgb,
+            final Waypoint.Type type,
+            final String iconItemId,
+            final String markerLabel,
+            final UUID groupId,
+            final boolean groupSpecified
+        ) {
+            this(
+                operationId, expectedRevision, waypointId, name, dimensionId,
+                x, y, z, colorArgb, type, iconItemId, markerLabel, "", "", groupId, groupSpecified
+            );
         }
 
         public UpdateRequest(
@@ -440,7 +489,8 @@ public final class SharedWaypointService {
     ) {
         return validator.validate(
             waypoint.name(), waypoint.dimensionId(), waypoint.x(), waypoint.y(), waypoint.z(),
-            waypoint.colorArgb(), waypoint.type(), waypoint.iconItemId(), waypoint.markerLabel()
+            waypoint.colorArgb(), waypoint.type(), waypoint.iconItemId(), waypoint.markerLabel(),
+            waypoint.description(), waypoint.imageId()
         ).isPresent() && validPublisherName(waypoint.publisherName());
     }
 
@@ -477,7 +527,8 @@ public final class SharedWaypointService {
         }
         final Optional<SharedWaypointValidator.ValidatedCreate> validated = validator.validate(
             request.name(), request.dimensionId(), request.x(), request.y(), request.z(),
-            request.colorArgb(), request.type(), request.iconItemId(), request.markerLabel()
+            request.colorArgb(), request.type(), request.iconItemId(), request.markerLabel(),
+            request.description(), request.imageId()
         );
         final String publisherName = actor.playerName().strip();
         if (validated.isEmpty() || !validPublisherName(publisherName)) {
@@ -518,7 +569,8 @@ public final class SharedWaypointService {
         }
         final SharedWaypoint waypoint = new SharedWaypoint(
             id, actor.playerId(), publisherName, value.name(), value.dimensionId(), value.x(), value.y(), value.z(),
-            value.colorArgb(), value.type(), value.iconItemId(), value.markerLabel(), now, nextRevision,
+            value.colorArgb(), value.type(), value.iconItemId(), value.markerLabel(),
+            value.description(), value.imageId(), now, nextRevision,
             request.groupId()
         );
         return persist(
@@ -598,7 +650,8 @@ public final class SharedWaypointService {
         }
         final Optional<SharedWaypointValidator.ValidatedCreate> validated = validator.validate(
             request.name(), request.dimensionId(), request.x(), request.y(), request.z(),
-            request.colorArgb(), request.type(), request.iconItemId(), request.markerLabel()
+            request.colorArgb(), request.type(), request.iconItemId(), request.markerLabel(),
+            request.description(), request.imageId()
         );
         if (validated.isEmpty()) {
             return finish(player, request, actor, request.operationId(), Action.UPDATE, request.waypointId(),
@@ -630,7 +683,8 @@ public final class SharedWaypointService {
         final SharedWaypoint updated = new SharedWaypoint(
             current.id(), current.publisherId(), current.publisherName(), value.name(),
             value.dimensionId(), value.x(), value.y(), value.z(), value.colorArgb(), value.type(),
-            value.iconItemId(), value.markerLabel(), current.createdAtEpochMs(), nextRevision,
+            value.iconItemId(), value.markerLabel(), value.description(), value.imageId(),
+            current.createdAtEpochMs(), nextRevision,
             targetGroup
         );
         final SharedWaypointStore.PreparedMutation mutation;
@@ -835,7 +889,8 @@ public final class SharedWaypointService {
         final SharedWaypoint updated = new SharedWaypoint(
             current.id(), current.publisherId(), current.publisherName(), current.name(),
             current.dimensionId(), current.x(), current.y(), current.z(), current.colorArgb(),
-            current.type(), current.iconItemId(), current.markerLabel(), current.createdAtEpochMs(),
+            current.type(), current.iconItemId(), current.markerLabel(),
+            current.description(), current.imageId(), current.createdAtEpochMs(),
             nextRevision, request.groupId()
         );
         final SharedWaypointStore.PreparedMutation mutation;
@@ -924,7 +979,8 @@ public final class SharedWaypointService {
             updated.add(new SharedWaypoint(
                 current.id(), current.publisherId(), current.publisherName(), current.name(),
                 current.dimensionId(), current.x(), current.y(), current.z(), current.colorArgb(),
-                current.type(), current.iconItemId(), current.markerLabel(), current.createdAtEpochMs(),
+                current.type(), current.iconItemId(), current.markerLabel(),
+                current.description(), current.imageId(), current.createdAtEpochMs(),
                 nextRevision, entry.groupId()
             ));
         }

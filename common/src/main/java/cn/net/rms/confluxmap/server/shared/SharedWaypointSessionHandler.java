@@ -200,7 +200,8 @@ public final class SharedWaypointSessionHandler {
                 new SharedWaypointService.CreateRequest(
                     create.operationId(), create.expectedRevision(), create.name(), create.dimensionId(),
                     create.x(), create.y(), create.z(), create.color(), create.type(),
-                    create.iconItemId(), create.markerLabel(), create.groupId()
+                    create.iconItemId(), create.markerLabel(), create.description(), create.imageId(),
+                    create.groupId()
                 )
             ));
         }
@@ -224,7 +225,8 @@ public final class SharedWaypointSessionHandler {
                 new SharedWaypointService.UpdateRequest(
                     update.operationId(), update.expectedRevision(), update.id(), update.name(),
                     update.dimensionId(), update.x(), update.y(), update.z(), update.color(), update.type(),
-                    update.iconItemId(), update.markerLabel(), update.groupId(), update.groupSpecified()
+                    update.iconItemId(), update.markerLabel(), update.description(), update.imageId(),
+                    update.groupId(), update.groupSpecified()
                 )
             ));
         }

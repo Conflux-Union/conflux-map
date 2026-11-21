@@ -131,7 +131,7 @@ abstract class WaypointListModelContract {
     protected static EditDraft draft(final String name, final String groupKey) {
         return new EditDraft(
             name, DIMENSION, 1d, 64d, 2d, 0xFF33AA66, Waypoint.Type.NORMAL,
-            "", "", false, null, groupKey
+            "", "", "", "", false, null, groupKey
         );
     }
 
