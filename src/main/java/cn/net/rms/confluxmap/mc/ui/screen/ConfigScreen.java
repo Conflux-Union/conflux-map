@@ -9,6 +9,8 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.util.Easing;
+import cn.net.rms.confluxmap.nativepredict.GpuBackend;
+import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import cn.net.rms.confluxmap.core.util.Stagger;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
@@ -101,6 +103,7 @@ public final class ConfigScreen extends ConfluxScreen {
     SharedWaypointAvailability sharedAvailability;
     RadarSettingsAccess radarAccess = RadarSettingsAccess.ALLOWED;
     PredictionSettingsAccess predictionAccess;
+    PredictionBackend lastAutoVerdict = GpuBackend.autoVerdict();
     PlayerMarkerSettingsAccess playerMarkerAccess =
         PlayerMarkerSettingsAccess.from(false);
     boolean manualSeedAvailable;
@@ -180,6 +183,15 @@ public final class ConfigScreen extends ConfluxScreen {
             || currentManualSeedAvailable != manualSeedAvailable) {
             predictionAccess = currentPredictionAccess;
             manualSeedAvailable = currentManualSeedAvailable;
+            if (category == Category.PREDICTION) {
+                rebuild();
+            }
+        }
+        // The AUTO backend row labels the resolved engine, so a benchmark verdict landing
+        // while the prediction page is open re-renders the row (AUTO (GPU) -> AUTO (CPU)).
+        final PredictionBackend currentAutoVerdict = GpuBackend.autoVerdict();
+        if (currentAutoVerdict != lastAutoVerdict) {
+            lastAutoVerdict = currentAutoVerdict;
             if (category == Category.PREDICTION) {
                 rebuild();
             }

@@ -622,6 +622,8 @@
   "confluxmap.config.prediction.mode.generated_only": "仅已生成区域",
   "confluxmap.config.prediction.mode.visited_only": "关闭（仅已探索区域）",
   "confluxmap.config.prediction.backend.cpu": "CPU",
+  "confluxmap.config.prediction.backend.auto.gpu": "AUTO（GPU）",
+  "confluxmap.config.prediction.backend.auto.cpu": "AUTO（CPU）",
   "confluxmap.config.prediction.backend.gpu": "GPU（无显卡时自动回退）",
   "confluxmap.config.shape.square": "方形",
   "confluxmap.config.shape.circle": "圆形",

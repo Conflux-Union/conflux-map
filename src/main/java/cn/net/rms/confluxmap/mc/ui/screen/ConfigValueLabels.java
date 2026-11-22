@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
+import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import java.util.function.Function;
 import net.minecraft.text.Text;
@@ -167,7 +168,17 @@ final class ConfigValueLabels {
         return Texts.translatable(mapQualityKey(qualities[clamped])).getString();
     }
 
+    /**
+     * Backend row key; AUTO resolves inline so the row reads AUTO (GPU)/AUTO (CPU) with the
+     * currently serving engine - the config screen re-renders the row when the benchmark
+     * verdict lands (see ConfigScreen's tick).
+     */
     static String predictionBackendKey(final PredictionBackend backend) {
+        if (backend == PredictionBackend.AUTO) {
+            return GpuBackend.resolved(PredictionBackend.AUTO) == PredictionBackend.CPU
+                ? "confluxmap.config.prediction.backend.auto.cpu"
+                : "confluxmap.config.prediction.backend.auto.gpu";
+        }
         return "confluxmap.config.prediction.backend." + backend.name().toLowerCase(java.util.Locale.ROOT);
     }
 
