@@ -19,7 +19,14 @@ public final class GpuBackend {
     /** Slot count of the metrics snapshot; mirror of {@code GPU_METRICS_SLOTS} in {@code native/cubiomes/gpu.h}. */
     private static final int GPU_METRICS_SLOTS = 68;
 
-    private static volatile PredictionBackend configured = PredictionBackend.GPU;
+    private static volatile PredictionBackend configured = PredictionBackend.AUTO;
+
+    /**
+     * The benchmark's stored winner for AUTO, {@code null} while undecided (or when this
+     * process never ran a benchmark - servers, library unavailable). Undecided AUTO serves
+     * GPU, matching the engine's own auto fallback.
+     */
+    private static volatile PredictionBackend autoVerdict;
     private static volatile boolean libraryReady;
     private static volatile boolean batchRefused;
     /**
@@ -109,11 +116,11 @@ public final class GpuBackend {
         return engineMode == CubiomesNative.GPU_MODE_OFF;
     }
 
-    /** Engine mode for a backend: {@code GPU_MODE_OFF} for CPU, {@code GPU_MODE_AUTO} for GPU. */
+    /** Engine mode for a backend: {@code GPU_MODE_OFF} for CPU, {@code GPU_MODE_AUTO} for GPU and AUTO. */
     public static int engineMode(final PredictionBackend backend) {
-        return backend == PredictionBackend.GPU
-            ? CubiomesNative.GPU_MODE_AUTO
-            : CubiomesNative.GPU_MODE_OFF;
+        return backend == PredictionBackend.CPU
+            ? CubiomesNative.GPU_MODE_OFF
+            : CubiomesNative.GPU_MODE_AUTO;
     }
 
     /**
@@ -137,6 +144,34 @@ public final class GpuBackend {
     static boolean batchDispatchAvailable(final GpuStats snapshot, final boolean refused) {
         return !refused && snapshot != null && snapshot.engineMode() != CubiomesNative.GPU_MODE_OFF
             && !snapshot.engineDead();
+    }
+
+    /**
+     * Effective backend for a configured choice: explicit CPU/GPU pass through; AUTO serves
+     * the benchmark verdict, GPU while undecided. Consumers that need "what is actually
+     * serving" (UI labels, diagnostics, the benchmark's apply step) read this, not the
+     * stored config value.
+     */
+    public static PredictionBackend resolved(final PredictionBackend backend) {
+        if (backend != PredictionBackend.AUTO) {
+            return backend;
+        }
+        final PredictionBackend verdict = autoVerdict;
+        return verdict == null ? PredictionBackend.GPU : verdict;
+    }
+
+    /**
+     * Stores (or, with {@code null}, clears) the benchmark verdict. Storing does not push
+     * an engine mode - the caller applies {@link #configure} afterwards when the user's
+     * setting still says AUTO.
+     */
+    public static void applyAutoVerdict(final PredictionBackend winner) {
+        autoVerdict = winner;
+    }
+
+    /** The stored AUTO verdict, or {@code null} while undecided; read-only and cheap. */
+    public static PredictionBackend autoVerdict() {
+        return autoVerdict;
     }
 
     /**
@@ -171,7 +206,7 @@ public final class GpuBackend {
      * switches over from the next dispatch once the build lands (the env-forced engine is the
      * exception - it waits the build out rather than serving the CPU). Only the Fabric client
      * calls this - the server companions never dispatch prediction work. Eligible only when the
-     * user chose the GPU backend and the native library is loaded; the gate lives in {@link
+     * user chose a GPU-side backend (GPU or undecided AUTO) and the native library is loaded; the gate lives in {@link
      * #warmupEligible} for tests.
      */
     public static void warmupAsync() {
@@ -186,9 +221,9 @@ public final class GpuBackend {
         warmup.start();
     }
 
-    /** Pure gate decision: the GPU backend on a loaded library is the only warmup candidate. */
+    /** Pure gate decision: any GPU-side backend (GPU, AUTO) on a loaded library is a warmup candidate. */
     static boolean warmupEligible(final PredictionBackend backend, final boolean ready) {
-        return ready && backend == PredictionBackend.GPU;
+        return ready && backend != PredictionBackend.CPU;
     }
 
     private static void runWarmup() {

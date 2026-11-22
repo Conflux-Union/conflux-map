@@ -14,9 +14,11 @@ import org.junit.jupiter.api.Test;
  */
 class GpuBackendTest {
     @Test
-    void engineModeMapsCpuToOffAndGpuToAuto() {
+    void engineModeMapsCpuToOffAndOthersToAuto() {
         assertEquals(CubiomesNative.GPU_MODE_OFF, GpuBackend.engineMode(PredictionBackend.CPU));
         assertEquals(CubiomesNative.GPU_MODE_AUTO, GpuBackend.engineMode(PredictionBackend.GPU));
+        assertEquals(CubiomesNative.GPU_MODE_AUTO, GpuBackend.engineMode(PredictionBackend.AUTO),
+            "AUTO keeps the engine's auto mode; only the winner choice differs (resolved later)");
     }
 
     @Test
@@ -28,9 +30,11 @@ class GpuBackendTest {
     }
 
     @Test
-    void warmupEligibilityRequiresGpuBackendAndLoadedLibrary() {
+    void warmupEligibilityRequiresGpuSideBackendAndLoadedLibrary() {
         assertTrue(GpuBackend.warmupEligible(PredictionBackend.GPU, true),
             "the GPU backend on a loaded library must start the warmup");
+        assertTrue(GpuBackend.warmupEligible(PredictionBackend.AUTO, true),
+            "AUTO needs the warmup too: the benchmark's GPU leg waits on the build");
         assertFalse(GpuBackend.warmupEligible(PredictionBackend.CPU, true),
             "a CPU backend must not warm the engine");
         assertFalse(GpuBackend.warmupEligible(PredictionBackend.GPU, false),

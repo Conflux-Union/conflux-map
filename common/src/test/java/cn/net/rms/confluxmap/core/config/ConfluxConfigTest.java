@@ -61,13 +61,16 @@ final class ConfluxConfigTest {
     }
 
     @Test
-    void predictionBackendDefaultsToGpuSurvivesCopyAndNormalizesNull() {
+    void predictionBackendDefaultsToAutoSurvivesCopyAndNormalizesNull() {
         final ConfluxConfig config = new ConfluxConfig();
-        assertEquals(PredictionBackend.GPU, config.predictionBackend);
+        assertEquals(PredictionBackend.AUTO, config.predictionBackend);
 
         config.predictionBackend = null;
         config.normalize();
-        assertEquals(PredictionBackend.GPU, config.predictionBackend);
+        assertEquals(PredictionBackend.AUTO, config.predictionBackend);
+
+        config.predictionBackend = PredictionBackend.GPU;
+        assertEquals(PredictionBackend.GPU, config.copy().predictionBackend);
 
         config.predictionBackend = PredictionBackend.CPU;
         assertEquals(PredictionBackend.CPU, config.copy().predictionBackend);
