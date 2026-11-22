@@ -60,6 +60,15 @@ final class CubiomesNative {
     static native int cfxGpuWarmup();
 
     /**
+     * Whether one of the engine's OpenCL programs is compiling right now (transient by
+     * construction: each program builds once per process). The AUTO benchmark polls this to
+     * wait out the build before timing the GPU leg. Peek-only: never initializes anything.
+     * A library predating this export throws {@link UnsatisfiedLinkError} - callers treat
+     * that as "not busy" and fall back to their own timeout.
+     */
+    static native int cfxGpuBuildBusy();
+
+    /**
      * Debug snapshot of the GPU engine's process-global state. Fills {@code out} with
      * {@code [engineMode, successfulSurfaceBiomeDispatches, successfulHeightDispatches]}
      * ({@code GPU_MODE_*} values; counts are the engine's own {@code gpuDispatchCount()}/
@@ -105,6 +114,15 @@ final class CubiomesNative {
      * that and a 0 return as "no data".
      */
     static native int cfxCpuEfficiencyClasses(int[] outClasses);
+
+    /**
+     * CPU brand string (CPUID extended leaves), used to key the AUTO benchmark's cached
+     * verdict so a swapped CPU re-runs the measurement. x86 targets return the vendor's
+     * brand string (possibly empty when the CPU lacks the extended leaves); every other
+     * target returns an empty string. A library predating this export throws
+     * {@link UnsatisfiedLinkError}; callers degrade to OS-level sources.
+     */
+    static native String cfxCpuBrand();
 
     /**
      * Linux x86_64-only CPU topology query used for worker-pool sizing; no other

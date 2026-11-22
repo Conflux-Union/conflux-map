@@ -26,12 +26,12 @@ class ConfigIoTest {
     private static final Logger LOGGER = LogManager.getLogger("ConfigIoTest");
 
     @Test
-    void predictionBackendDefaultsToGpuAndRoundTrips(@TempDir final Path tmp)
+    void predictionBackendDefaultsToAutoAndRoundTrips(@TempDir final Path tmp)
         throws IOException {
         final Path file = tmp.resolve("config.json");
         final ConfigIo io = new ConfigIo(file, LOGGER);
 
-        assertEquals(PredictionBackend.GPU, new ConfluxConfig().predictionBackend);
+        assertEquals(PredictionBackend.AUTO, new ConfluxConfig().predictionBackend);
 
         final ConfluxConfig config = new ConfluxConfig();
         config.predictionBackend = PredictionBackend.CPU;
@@ -41,14 +41,14 @@ class ConfigIoTest {
         // A stale file without the field upgrades to the default; an explicit null
         // (hand-edited) is restored by normalize() instead of sticking as null.
         Files.writeString(file, "{\"schemaVersion\":8}", StandardCharsets.UTF_8);
-        assertEquals(PredictionBackend.GPU, io.load().predictionBackend);
+        assertEquals(PredictionBackend.AUTO, io.load().predictionBackend);
 
         Files.writeString(
             file,
             "{\"schemaVersion\":8,\"predictionBackend\":null}",
             StandardCharsets.UTF_8
         );
-        assertEquals(PredictionBackend.GPU, io.load().predictionBackend);
+        assertEquals(PredictionBackend.AUTO, io.load().predictionBackend);
     }
 
     @Test

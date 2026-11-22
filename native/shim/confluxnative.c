@@ -663,6 +663,18 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
 #endif
 }
 
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxGpuBuildBusy(
+    JNIEnv *env, jclass clazz
+) {
+    (void) env;
+    (void) clazz;
+#ifdef CUBIOMES_ENABLE_GPU
+    return (jint) gpuBuildBusy();
+#else
+    return 0; /* engine not compiled in: nothing is ever building */
+#endif
+}
+
 JNIEXPORT jstring JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxGetGpuStats(
     JNIEnv *env, jclass clazz, jlongArray out
 ) {
@@ -4186,3 +4198,47 @@ Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxCpuHybridCoreTypes(
 }
 
 #endif /* __linux__ && __x86_64__ */
+
+/*
+ * CPU brand string for the AUTO benchmark's hardware-keyed cache: CPUID's
+ * extended brand leaves (0x80000002-4) name the installed part, so a swapped
+ * CPU invalidates the cached verdict. Same peek-only contract as the topology
+ * exports above: no side effects, and non-x86 targets answer an empty string
+ * (the Java side then degrades to /proc or the environment).
+ */
+#if defined(__x86_64__) || defined(__i386__)
+
+JNIEXPORT jstring JNICALL
+Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxCpuBrand(
+    JNIEnv *env, jclass clazz
+) {
+    unsigned int info[4];
+    (void) clazz;
+    __asm__ volatile ("cpuid"
+        : "=a"(info[0]), "=b"(info[1]), "=c"(info[2]), "=d"(info[3])
+        : "a"(0x80000000u), "c"(0));
+    if (info[0] < 0x80000004u) {
+        return (*env)->NewStringUTF(env, "");
+    }
+    char brand[49];
+    for (unsigned int leaf = 2; leaf <= 4; leaf++) {
+        __asm__ volatile ("cpuid"
+            : "=a"(info[0]), "=b"(info[1]), "=c"(info[2]), "=d"(info[3])
+            : "a"(0x80000000u + leaf), "c"(0));
+        memcpy(brand + (leaf - 2) * 16, info, sizeof(info));
+    }
+    brand[48] = '\0';
+    return (*env)->NewStringUTF(env, brand);
+}
+
+#else /* !(x86) */
+
+JNIEXPORT jstring JNICALL
+Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxCpuBrand(
+    JNIEnv *env, jclass clazz
+) {
+    (void) clazz;
+    return (*env)->NewStringUTF(env, "");
+}
+
+#endif /* x86 */

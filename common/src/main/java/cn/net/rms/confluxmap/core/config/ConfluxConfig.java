@@ -400,9 +400,11 @@ public final class ConfluxConfig {
     /**
      * Engine for the predicted underlay: GPU uses the OpenCL executor when the machine has a
      * working device and silently serves the CPU reference otherwise; CPU never touches the
-     * GPU. Both backends produce the same baseline, so residual patches remain compatible.
+     * GPU; AUTO serves whichever side the one-time hardware benchmark measured faster (GPU
+     * while undecided). All backends produce the same baseline, so residual patches remain
+     * compatible.
      */
-    public PredictionBackend predictionBackend = PredictionBackend.GPU;
+    public PredictionBackend predictionBackend = PredictionBackend.AUTO;
     /**
      * Client-side opt-out for the companion handshake / correction sync. When false the client
      * skips HELLO_C2S and never sends MAP_VIEW_REQ; the predicted underlay still works in
@@ -711,7 +713,7 @@ public final class ConfluxConfig {
             radarDisplayMode = RadarDisplayMode.PORTRAITS;
         }
         if (predictionBackend == null) {
-            predictionBackend = PredictionBackend.GPU;
+            predictionBackend = PredictionBackend.AUTO;
         }
         if (sharedWaypointCrossDimensionVisibleIds == null) {
             sharedWaypointCrossDimensionVisibleIds = new LinkedHashSet<>();

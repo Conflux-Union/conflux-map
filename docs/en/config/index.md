@@ -102,7 +102,7 @@ Every option below is available in the in-game settings screen (`Mod Menu → Co
 
 | Option | Key | Description |
 | --- | --- | --- |
-| Prediction Backend | `confluxmap.config.prediction.backend` | Values: CPU, GPU (falls back to CPU). |
+| Prediction Backend | `confluxmap.config.prediction.backend` | Values: AUTO (default; measures once and serves the faster side), CPU, GPU (falls back to CPU). |
 | Map Update Delay: %s ms | `confluxmap.config.prediction.debounce` | — |
 | Map Autofill | `confluxmap.config.prediction.enabled` | — |
 | Configure Local Seed | `confluxmap.config.prediction.manual_seed` | — |

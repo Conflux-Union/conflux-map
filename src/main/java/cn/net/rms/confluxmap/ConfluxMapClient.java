@@ -98,7 +98,10 @@ import cn.net.rms.confluxmap.mc.world.FullscreenMapBrowseService;
 import cn.net.rms.confluxmap.mc.world.McDaylightTracker;
 import cn.net.rms.confluxmap.mc.world.WorldSessionTracker;
 import cn.net.rms.confluxmap.nativepredict.GpuBackend;
+import cn.net.rms.confluxmap.nativepredict.GpuBenchmark;
+import cn.net.rms.confluxmap.nativepredict.GpuBenchmarkStore;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
+import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -121,6 +124,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private ConfigIo configIo;
     private MapExecutors executors;
     private CpuTopology cpuTopology;
+    private GpuBenchmark.BenchmarkContext autoBenchmarkContext;
     private SessionGuard sessionGuard;
     private WorldSessionTracker sessionTracker;
     private ClientMultiworldService clientMultiworldService;
@@ -189,6 +193,24 @@ public final class ConfluxMapClient implements ClientModInitializer {
         return instance;
     }
 
+    /**
+     * Freshness window for reusing a cached CPU verdict without re-validating the device
+     * (the OFF engine never probes one): long enough that ordinary boots never re-measure,
+     * short enough that a changed GPU (or a driver upgrade that flips the ranking) is
+     * re-benchmarked within a month.
+     */
+    private static final long AUTO_VERDICT_MAX_AGE_MILLIS = 30L * 24 * 60 * 60 * 1000;
+
+    /**
+     * Idempotent start of the AUTO backend benchmark (also called when the user switches
+     * the backend row to AUTO): the first call per process runs, later calls are no-ops.
+     */
+    public void ensureAutoBenchmark() {
+        if (autoBenchmarkContext != null && config.predictionBackend == PredictionBackend.AUTO) {
+            GpuBenchmark.runAsync(autoBenchmarkContext);
+        }
+    }
+
     @Override
     public void onInitializeClient() {
         instance = this;
@@ -213,6 +235,19 @@ public final class ConfluxMapClient implements ClientModInitializer {
         // library for CPU labels (Windows efficiency classes, Linux CPUID hybrid core types);
         // without it the pool falls back to sysfs grouping or a uniform CPU.
         NativeLib.init(confluxRoot);
+        // A cached CPU verdict for AUTO (same CPU, library and workload, still fresh)
+        // applies before the warmup decision: the engine goes OFF and the OpenCL JIT is
+        // skipped entirely - the zero-cost path for exactly the machines AUTO protects.
+        // The device field cannot be revalidated here because the OFF engine never probes
+        // one; freshness bounds how long a stale entry can hold a changed GPU down.
+        final GpuBenchmarkStore benchmarkStore =
+            new GpuBenchmarkStore(cacheRoot.resolve("gpu-benchmark.json"), ConfluxMapMod.LOGGER);
+        if (config.predictionBackend == PredictionBackend.AUTO && benchmarkStore.loadPrewarmVerdict(
+                GpuBenchmark.key(GpuBenchmark.NO_DEVICE), AUTO_VERDICT_MAX_AGE_MILLIS).isPresent()) {
+            GpuBackend.applyAutoVerdict(PredictionBackend.CPU);
+            GpuBackend.configure(PredictionBackend.CPU);
+            ConfluxMapMod.LOGGER.info("AUTO backend verdict from cache: CPU (prewarm; OpenCL skipped)");
+        }
         // The GPU engine's OpenCL JIT (minutes on a cold driver cache) starts compiling on a
         // background thread from client start, overlapping menu time; prediction dispatches
         // that arrive first serve the CPU reference until the build lands. The config and the
@@ -222,6 +257,19 @@ public final class ConfluxMapClient implements ClientModInitializer {
         executors = new MapExecutors(
             WorkerThreadPolicy.resolve(config.workerThreadMode, config.workerThreadCount, cpuTopology)
         );
+        // The AUTO benchmark measures after the worker count is known; a cache hit (or the
+        // prewarmed CPU verdict above) makes it a no-op exit.
+        autoBenchmarkContext = new GpuBenchmark.BenchmarkContext(
+            benchmarkStore,
+            () -> config.predictionBackend,
+            WorkerThreadPolicy.resolve(
+                ConfluxConfig.WorkerThreadMode.AUTO, 0, cpuTopology),
+            GpuBenchmark.productionSeams(),
+            ConfluxMapMod.LOGGER
+        );
+        if (config.predictionBackend == PredictionBackend.AUTO) {
+            GpuBenchmark.runAsync(autoBenchmarkContext);
+        }
         sessionGuard = new SessionGuard();
         gameBridge = new McGameBridge(client, sessionGuard);
         companionSession = new CompanionSession();

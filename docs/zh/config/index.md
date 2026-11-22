@@ -102,7 +102,7 @@ title: 配置参考
 
 | Option | Key | Description |
 | --- | --- | --- |
-| 预测后端 | `confluxmap.config.prediction.backend` | Values: CPU, GPU（无显卡时自动回退）. |
+| 预测后端 | `confluxmap.config.prediction.backend` | Values: AUTO（默认，实测一次后选用更快的一方）, CPU, GPU（无显卡时自动回退）. |
 | 地图更新延迟：%s 毫秒 | `confluxmap.config.prediction.debounce` | — |
 | 地图补全 | `confluxmap.config.prediction.enabled` | — |
 | 配置本地种子 | `confluxmap.config.prediction.manual_seed` | — |

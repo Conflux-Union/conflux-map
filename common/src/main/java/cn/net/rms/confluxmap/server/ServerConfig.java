@@ -105,15 +105,16 @@ public final class ServerConfig {
     /**
      * Engine for the companion's own prediction baseline (patch generation and seed-derived
      * features). GPU uses the OpenCL executor when the host has a working device and serves
-     * the exact CPU reference otherwise. Both backends produce the same residual baseline.
-     * Integrated servers use the client's backend because the native engine is process-global.
+     * the exact CPU reference otherwise. AUTO resolves to GPU here - servers never run the
+     * client-side hardware benchmark - so on a dedicated host it equals GPU. Integrated
+     * servers use the client's backend because the native engine is process-global.
      */
-    public PredictionBackend predictionBackend = PredictionBackend.GPU;
+    public PredictionBackend predictionBackend = PredictionBackend.AUTO;
 
     /** Clamp out-of-range values loaded from a hand-edited file. */
     public void normalize() {
         if (predictionBackend == null) {
-            predictionBackend = PredictionBackend.GPU;
+            predictionBackend = PredictionBackend.AUTO;
         }
         restrictionMessage = restrictionMessage == null ? "" : restrictionMessage.strip();
         int messageEnd = 0;
