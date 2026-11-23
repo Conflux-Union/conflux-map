@@ -4,20 +4,21 @@ title: Entity radar
 
 # Entity radar
 
-Players, hostile mobs, friendly mobs, and other entities each have an
-independent toggle, and all are shown by default. Individual entity types
-can also be forced shown or hidden regardless of their category toggle, from
-the "Manage Entity Visibility" screen in the radar settings.
+The entity radar displays nearby players, mobs, and item entities in real time on the map.
 
-On a server with the companion installed, every online player remains
-visible beyond the vanilla tracking distance and while browsing other
-dimensions. Right-clicking a player on the fullscreen map highlights them on
-the map and in the world; after the player changes dimensions, the last
-position remains briefly as a translucent marker.
+## Categories & Fine-Grained Filtering
 
-The minimap shows generated entity portraits and item icons by default, or
-compact category-colored dots that expand while the player-list key is held;
-the fullscreen map always uses detailed icons.
+- **Category Toggles**: Players, hostile mobs, friendly mobs, and other entities each have an independent toggle (all shown by default).
+- **Per-Entity-Type Overrides**: From the **Manage Entity Visibility** screen in radar settings, individual entity types can be forced shown or hidden regardless of their category toggle.
 
-See also: [Minimap](minimap.md),
-[Server companion](../technical/server-companion.md)
+## Icon Modes
+
+- **Minimap**: Shows generated entity portraits and item icons by default, or compact category-colored dots that temporarily expand while the vanilla player-list key is held.
+- **Fullscreen World Map**: Always displays detailed icons.
+
+!!! note "Server Player Position Stream"
+    When the [server companion](../technical/server-companion.md) is installed with `allowEntityRadar` enabled, clients also receive live positions of all online players for beyond-tracking-distance, cross-dimension viewing, and right-click highlight tracking. This map-wide player display is driven by the server position stream, separate from local entity-radar mob filtering.
+
+---
+
+See also: [Minimap](minimap.md) · [Server companion](../technical/server-companion.md)

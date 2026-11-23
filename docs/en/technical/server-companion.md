@@ -4,91 +4,80 @@ title: Server companion (Fabric)
 
 # Server companion
 
-With the companion installed, the whole server shares one live map and one
-waypoint list.
+Installing the server companion enables server-wide real-terrain corrections, a shared waypoint list, and a built-in browser web map.
 
-- Fabric server: place the matching JAR into `mods/`.
-- Paper server: place `confluxmap-paper-<version>.jar` into `plugins/`
-  (Paper 1.21.1 through 26.3) — see
-  [Paper companion](paper-companion.md).
+## Installation
 
-Client and server versions can be upgraded independently: matching
-prediction algorithms use compact differential updates, differing algorithms
-fall back to full-data updates, and older-protocol clients always retain the
-basic map service.
+- **Fabric server**: Place the matching Conflux Map JAR into the server's `mods/` directory.
+- **Paper server**: Place `confluxmap-paper-<version>.jar` into `plugins/` (supports Paper `1.21.1` through `26.3` — see [Paper companion](../technical/paper-companion.md)).
 
-Servers running [quadra-gen](https://github.com/Fallen-Breath/quadra-gen)
-are supported automatically: with the companion installed, the predicted map
-follows its four per-quadrant world styles (natural terrain, flat glass,
-biome void, and empty void) instead of drawing natural terrain everywhere.
-In singleplayer, the same applies when quadra-gen manages the world.
+!!! info "Independent Upgrades & Differential Sync"
+    Client and server versions can be upgraded independently: matching prediction algorithms use compact differential updates, differing algorithms fall back to full-data updates, and older-protocol clients always retain the basic map service.
 
-The companion also serves a standalone web map that shows explored terrain,
-predicted terrain, and shared waypoints in a browser. Player positions,
-names, dimensions, and the interface language are all configurable; players
-can run `/confluxmap webmap hide` in game to hide themselves from the web
-map, and `show` to return.
+## Special World Generators
 
-## Configuration
+Servers running [quadra-gen](https://github.com/Fallen-Breath/quadra-gen) are detected automatically: with the companion installed, the predicted map follows its four per-quadrant world styles (natural terrain, flat glass, biome void, and empty void) instead of drawing natural terrain everywhere. The same applies in singleplayer when `quadra-gen` manages the world.
 
-All companion-shared content is controlled in `config/confluxmap/server.json`:
+## Configuration: `config/confluxmap/server.json`
 
-- `enabled` is the master switch; `checkForUpdates` announces a newer
-  version in the server console at startup.
-- `shareSeed` sends the world seed to clients so they can predict biomes
-  and structures. It is disabled by default because sharing the seed
-  exposes it to every player; `allowBiomeMap` and `allowStructureSearch`
-  control the biome layer and the structure finder separately.
-- `shareCorrections` sends real-terrain data from the server to correct
-  predicted maps.
-- `fullSyncEnabled` allows operators to run `/confluxmap fullsync`, which
-  bulk-syncs every generated region of the current dimension to their own
-  client (cancel with `/confluxmap fullsync cancel`). It discloses the
-  entire generated map, so it is disabled by default and additionally
-  requires operator permission and the Fabric companion.
-- `shareChunkLoadState` exposes the chunks the server keeps loaded. It is
-  disabled by default to reduce exposure of player activity and farm
-  locations.
-- `allowEntityRadar` defaults to `true` and shares every online player's
-  live position with compatible clients; disabling it stops the position
-  stream and turns the client radar off.
-- `allowMinimap`, `allowWorldMap`, `allowWaypoints`, and `allowPrediction`
-  let a server turn off individual client features - the HUD minimap, the
-  fullscreen world map (including map export, annotations, and map
-  markers), local waypoints, and the seed-prediction underlay. They all
-  default to `true`; when a feature is off, compatible clients hide it and
-  its settings show a "disabled by this server" notice. Like every
-  client-side restriction this only binds cooperating clients.
-- `restrictionMessage` sets the plain-text explanation shown when a player
-  tries to open a disabled map or toggle the disabled minimap. Leave it
-  empty to use the client's translated default; messages are limited to 256
-  UTF-8 bytes. Third-party server plugins can deliver all of these
-  restrictions without the companion by speaking the protocol documented in
-  [Network protocol](protocol.md).
-- `shareWaypoints` enables the shared waypoint list and defaults to `true`;
-  `allowNonOperatorSharedWaypointManagement` defaults to letting ordinary
-  players manage the entries they published.
-- `webMap.*` controls the web map and defaults to enabled: it listens on
-  `127.0.0.1:8123` and hides player positions. For public access, place it
-  behind an HTTPS reverse proxy that preserves the original `Host` header;
-  `sharePlayers` controls whether player positions are included.
+### 1. Core, Seed & Terrain Sync
 
-Per-player rate limits and bandwidth budgets are stored in the same
-configuration file. Players can run `/confluxmap performance` in game to see
-the sync statistics for their own connection. Paper-specific installation
-and storage details are documented in [Paper companion](paper-companion.md).
+| Option | Default / Behavior |
+|---|---|
+| `enabled` | Master switch for the server companion |
+| `checkForUpdates` | Announces newer versions in the server console at startup |
+| `shareSeed` | **Off by default.** When enabled, the seed becomes readable by the client game for biome and structure prediction |
+| `allowBiomeMap` | Controls whether clients may use the biome layer |
+| `allowStructureSearch` | Controls whether clients may use the structure finder |
+| `shareCorrections` | Sends real-terrain data from the server to correct predicted maps |
+| `fullSyncEnabled` | **Off by default** (Fabric companion required). Allows operators to run `/confluxmap fullsync` to bulk-sync all generated regions of the current dimension (`/confluxmap fullsync cancel` to abort) |
+| `shareChunkLoadState` | **Off by default.** Exposes chunks the server keeps loaded (off by default to reduce exposure of player activity and farm locations) |
 
-## Web map title and favicon
+### 2. Client Feature Restrictions & Radar
 
-Set `"title": "Conflux Map"` and `"favicon": "favicon.png"` inside `webMap`
-in `server.json`. Place the icon beside `server.json` (usually
-`config/confluxmap/`) and specify only its filename. PNG and ICO files up
-to 1 MiB are supported; paths and network URLs are not supported. A blank
-title uses `Conflux Map`; a blank icon preserves the existing behavior
-without a custom icon. An unreadable icon logs a warning without preventing
-the map from starting. Restart the server after changes. Icons have a
-five-minute browser cache. This changes the browser tab title, not the
-`Conflux Map` label inside the map.
+| Option | Default / Behavior |
+|---|---|
+| `allowEntityRadar` | **On by default.** Shares live online player positions with compatible clients; disabling it stops the position stream |
+| `allowMinimap` | **On by default.** When off, cooperating clients hide the HUD minimap |
+| `allowWorldMap` | **On by default.** When off, cooperating clients disable the fullscreen world map (including export, annotations, and markers) |
+| `allowWaypoints` | **On by default.** When off, cooperating clients disable local waypoints |
+| `allowPrediction` | **On by default.** When off, cooperating clients disable the seed-prediction underlay |
+| `restrictionMessage` | Plain-text explanation shown when a player opens a disabled feature; leave empty for localized defaults (max 256 UTF-8 bytes) |
 
-See also: [Shared waypoints](../features/shared-waypoints.md),
-[Multi-server data](../features/multi-server.md)
+!!! note "Third-Party Plugins"
+    Like all client-side restrictions, these only bind cooperating clients. Third-party server plugins can deliver all of these restrictions without the companion by speaking the protocol in [Network protocol](../technical/protocol.md).
+
+### 3. Shared Waypoints & Performance Stats
+
+- `shareWaypoints`: Enables the shared waypoint list (default `true`).
+- `allowNonOperatorSharedWaypointManagement`: Lets ordinary players manage entries they published (default `true`).
+- Per-player rate limits and bandwidth budgets live in the same file; players can run `/confluxmap performance` in game to inspect their connection's sync statistics.
+
+## Built-in Web Map (`webMap.*`)
+
+The companion serves a standalone HTTP web map showing explored terrain, predicted terrain, and shared waypoints:
+
+- **Default bind**: `127.0.0.1:8123`, enabled by default with player positions hidden (`sharePlayers` controls inclusion).
+- **Public access**: Place it behind an HTTPS reverse proxy that preserves the original `Host` header.
+- **Privacy**: Players can run `/confluxmap webmap hide` in game to hide themselves from the web map, and `/confluxmap webmap show` to return.
+
+### Custom Title and Favicon
+
+Set `"title"` and `"favicon"` inside `webMap` in `server.json`:
+
+```json
+{
+  "webMap": {
+    "title": "Conflux Map",
+    "favicon": "favicon.png"
+  }
+}
+```
+
+- Place the icon beside `server.json` (usually `config/confluxmap/`) and specify only its filename. PNG and ICO files up to **1 MiB** are supported; paths and URLs are not.
+- A blank title uses `Conflux Map`; a blank icon keeps the default behavior; an unreadable icon logs a warning without blocking startup.
+- Restart the server after changes (browsers cache the icon for 5 minutes). This changes the browser tab title only, not the `Conflux Map` label inside the map.
+
+---
+
+See also: [Paper companion](../technical/paper-companion.md) · [Shared waypoints](../features/shared-waypoints.md) · [Multi-server data](../features/multi-server.md)
