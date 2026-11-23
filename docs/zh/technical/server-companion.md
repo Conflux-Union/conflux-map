@@ -26,7 +26,7 @@ title: 服务端组件(Fabric)
 |---|---|
 | `enabled` | 服务端组件总开关 |
 | `checkForUpdates` | 服务端启动时是否在控制台检查并提示新版本 |
-| `shareSeed` | **默认关闭**。将世界种子发送至客户端用于群系与结构预测（开启后种子会暴露给所有玩家） |
+| `shareSeed` | **默认关闭**。开启后种子将对客户端游戏可读，用于群系与结构预测 |
 | `allowBiomeMap` | 控制客户端是否允许使用群系图层 |
 | `allowStructureSearch` | 控制客户端是否允许使用结构搜索 |
 | `shareCorrections` | 将服务端掌握的真实地形发送至客户端，用于修正预测结果 |

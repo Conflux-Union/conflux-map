@@ -26,7 +26,7 @@ Servers running [quadra-gen](https://github.com/Fallen-Breath/quadra-gen) are de
 |---|---|
 | `enabled` | Master switch for the server companion |
 | `checkForUpdates` | Announces newer versions in the server console at startup |
-| `shareSeed` | **Off by default.** Sends the world seed to clients for biome and structure prediction (exposes the seed to all players) |
+| `shareSeed` | **Off by default.** When enabled, the seed becomes readable by the client game for biome and structure prediction |
 | `allowBiomeMap` | Controls whether clients may use the biome layer |
 | `allowStructureSearch` | Controls whether clients may use the structure finder |
 | `shareCorrections` | Sends real-terrain data from the server to correct predicted maps |
