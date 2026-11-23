@@ -20,11 +20,8 @@ title: FAQ & compatibility
 ## Map Autofill & Chest Loot Preview
 
 ??? question "Why isn't predicted terrain showing up on a multiplayer server?"
-    Map autofill requires the world seed:
-
-    - Singleplayer worlds provide the seed automatically.
-    - On multiplayer servers, `shareSeed` is disabled by default to avoid exposing the seed. You can configure a **local seed** in client settings for your own view.
-    - If a seed is already configured, press `P` to make sure autofill is not set to **explored-only**, or press `F9` to refresh.
+    - **The server sends it**: set `shareSeed` to `true` in `config/confluxmap/server.json` and **restart the server**. The seed then becomes readable by modded clients.
+    - **The player supplies it**: if the server has no companion installed and you know the seed, open Settings → Map Autofill → **Configure Local Seed** and enter the seed and target version for this server.
 
 ??? question "Why do some structures have a chest loot preview and others do not?"
     The preview can only enumerate chests whose **positions are fixed by the world generator and derivable from the seed** — see [Chest loot preview](features/chest-loot-preview.md) for the supported list.
