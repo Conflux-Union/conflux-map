@@ -4,20 +4,32 @@ title: Quick start
 
 # Quick start
 
-1. **Install** the mod following [Installation](install.md): drop the JAR
-   for your Minecraft version and Fabric API into `mods/`. The server
-   companion is optional — everything below works client-only.
-2. **Open the world map** with `M`. The minimap toggles with `H`; zoom with
-   `]` on the minimap and the mouse wheel on the map.
-3. **Place a waypoint**: press `B` to create one at your position, or
-   right-click the map. The waypoint list opens with `U`.
-4. **Teleport to a waypoint** by right-clicking it on the map and choosing
-   teleport — where the server permits it. Cross-dimension targets work the
-   same way.
-5. As you explore, the map fills in; with the world seed available,
-   unexplored areas show predicted terrain (cycle with `P`, refresh with
-   `F9`).
+Once [installed](install.md), Conflux Map works out of the box with no extra configuration required.
 
-Every key above can be changed under Minecraft's controls — see
-[Keybinds](../reference/keybinds.md), and
-[Configuration](../config/index.md) for all options.
+## Core Workflow
+
+1. **Minimap & Fullscreen World Map**
+   - Press `H` to toggle the HUD minimap, and `]` to cycle minimap zoom.
+   - Press `M` to open the fullscreen world map; scroll to zoom centered on the cursor and drag with left-click to pan.
+   - Press `Y` to cycle layer views (automatic, surface/roof, current-height, and configured fixed-height).
+
+2. **Waypoints**
+   - Press `B` to create a waypoint at your current position, or **right-click anywhere** on the world map.
+   - Press `U` to open the waypoint list for search, sets, and batch management; press `J` to toggle local waypoints.
+
+3. **Teleport**
+   - Right-click a waypoint or any location on the world map and choose **Teleport** (when permitted by the server or in singleplayer with cheats enabled), including cross-dimension targets.
+
+4. **Map Autofill (Seed Prediction)**
+   - Once the world seed is available (automatic in singleplayer, or shared by the server / configured as a local seed), unexplored areas display predicted terrain.
+   - Press `P` to cycle **everywhere / generated-only / explored-only**, and `F9` to force a tile refresh.
+
+5. **Settings**
+   - Press `,` to open the Conflux Map settings screen; all display, layer, radar, and autofill changes take effect immediately.
+
+!!! tip "Migrating from Xaero or VoxelMap?"
+    You can import waypoints from Xaero's Minimap and VoxelMap directly from the waypoint screen, and merge Xaero's World Map data from the fullscreen map's action tools. See [Waypoints](../features/waypoints.md) and [Drawings & export](../features/drawings-export.md).
+
+---
+
+See also: [Keybinds](../reference/keybinds.md) · [Configuration reference](../config/index.md)

@@ -4,10 +4,19 @@ title: Minimap
 
 # Minimap
 
-- Square or round frame, with free placement, scaling, and rotation.
-- Coordinates, the current biome, and the active layer can be shown on demand.
-- Automatically avoids vanilla HUD elements and can display a trail of recent
-  movement.
+The HUD minimap displays surrounding terrain and entities in real time, running entirely on the client.
 
-See also: [World map](world-map.md), [Entity radar](entity-radar.md),
-[Appearance](appearance.md)
+## Core Capabilities
+
+- **Appearance & Layout**: Square or round frame with custom placement, scaling, and rotation.
+- **On-Demand Info**: Toggle coordinates, the current biome, and the active layer name.
+- **Automatic Vanilla HUD Avoidance**: Automatically shifts clear of vanilla HUD elements such as status effect icons.
+
+## Quick Controls
+
+- Press `H` to toggle the minimap.
+- Press `]` to cycle minimap zoom levels.
+
+---
+
+See also: [World map](world-map.md) · [Entity radar](entity-radar.md) · [Appearance](appearance.md)
