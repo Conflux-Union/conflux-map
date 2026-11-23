@@ -4,22 +4,26 @@ title: Keybinds
 
 # Keybinds
 
-All bindings can be changed in Minecraft's controls screen under
-"Conflux Map". With MaliLib installed, bindings move to its hotkey screen
-and support multi-key combinations; on 1.21.1 and newer, Conflux Map also
-appears in MaliLib's A+C settings switcher.
+All bindings can be customized in Minecraft's controls screen under **Options → Controls → Key Binds → Conflux Map**.
 
-| Default key | Action |
-|---|---|
-| `H` | Toggle the minimap |
-| `]` | Cycle minimap zoom |
-| `M` | Open the fullscreen map |
-| `Y` | Cycle automatic, surface/roof, current-height, and configured fixed-height layers |
-| `U` | Open the waypoint list |
-| `B` | New waypoint at your position |
-| `J` | Toggle local waypoints |
-| `,` | Open settings |
-| `P` | Cycle map autofill (everywhere / generated-only / explored-only) |
-| `F9` | Refresh map autofill tiles |
+!!! info "MaliLib Hotkey Support"
+    With optional [MaliLib](https://modrinth.com/mod/malilib) installed, bindings move to its hotkey screen and support **multi-key combinations**. On Minecraft `1.21.1` and newer, Conflux Map also appears in MaliLib's `A+C` settings switcher.
 
-See also: [Configuration](../config/index.md), [Quick start](../getting-started/quickstart.md)
+## Default Keybinds
+
+| Default key | Category | Action |
+|---|---|---|
+| `H` | Minimap | Toggle the HUD minimap |
+| `]` | Minimap | Cycle minimap zoom |
+| `M` | World map | Open the fullscreen world map |
+| `Y` | Layers | Cycle automatic, surface/roof, current-height, and fixed-height layers |
+| `U` | Waypoints | Open the waypoint list |
+| `B` | Waypoints | Create a new waypoint at your current position |
+| `J` | Waypoints | Toggle local waypoints |
+| `,` | Settings | Open Conflux Map settings |
+| `P` | Map autofill | Cycle autofill range (everywhere / generated-only / explored-only) |
+| `F9` | Map autofill | Refresh map autofill tiles |
+
+---
+
+See also: [Quick start](../getting-started/quickstart.md) · [Configuration reference](../config/index.md)

@@ -6,60 +6,64 @@
 
 Conflux Map is a Fabric minimap and world map mod. The client runs on its own: the minimap, fullscreen world map, biome layer, waypoints, structure and biome search, map drawing, and PNG export are all contained in a single JAR. Installing the server companion adds a server-wide live map, a shared waypoint list, and a web map accessible from a browser.
 
-**The full documentation lives on the [wiki](https://conflux-union.github.io/conflux-map/)** — feature guides, keybinds, a generated configuration reference, server-companion setup, the network protocol, and the public API.
+> 📖 Full documentation, keybinds, configuration reference, server companion setup, and protocol specs live on the **[Wiki](https://conflux-union.github.io/conflux-map/)**.
 
 ## Supported versions
 
-| Build      | Loads on                | Fabric | Paper plugin |
-|------------|-------------------------|:------:|:------------:|
-| `1.17.1`   | 1.17.1                  | ✓      | —            |
-| `1.18.2`   | 1.18.2                  | ✓      | —            |
-| `1.20.1`   | 1.20.1                  | ✓      | —            |
-| `1.20.6`   | 1.20.5, 1.20.6          | ✓      | —            |
-| `1.21.1`   | 1.21, 1.21.1            | ✓      | ✓            |
-| `1.21.3`   | 1.21.2, 1.21.3          | ✓      | ✓            |
-| `1.21.4`   | 1.21.4                  | ✓      | ✓            |
-| `1.21.5`   | 1.21.5                  | ✓      | ✓            |
-| `1.21.8`   | 1.21.6, 1.21.7, 1.21.8  | ✓      | ✓            |
-| `1.21.9`   | 1.21.9, 1.21.10         | ✓      | ✓            |
-| `1.21.11`  | 1.21.11                 | ✓      | ✓            |
-| `26.1.2`   | 26.1, 26.1.1, 26.1.2    | ✓      | ✓            |
-| `26.2`     | 26.2                   | ✓      | ✓            |
-| `26.3`     | 26.3                   | ✓      | ✓            |
+| Build | Loads on | Fabric (Client/Server) | Paper plugin |
+|---|---|:---:|:---:|
+| `1.17.1` | 1.17.1 | ✓ | — |
+| `1.18.2` | 1.18.2 | ✓ | — |
+| `1.20.1` | 1.20.1 | ✓ | — |
+| `1.20.6` | 1.20.5, 1.20.6 | ✓ | — |
+| `1.21.1` | 1.21, 1.21.1 | ✓ | ✓ |
+| `1.21.3` | 1.21.2, 1.21.3 | ✓ | ✓ |
+| `1.21.4` | 1.21.4 | ✓ | ✓ |
+| `1.21.5` | 1.21.5 | ✓ | ✓ |
+| `1.21.8` | 1.21.6, 1.21.7, 1.21.8 | ✓ | ✓ |
+| `1.21.9` | 1.21.9, 1.21.10 | ✓ | ✓ |
+| `1.21.11` | 1.21.11 | ✓ | ✓ |
+| `26.1.2` | 26.1, 26.1.1, 26.1.2 | ✓ | ✓ |
+| `26.2` | 26.2 | ✓ | ✓ |
+| `26.3` | 26.3 | ✓ | ✓ |
 
 ## Installation
 
-Download the JAR for your Minecraft version from the [Releases](../../releases) page and place it in the `mods/` folder together with [Fabric API](https://modrinth.com/mod/fabric-api). [MaliLib](https://modrinth.com/mod/malilib) is optional and adds multi-key hotkeys.
-
-The mod is fully client-side. The server-wide live map, shared waypoints, and web map come from the optional [server companion](https://conflux-union.github.io/conflux-map/technical/server-companion/) (Fabric `mods/` JAR, or the standalone Paper plugin).
+- **Client**: Download the JAR for your Minecraft version from [Releases](../../releases) and place it in `.minecraft/mods/` alongside [Fabric API](https://modrinth.com/mod/fabric-api). [MaliLib](https://modrinth.com/mod/malilib) is optional and adds multi-key hotkeys plus the `A+C` settings switcher on 1.21.1+.
+- **Server (optional)**: Place the matching JAR in `mods/` on a Fabric server, or the standalone plugin in `plugins/` on a Paper server. See the [Server companion guide](https://conflux-union.github.io/conflux-map/technical/server-companion/).
 
 ## Features
 
-- [Minimap](https://conflux-union.github.io/conflux-map/features/minimap/) — square or round, free placement, HUD avoidance
-- [World map](https://conflux-union.github.io/conflux-map/features/world-map/) — map/biome/load-level layers, per-dimension height layers
-- [Map autofill](https://conflux-union.github.io/conflux-map/features/autofill-prediction/) — predicted terrain from the world seed, replaced as you explore
-- [Structure & biome search](https://conflux-union.github.io/conflux-map/features/structure-biome-search/) — find and pin vanilla structures and biomes
-- [Chest loot preview](https://conflux-union.github.io/conflux-map/features/chest-loot-preview/) — deterministic loot rolls for supported structures
-- [Portal markers](https://conflux-union.github.io/conflux-map/features/portal-markers/) — nether portals, end portals, and gateways you have seen
-- [Waypoints](https://conflux-union.github.io/conflux-map/features/waypoints/) — sets, death points, cross-dimension display, Xaero/VoxelMap import
-- [Shared waypoints](https://conflux-union.github.io/conflux-map/features/shared-waypoints/) — one server-wide list, in-game commands included
-- [Entity radar](https://conflux-union.github.io/conflux-map/features/entity-radar/) — players and mobs, per-type visibility
-- [Drawings & export](https://conflux-union.github.io/conflux-map/features/drawings-export/) — shapes, measure tool, PNG export, Xaero terrain import
-- [Multi-server data](https://conflux-union.github.io/conflux-map/features/multi-server/) — sub-worlds and linked addresses
-- [Appearance](https://conflux-union.github.io/conflux-map/features/appearance/) — animations, resource-pack theming
+### Exploration & Mapping
 
-Keybinds and every configuration option: see the [keybind list](https://conflux-union.github.io/conflux-map/reference/keybinds/) and the [configuration reference](https://conflux-union.github.io/conflux-map/config/).
+- [Minimap](https://conflux-union.github.io/conflux-map/features/minimap/) — square or round, custom placement, automatic vanilla HUD avoidance
+- [World map](https://conflux-union.github.io/conflux-map/features/world-map/) — map/biome/chunk load-level layers, per-dimension height views
+- [Map autofill](https://conflux-union.github.io/conflux-map/features/autofill-prediction/) — seed-based terrain prediction for unexplored areas, replaced live as you explore
+- [Structure & biome search](https://conflux-union.github.io/conflux-map/features/structure-biome-search/) — find and pin vanilla structures and biomes
+- [Chest loot preview](https://conflux-union.github.io/conflux-map/features/chest-loot-preview/) — preview and display chest loot contents
+- [Portal markers](https://conflux-union.github.io/conflux-map/features/portal-markers/) — nether portals, end portals, and gateways you have seen
+
+### Waypoints, Collaboration & Tools
+
+- [Waypoints](https://conflux-union.github.io/conflux-map/features/waypoints/) — sets, death points, 1:8 cross-dimension display, one-click Xaero/VoxelMap data migration
+- [Shared waypoints](https://conflux-union.github.io/conflux-map/features/shared-waypoints/) — server-wide shared list, GUI and command controls
+- [Entity radar](https://conflux-union.github.io/conflux-map/features/entity-radar/) — players and mobs, fine-grained filtering
+- [Drawings & export](https://conflux-union.github.io/conflux-map/features/drawings-export/) — map annotations, measure tool, PNG export, one-click Xaero map data migration
+- [Multi-server data](https://conflux-union.github.io/conflux-map/features/multi-server/) — Velocity sub-world isolation, same-seed merging, linked addresses
+- [Appearance](https://conflux-union.github.io/conflux-map/features/appearance/) — UI animations, vanilla & Xaero resource-pack theming
+
+See the [keybind list](https://conflux-union.github.io/conflux-map/reference/keybinds/), [configuration reference](https://conflux-union.github.io/conflux-map/config/), and [FAQ](https://conflux-union.github.io/conflux-map/faq/).
 
 ## For developers
 
-Building from source and the developer workflow are documented on the wiki: [Developing](https://conflux-union.github.io/conflux-map/technical/developing/). The experimental client-side API is covered in [Public API](https://conflux-union.github.io/conflux-map/technical/api/), the sync protocol in [Network protocol](https://conflux-union.github.io/conflux-map/technical/protocol/).
+Building from source and the developer workflow are documented in [Developing](https://conflux-union.github.io/conflux-map/technical/developing/). The experimental client API is covered in [Public API](https://conflux-union.github.io/conflux-map/technical/api/), and the sync protocol in [Network protocol](https://conflux-union.github.io/conflux-map/technical/protocol/).
 
 ## Contact
 
 For bug reports, suggestions, or general discussion, reach us through the official channels:
 
 - Email: [contact@cxu.org.cn](mailto:contact@cxu.org.cn)
-- QQ group: [362669270](https://qun.qq.com/universal-share/share?ac=1&authKey=X68UEgKub%2FljNQ2gt977XUcHdklPbuSUlV0sxCFnvqWdDXXtDCGYleOTjPb1xYTY&busi_data=eyJncm91cENvZGUiOiIzNjI2NjkyNzAiLCJ0b2tlbiI6IjFaYXFmWjhQaHo0S0tHakhPdWM5c2lrM2t4L2ZpN2N5TmxGMi8yaGJJUFpjSWszcG9XdGlWUWZwL2Z6bGtnMTYiLCJ1aW4iOiIyNjg4ODgzNTc2In0%3D&data=spJ33k1yvhmWCjxI6bLw3xMXstlfzRC1iQRK2vP-g0aRaPb_ueNDl2haX1Z4AWNUh6pUSLIdjlv8IxQ3VStwng&svctype=4&tempid=h5_group_info)
+- QQ group: [362669270](https://qun.qq.com/universal-share/share?ac=1&authKey=X68UEgKub%2FljNQ2gt977XUcHdklPbuSUlV0sxCFnvqWdDXXtDCGYleOTjPb1xYTY&busi_data=eyJncm91cENvZGUiOiIzNjI2NjkyNzAiLCJ0b2tlbiI6IjFaYXFmWjhQaHo0S0xHakhPdWM5c2lrM2t4L2ZpN2N5TmxGMi8yaGJJUFpjSWszcG9XdGlWUWZwL2Z6bGtnMTYiLCJ1aW4iOiIyNjI4ODgzNTc2In0%3D&data=spJ33k1yvhmWCjxI6bLw3xMXstlfzRC1iQRK2vP-g0aRaPb_ueNDl2haX1Z4AWNUh6pUSLIdjlv8IxQ3VStwng&svctype=4&tempid=h5_group_info)
 
 ## License
 
