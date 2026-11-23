@@ -449,6 +449,8 @@ public final class ConfluxConfig {
     public long surveyReminderNextPromptAtMillis = SurveyReminderSchedule.FIRST_DELAY_MILLIS;
     /** Permanent local opt-out selected through the survey reminder's chat action. */
     public boolean surveyReminderDismissed;
+    /** Permanent local opt-out selected through the community invitation's chat action. */
+    public boolean communityInviteDismissed;
 
     public ConfluxConfig copy() {
         final ConfluxConfig c = new ConfluxConfig();
@@ -570,6 +572,7 @@ public final class ConfluxConfig {
         c.surveyReminderGameOpenMillis = surveyReminderGameOpenMillis;
         c.surveyReminderNextPromptAtMillis = surveyReminderNextPromptAtMillis;
         c.surveyReminderDismissed = surveyReminderDismissed;
+        c.communityInviteDismissed = communityInviteDismissed;
         return c;
     }
 

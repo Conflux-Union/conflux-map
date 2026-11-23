@@ -59,6 +59,7 @@ import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
 import cn.net.rms.confluxmap.mc.color.ColorReloadListener;
 import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
 import cn.net.rms.confluxmap.mc.color.SyncedMaterialResolver;
+import cn.net.rms.confluxmap.mc.community.CommunityNotifier;
 import cn.net.rms.confluxmap.mc.input.Keybinds;
 import cn.net.rms.confluxmap.mc.net.ClientNetworking;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
@@ -183,6 +184,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private UpdateCheckService updateCheck;
     private UpdateNotifier updateNotifier;
     private SurveyReminderNotifier surveyReminderNotifier;
+    private CommunityNotifier communityNotifier;
     private UnsupportedPlatformWarningNotifier unsupportedPlatformWarningNotifier;
     private ClientGroundTeleportService groundTeleportService;
     private Keybinds keybinds;
@@ -558,6 +560,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
         }
         updateNotifier = new UpdateNotifier(client, updateCheck);
         updateNotifier.register();
+        communityNotifier = new CommunityNotifier(config, configIo);
+        communityNotifier.register(client);
         surveyReminderNotifier.register();
 
         keybinds = new Keybinds(config, configIo, layerSelector);
@@ -874,6 +878,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public void dismissSurveyReminder() {
         surveyReminderNotifier.dismiss();
+    }
+
+    public void dismissCommunityInvite() {
+        communityNotifier.dismiss();
     }
 
     public ClientGroundTeleportService groundTeleportService() {
