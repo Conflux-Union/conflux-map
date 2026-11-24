@@ -141,28 +141,7 @@ public final class MsgCodec {
     }
 
     private static int capForType(final int typeId) {
-        return isS2C(typeId) ? Proto.MAX_S2C_PAYLOAD : Proto.MAX_C2S_PAYLOAD;
-    }
-
-    private static boolean isS2C(final int typeId) {
-        return typeId == Proto.MSG_HELLO_POLICY_S2C
-            || typeId == Proto.MSG_MAP_PATCH_S2C
-            || typeId == Proto.MSG_POLICY_UPDATE_S2C
-            || typeId == Proto.MSG_ERROR_S2C
-            || typeId == Proto.MSG_FLAT_BASELINE_S2C
-            || typeId == Proto.MSG_FEATURE_RESTRICTIONS_S2C
-            || typeId == Proto.MSG_LOAD_STATE_DELTA_S2C
-            || typeId == Proto.MSG_MAP_INVALIDATE_S2C
-            || typeId == Proto.MSG_MAP_REGION_PATCH_S2C
-            || typeId == Proto.MSG_MAP_REGION_INVALIDATE_S2C
-            || typeId == Proto.MSG_MAP_COMPATIBILITY_S2C
-            || typeId == Proto.MSG_SERVER_VIEW_DISTANCE_S2C
-            || typeId == Proto.MSG_MAP_CAPABILITIES_S2C
-            || typeId == Proto.MSG_SERVER_INSTANCE_S2C
-            || typeId == Proto.MSG_PLAYER_POSITIONS_S2C
-            || typeId == Proto.MSG_QUADRA_LAYOUT_S2C
-            || typeId == Proto.MSG_BIOME_LANG_S2C
-            || typeId == Proto.MSG_MAP_FULL_SYNC_MANIFEST_S2C;
+        return MapSyncProtocol.isClientbound(typeId) ? Proto.MAX_S2C_PAYLOAD : Proto.MAX_C2S_PAYLOAD;
     }
 
     private static void encodeHelloC2S(final DataOutputStream out, final HelloC2S m) throws IOException, ProtoException {
