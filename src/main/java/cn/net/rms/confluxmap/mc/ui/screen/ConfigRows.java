@@ -314,7 +314,7 @@ final class ConfigRows {
      */
     int addRows() {
         final int rowsTop = screen.rowsTop();
-        int y = rowsTop - screen.scrollOffset;
+        int y = rowsTop - screen.pane.scrollOffset();
         switch (screen.category) {
             case MINIMAP:
                 y = addToggleRow(
