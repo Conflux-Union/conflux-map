@@ -50,6 +50,7 @@ import cn.net.rms.confluxmap.core.update.UpdateCheckService;
 import cn.net.rms.confluxmap.core.waypoint.CrossWorldWaypointService;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
+import cn.net.rms.confluxmap.core.waypoint.library.WaypointLibraryService;
 import cn.net.rms.confluxmap.core.waypoint.list.ConfigWaypointPersonalPreferences;
 import cn.net.rms.confluxmap.core.waypoint.list.LocalWaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.SharedWaypointListModel;
@@ -151,6 +152,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private FullscreenMapViewState fullscreenMapViewState;
     private LayerSelector layerSelector;
     private WaypointService waypointService;
+    private cn.net.rms.confluxmap.core.waypoint.library.WaypointListMemory waypointListMemory;
+    private WaypointLibraryService waypointLibraryService;
+    private cn.net.rms.confluxmap.core.waypoint.library.WaypointMediaService waypointMediaService;
+    private cn.net.rms.confluxmap.core.waypoint.library.MapScreenshotIndex mapScreenshotIndex;
     private AnnotationService annotationService;
     private CrossWorldWaypointService crossWorldWaypoints;
     private WaypointRenderCatalog waypointRenderCatalog;
@@ -284,6 +289,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
             clientWorldProfiles, UUID::randomUUID, () -> clientWorldProfileIo.save(clientWorldProfiles)
         );
         final Path waypointRoot = confluxRoot.resolve("waypoints");
+        final Path waypointLibraryRoot = confluxRoot.resolve("waypoint-library");
         final Path portalRoot = confluxRoot.resolve("portals");
         final Path annotationRoot = confluxRoot.resolve("annotations");
         final ServerAliasIo serverAliasIo = new ServerAliasIo(
@@ -310,11 +316,15 @@ public final class ConfluxMapClient implements ClientModInitializer {
             new NamespaceAdoption.Store(cacheRoot, ""),
             new NamespaceAdoption.Store(cacheRoot.resolve("prediction"), ""),
             new NamespaceAdoption.Store(waypointRoot, ".json"),
+            new NamespaceAdoption.Store(waypointLibraryRoot, ".json"),
             new NamespaceAdoption.Store(portalRoot, ".json")
         );
-        sessionTracker.bindNamespaceAdopter(identity -> NamespaceAdoption.adopt(
-            adoptableStores, identity, companionSession.companionWorldId(), ConfluxMapMod.LOGGER
-        ));
+        sessionTracker.bindNamespaceAdopter(identity -> {
+            final String legacyWorldId = companionSession.companionWorldId();
+            NamespaceAdoption.adopt(adoptableStores, identity, legacyWorldId, ConfluxMapMod.LOGGER);
+            waypointMediaService.adoptNamespace(identity, legacyWorldId, ConfluxMapMod.LOGGER);
+            mapScreenshotIndex.adoptNamespace(identity, legacyWorldId);
+        });
         mapWorlds = new MapWorldService();
         daylightModel = new DaylightModel();
         tileService = new TileService(mapWorlds, executors, config, daylightModel);
@@ -428,6 +438,15 @@ public final class ConfluxMapClient implements ClientModInitializer {
         playerTrail = new PlayerTrail();
         playerTrailTracker = new PlayerTrailTracker(client, config, sessionGuard, playerTrail);
         waypointService = new WaypointService(waypointRoot, executors, ConfluxMapMod.LOGGER);
+        waypointListMemory = new cn.net.rms.confluxmap.core.waypoint.library.WaypointListMemory(
+            confluxRoot.resolve("waypoint-list.json"), MinecraftClient.getInstance().runDirectory.toPath().resolve("config/halfmasa"), executors.io(), ConfluxMapMod.LOGGER);
+        waypointLibraryService = new WaypointLibraryService(waypointLibraryRoot, executors, ConfluxMapMod.LOGGER);
+        mapScreenshotIndex = new cn.net.rms.confluxmap.core.waypoint.library.MapScreenshotIndex(
+            confluxRoot.resolve("map-screenshots.json"), FabricLoader.getInstance().getGameDir().resolve("screenshots"),
+            executors.io(), ConfluxMapMod.LOGGER);
+        waypointMediaService = new cn.net.rms.confluxmap.core.waypoint.library.WaypointMediaService(
+            confluxRoot.resolve("waypoint-media"));
+        waypointService.addChangeListener(waypointLibraryService::onWaypointsChanged);
         portalService = new PortalService(portalRoot, executors, ConfluxMapMod.LOGGER);
         portalScanService = new PortalScanService(client, config, portalService);
         PortalScanHandler.bind(portalScanService);
@@ -497,6 +516,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(playerTrailTracker::onSessionChanged);
         sessionTracker.addListener(fullscreenMapViewState::onSessionChanged);
         sessionTracker.addListener(waypointService::onSessionChanged);
+        sessionTracker.addListener(waypointLibraryService::onSessionChanged);
         sessionTracker.addListener(portalService::onSessionChanged);
         sessionTracker.addListener(portalScanService::onSessionChanged);
         sessionTracker.addListener(session -> crossWorldWaypoints.update(
@@ -542,7 +562,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
             new EntityIconReloadListener(entityIconManager)
         );
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
-            new UiResourceReloadListener(uiResourceTheme)
+            new UiResourceReloadListener(uiResourceTheme, () -> gameBridge.runOnRenderThread(
+                cn.net.rms.confluxmap.mc.ui.screen.WaypointPhotoTexture::invalidateAll))
         );
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
             new PortalIconReloadListener()
@@ -635,6 +656,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         //#if MC>=260200
         //$$ Mesh.close();
         //#endif
+        waypointMediaService.close();
         api.shutdown();
         executors.shutdown(5000L);
     }
@@ -785,6 +807,18 @@ public final class ConfluxMapClient implements ClientModInitializer {
         return waypointService;
     }
 
+    public cn.net.rms.confluxmap.core.waypoint.library.WaypointListMemory waypointListMemory() { return waypointListMemory; }
+
+    public WaypointLibraryService waypointLibraryService() {
+        return waypointLibraryService;
+    }
+
+    public cn.net.rms.confluxmap.core.waypoint.library.MapScreenshotIndex mapScreenshotIndex() { return mapScreenshotIndex; }
+
+    public cn.net.rms.confluxmap.core.waypoint.library.WaypointMediaService waypointMediaService() {
+        return waypointMediaService;
+    }
+
     public PortalService portalService() {
         return portalService;
     }
@@ -910,8 +944,16 @@ public final class ConfluxMapClient implements ClientModInitializer {
         final boolean voidColumn
     ) {
         final ConfluxMapApiImpl current = api;
-        return current == null ? OptionalInt.empty() : current.resolveTeleportLanding(
+        final OptionalInt extension = current == null ? OptionalInt.empty() : current.resolveTeleportLanding(
             blockX, blockZ, dimension, voidColumn
         );
+        if (extension.isPresent() || waypointListMemory == null || !waypointListMemory.options().unknownHeightFallback) return extension;
+        final var world = MinecraftClient.getInstance().world;
+        if (world == null || !dimension.equals(gameBridge.session().dimension())) return OptionalInt.empty();
+        final int bottom = world.getBottomY();
+        final int ceiling = Math.min(world.getTopY(), bottom
+            + cn.net.rms.confluxmap.mc.world.LayerSelector.logicalHeight(world.getDimension()));
+        return ceiling - bottom < 3 ? OptionalInt.empty()
+            : OptionalInt.of(Math.max(bottom + 1, Math.min(ceiling - 2, waypointListMemory.options().unknownHeight)));
     }
 }

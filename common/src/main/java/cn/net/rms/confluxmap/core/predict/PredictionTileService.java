@@ -956,6 +956,15 @@ public final class PredictionTileService {
      * slot, so a cursor readout works in the biome view even though only its cheap biome tiles
      * (never the terrain twins) composed there.
      */
+    /** Received server terrain only. The seed baseline has no evaluated coverage bits. */
+    public byte[] synchronizedCoverage(final TileKey key) {
+        final CorrectionStore corrections = correctionStore;
+        if (corrections == null || state.manualSeed()) {
+            return null;
+        }
+        return corrections.loadedCoverage(key.world(), key.dimension(), key.lod(), key.tileX(), key.tileZ());
+    }
+
     public OptionalInt predictedBiomeAt(
         final DimensionId dimension,
         final MapLayer layer,

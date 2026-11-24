@@ -157,7 +157,24 @@ final class WaypointEditLayoutTest {
         assertEquals(24, WaypointEditLayout.labelY(34));
     }
 
-    /** Inclusive-top, exclusive-bottom spans of every drawn element, in draw order. */
+    @Test
+    void detailsFollowImagesAndCanScrollClearOfTheFixedFooter() {
+        var tall = WaypointEditLayout.detailsRows(480, true);
+        var small = WaypointEditLayout.detailsRows(240, true);
+        var noImages = WaypointEditLayout.detailsRows(240, false);
+        int rowHeight = WaypointEditLayout.FIELD_HEIGHT;
+        assertEquals(0, tall.maxScroll());
+        assertTrue(small.maxScroll() > 0);
+        assertTrue(small.noteY() >= small.base().imageY() + rowHeight);
+        assertTrue(noImages.noteY() >= noImages.base().markerY() + rowHeight);
+        for (var rows : List.of(tall, small, noImages)) {
+            assertTrue(rows.productY() >= rows.noteY() + rowHeight);
+            assertTrue(rows.contains(rows.productY() - rows.maxScroll(), rowHeight));
+            assertTrue(rows.contains(rows.noteY() - rows.maxScroll(), rowHeight));
+        }
+        assertTrue(small.form(small.maxScroll()).statusY() < WaypointEditLayout.footerY(240));
+    }
+
     private static List<int[]> visibleSpans(final WaypointEditLayout.Rows rows, final boolean fullForm) {
         final List<int[]> spans = new ArrayList<>();
         spans.add(new int[] {WaypointEditLayout.TITLE_Y, WaypointEditLayout.TITLE_Y + WaypointEditLayout.LABEL_HEIGHT});

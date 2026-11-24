@@ -132,6 +132,13 @@ jobs:
               ./gradlew ":$minecraft_version:runClientGameTest" \
               --no-daemon --no-parallel --console=plain
             echo "Client-server connection GameTest passed for Minecraft $minecraft_version"
+            if [[ "$minecraft_version" == "26.3" || "$minecraft_version" == "1.21.4" ]]; then
+              echo "Running waypoint and map UI regression GameTest for Minecraft $minecraft_version"
+              timeout --signal=TERM --kill-after=15s 360s \
+                xvfb-run -a -s '-screen 0 1280x720x24' \
+                ./gradlew ":$minecraft_version:runClientGameTest" -PwaypointSmoke \
+                --no-daemon --no-parallel --console=plain
+            fi
             exit 0
           fi
 
@@ -238,14 +245,30 @@ jobs:
           wait_for_server
 
           echo "Starting Minecraft $minecraft_version client under Xvfb"
+          client_checks=()
+          if [[ "$minecraft_version" == "1.17.1" ]]; then
+            client_checks+=(-PlegacyWaypointSmoke)
+          fi
           setsid xvfb-run -a -s '-screen 0 1280x720x24' \
             ./gradlew ":$minecraft_version:runClient" -PconnectionSmoke -PautoServer \
-            --no-daemon --console=plain > "$client_output" 2>&1 &
+            "${client_checks[@]}" --no-daemon --console=plain > "$client_output" 2>&1 &
           client_pid=$!
           wait_for_client_login
 
           grep -Em1 'logged in with entity id [0-9]+ at|joined the game' "$server_output"
           echo "Client-server connection smoke test passed for Minecraft $minecraft_version"
+          if [[ "$minecraft_version" == "1.17.1" ]]; then
+            deadline=$((SECONDS + 180))
+            while kill -0 "$client_pid" 2>/dev/null; do
+              if (( SECONDS >= deadline )); then
+                echo "::error::Timed out waiting for waypoint gameplay checks"
+                exit 1
+              fi
+              sleep 2
+            done
+            wait "$client_pid"
+            grep -F 'Legacy waypoint gameplay test passed' "$client_output"
+          fi
             )
           done
       - name: Upload build for shard
