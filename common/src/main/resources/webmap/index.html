@@ -32,7 +32,15 @@
       <strong data-i18n="players">Players</strong>
       <span id="player-count" class="panel-count">0</span>
     </div>
+    <div class="entity-options">
+      <label><input type="checkbox" id="show-players" checked> <span data-i18n="showPlayers">Show players</span></label>
+      <label><input type="checkbox" id="show-waypoints" checked> <span data-i18n="showWaypoints">Show waypoints</span></label>
+    </div>
+    <input id="player-search" class="entity-search" type="search" maxlength="128" autocomplete="off" hidden>
     <div id="player-list" class="player-list" aria-live="polite"></div>
+    <div class="panel-header"><strong data-i18n="waypoints">Waypoints</strong><span id="waypoint-count" class="panel-count">0</span></div>
+    <input id="waypoint-search" class="entity-search" type="search" maxlength="128" autocomplete="off" hidden>
+    <div id="waypoint-list" class="waypoint-list" aria-live="polite"></div>
   </aside>
   <output id="scale-label" class="scale-label" data-i18n="scale">Scale: 0.50x</output>
   <script src="/vendor/leaflet.js"></script>

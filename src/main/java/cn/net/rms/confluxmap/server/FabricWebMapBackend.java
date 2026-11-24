@@ -39,10 +39,21 @@ final class FabricWebMapBackend implements WebMapBackend {
     private volatile WebMapSnapshot snapshot = WebMapSnapshot.EMPTY;
     private volatile Map<UUID, URI> skinUrls = Map.of();
     private final WebAvatarCache avatars = new WebAvatarCache();
+    private final cn.net.rms.confluxmap.server.web.WebMapFeatures features;
+    @Override public cn.net.rms.confluxmap.server.web.WebMapFeatures features(){return features;}
 
     FabricWebMapBackend(final MinecraftServer server, final ConfluxMapCompanion companion) {
         this.server = server;
         this.companion = companion;
+        features=new cn.net.rms.confluxmap.server.web.WebMapFeatures(companion.config().webMap,
+            companion.webMapImageDirectory(companion.worldIds().get(server).toString()), id -> companion.sharedWaypointsEnabled() && snapshot.waypoints().stream().anyMatch(w -> w.id().equals(id.toString())),
+            companion::saveWebMapConfig, server::execute,
+            text -> server.getPlayerManager().getPlayerList().forEach(player ->
+                cn.net.rms.confluxmap.compat.MinecraftAccess.sendSystemMessage(
+                    player, cn.net.rms.confluxmap.compat.Texts.literal(text)
+                )
+            )
+        );
         this.manifest = buildManifest();
     }
 
@@ -78,6 +89,14 @@ final class FabricWebMapBackend implements WebMapBackend {
                     companion.config().minRequestIntervalMs,
                     companion.config().webMap.minRequestIntervalMs
                 )
+            ),
+            new WebMapManifest.Presentation(
+                companion.instanceId().toString(),
+                companion.config().webMap.serverDisplayName.isBlank()
+                    ? serverName(server.getServerMotd(), server.getSavePath(net.minecraft.util.WorldSavePath.ROOT).toAbsolutePath().normalize().getFileName().toString()) : companion.config().webMap.serverDisplayName,
+                companion.config().webMap.defaultMode,
+                companion.config().webMap.sharePlayers && companion.config().webMap.allowPlayerSearch,
+                companion.config().webMap.allowWaypointSearch
             )
         );
     }
@@ -122,7 +141,8 @@ final class FabricWebMapBackend implements WebMapBackend {
 
     @Override
     public CompletableFuture<byte[]> avatar(final UUID playerId) {
-        return avatars.face(skinUrls.get(playerId));
+        URI skin=skinUrls.get(playerId);
+        return avatars.face(skin==null?features.chatSkin(playerId):skin);
     }
 
     private static RegionSummaryService.MessageSender sender(
@@ -144,6 +164,9 @@ final class FabricWebMapBackend implements WebMapBackend {
             }
         };
     }
+
+    private static String serverName(String motd,String fallback){String name=motd==null?"":motd.replaceAll("§.","").replaceAll("[\\p{Cc}\\p{Cf}]"," ").strip();if(name.isBlank())return fallback;return name.codePointCount(0,name.length())>80?name.substring(0,name.offsetByCodePoints(0,80)):name;}
+    void gameChat(ServerPlayerEntity player,String text){if(!companion.config().webMap.enableChat||!companion.config().webMap.showGameChat)return;features.gameChat(player.getUuid(),player.getName().getString(),text,skin(player));}
 
     void updatePlayers() {
         final List<WebPlayerSnapshot.Player> result = new ArrayList<>();

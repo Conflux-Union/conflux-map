@@ -720,5 +720,16 @@
   "confluxmap.screen.structure_candidates.bounds": "搜索半径 / 结果数量",
   "confluxmap.screen.structure_candidates.waypoint": "添加路径点",
   "confluxmap.screen.structure_candidates.invalid": "请输入有效的搜索参数",
-  "confluxmap.screen.structure_candidates.not_found": "该范围内没有找到可能存在的结构"
+  "confluxmap.screen.structure_candidates.not_found": "该范围内没有找到可能存在的结构",
+  "confluxmap.webmap.admin": "网页地图管理",
+  "confluxmap.webmap.image_upload": "上传路径点图片",
+  "confluxmap.webmap.image_path": "输入 PNG/JPEG 文件完整路径",
+  "confluxmap.webmap.sharePlayers": "玩家位置",
+  "confluxmap.webmap.allowPlayerSearch": "玩家搜索",
+  "confluxmap.webmap.allowWaypointSearch": "路径点搜索",
+  "confluxmap.webmap.showWaypointImages": "路径点图片",
+  "confluxmap.webmap.waypointImageMode": "图片权限",
+  "confluxmap.webmap.enableChat": "网页聊天",
+  "confluxmap.webmap.showGameChat": "转发游戏聊天",
+  "confluxmap.webmap.allowWebChat": "允许网页发言"
 }

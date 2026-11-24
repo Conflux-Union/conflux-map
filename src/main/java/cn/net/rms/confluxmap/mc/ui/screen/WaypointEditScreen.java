@@ -592,6 +592,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
             setDisabledTooltip(clearIconButton, "confluxmap.screen.waypoint.marker_style_unsupported");
         }
 
+        if(createTarget==CreateTarget.PUBLIC&&editingId!=null&&cn.net.rms.confluxmap.mc.net.WebMapClient.flag("upload")){
+            addDrawableChild(Widgets.button(Math.max(4,width-112),4,108,20,Texts.translatable("confluxmap.webmap.image_upload"),b->cn.net.rms.confluxmap.compat.MinecraftAccess.setScreen(net.minecraft.client.MinecraftClient.getInstance(),new WebMapImageScreen(this,editingId))));
+        }
         final int footerY = WaypointEditLayout.footerY(height);
         final boolean editing = editingId != null;
         final int footerLeft = centerX - WaypointEditLayout.FORM_WIDTH / 2;

@@ -16,6 +16,7 @@ import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
+import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -348,6 +349,60 @@ final class WebMapServerTest {
         }
     }
 
+    @Test
+    void sharedGatewayRoutesHttpAndRealWebSocketsToTheSelectedInstance() throws Exception {
+        final WebMapConfig config = WebMapConfig.loopbackEphemeral();
+        try (ServerSocket available = new ServerSocket(0)) {
+            config.port = available.getLocalPort();
+        }
+        final FakeBackend first = new FakeBackend();
+        final FakeBackend second = new FakeBackend();
+        final String query = "?serverId=" + second.instanceId;
+        final MapViewReqC2S request = new MapViewReqC2S(
+            93, 0, 2, List.of(new MapViewReqC2S.TileReq(-3, 4, Long.MIN_VALUE))
+        );
+        final CompletableFuture<byte[]> response = new CompletableFuture<>();
+        final HttpClient client = client();
+
+        try (
+            WebMapServer gateway = WebMapServer.startShared(config, first, configDirectory);
+            WebMapServer follower = WebMapServer.startShared(config, second, configDirectory)
+        ) {
+            final HttpResponse<String> servers = client.send(
+                HttpRequest.newBuilder(gateway.uri("/api/v1/servers")).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            assertEquals(200, servers.statusCode());
+            assertTrue(servers.body().contains(first.instanceId.toString()));
+            assertTrue(servers.body().contains(second.instanceId.toString()));
+            final HttpResponse<String> manifest = client.send(
+                HttpRequest.newBuilder(gateway.uri("/api/v1/manifest" + query)).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            assertEquals(200, manifest.statusCode());
+            assertTrue(manifest.body().contains(second.instanceId.toString()));
+            assertFalse(manifest.body().contains(first.instanceId.toString()));
+
+            final URI ws = URI.create(gateway.uri("/api/v1/map" + query).toString().replaceFirst("^http", "ws"));
+            final WebSocket socket = client.newWebSocketBuilder()
+                .header("Origin", "http://" + ws.getRawAuthority())
+                .connectTimeout(Duration.ofSeconds(5))
+                .buildAsync(ws, new BinaryListener(response))
+                .get(5, TimeUnit.SECONDS);
+            try {
+                socket.sendBinary(ByteBuffer.wrap(MsgCodec.encode(request)), true).get(5, TimeUnit.SECONDS);
+                final MapPatchS2C patch = assertInstanceOf(
+                    MapPatchS2C.class, MsgCodec.decode(response.get(5, TimeUnit.SECONDS))
+                );
+                assertEquals(request.reqId(), patch.reqId());
+                assertEquals(request, second.tileRequest.get());
+                assertEquals(null, first.tileRequest.get());
+            } finally {
+                socket.abort();
+            }
+        }
+    }
+
     private static HttpClient client() {
         return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
     }
@@ -379,6 +434,7 @@ final class WebMapServerTest {
     }
 
     private static final class FakeBackend implements WebMapBackend {
+        final UUID instanceId = UUID.randomUUID();
         final AtomicReference<MapViewReqC2S> tileRequest = new AtomicReference<>();
         final AtomicReference<MapRegionSyncSubscribeC2S> subscription = new AtomicReference<>();
 
@@ -395,7 +451,11 @@ final class WebMapServerTest {
                     "overworld",
                     true,
                     WorldPreset.DEFAULT
-                ))
+                )),
+                WebMapManifest.Limits.DEFAULT,
+                new WebMapManifest.Presentation(
+                    instanceId.toString(), "Test server", WebMapConfig.DefaultMode.AUTO, false, true
+                )
             );
         }
 

@@ -720,5 +720,16 @@
   "confluxmap.screen.structure_candidates.bounds": "Radius / result count",
   "confluxmap.screen.structure_candidates.waypoint": "Add Waypoint",
   "confluxmap.screen.structure_candidates.invalid": "Enter valid search values",
-  "confluxmap.screen.structure_candidates.not_found": "No possible structures found in this area"
+  "confluxmap.screen.structure_candidates.not_found": "No possible structures found in this area",
+  "confluxmap.webmap.admin": "Web map administration",
+  "confluxmap.webmap.image_upload": "Upload waypoint image",
+  "confluxmap.webmap.image_path": "Enter full PNG/JPEG file path",
+  "confluxmap.webmap.sharePlayers": "Share player positions",
+  "confluxmap.webmap.allowPlayerSearch": "Player search",
+  "confluxmap.webmap.allowWaypointSearch": "Waypoint search",
+  "confluxmap.webmap.showWaypointImages": "Waypoint images",
+  "confluxmap.webmap.waypointImageMode": "Image permission",
+  "confluxmap.webmap.enableChat": "Web chat",
+  "confluxmap.webmap.showGameChat": "Game chat relay",
+  "confluxmap.webmap.allowWebChat": "Allow web messages"
 }

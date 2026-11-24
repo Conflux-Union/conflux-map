@@ -15,7 +15,7 @@ import cn.net.rms.confluxmap.server.web.WebMapConfig;
  * boundaries make that safe. Settings that reveal sensitive server state still default OFF.
  */
 public final class ServerConfig {
-    public static final int SCHEMA_VERSION = 7;
+    public static final int SCHEMA_VERSION = 9;
 
     public int schemaVersion = SCHEMA_VERSION;
 

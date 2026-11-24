@@ -80,6 +80,28 @@ public final class ConfluxMapCompanion {
         networking.register();
         sharedWaypointNetworking.register();
         ConfluxMapCommands.register(this);
+        cn.net.rms.confluxmap.compat.PlayNetworking.registerServer(cn.net.rms.confluxmap.compat.Ids.of("confluxmap:webmap_v1"), (server,player,payload) -> {
+            FabricWebMapBackend current=webMapBackend;
+            if(current==null||payload.length>16000||!current.features().allowPacket(player.getUuid()))return;
+            server.execute(() -> {
+                FabricWebMapBackend b=webMapBackend;if(b!=current)return;
+                var channel=cn.net.rms.confluxmap.compat.Ids.of("confluxmap:webmap_v1");
+                b.features().handle(player.getUuid(),cn.net.rms.confluxmap.compat.MinecraftAccess.playerName(player),
+                    () -> cn.net.rms.confluxmap.compat.MinecraftAccess.hasPermission(player,2),
+                    () -> webMapBackend==b && server.getPlayerManager().getPlayer(player.getUuid())==player,
+                    payload,
+                    reply -> cn.net.rms.confluxmap.compat.PlayNetworking.sendServer(player,channel,reply),
+                    notice -> notifyImageOperators(server,notice));
+            });
+        });
+        net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.DISCONNECT.register((handler,server)->{
+            FabricWebMapBackend b=webMapBackend;if(b!=null)b.features().disconnect(handler.getPlayer().getUuid());
+        });
+        //#if MC>=12000
+        //$$ net.fabricmc.fabric.api.message.v1.ServerMessageEvents.CHAT_MESSAGE.register((message,sender,params) -> {
+        //$$     FabricWebMapBackend b=webMapBackend;if(b!=null)b.gameChat(sender,message.getContent().getString());
+        //$$ });
+        //#endif
         ServerLifecycleEvents.SERVER_STARTING.register(this::onServerStarting);
         ServerLifecycleEvents.SERVER_STARTED.register(this::onServerStarted);
         ServerLifecycleEvents.SERVER_STOPPING.register(this::onServerStopping);
@@ -126,7 +148,7 @@ public final class ConfluxMapCompanion {
             networking.broadcastPlayerPositions(server);
         }
         final FabricWebMapBackend currentWebBackend = webMapBackend;
-        if (currentWebBackend != null && (config.webMap.sharePlayers || sharedWaypointsEnabled())
+        if (currentWebBackend != null
             && ++webPlayerTicks >= 40) {
             webPlayerTicks = 0;
             currentWebBackend.updatePlayers();
@@ -257,6 +279,26 @@ public final class ConfluxMapCompanion {
      * Resolved on first use rather than at construction so a singleplayer client that never runs
      * a companion session does not write the file at all.
      */
+    java.nio.file.Path webMapImageDirectory(String worldId){return configIo.directory().resolve("webmap-images").resolve(instanceId().toString()).resolve(worldId);}
+    boolean saveWebMapConfig() {
+        if (!configIo.saveAtomically(config)) {
+            return false;
+        }
+        final FabricWebMapBackend backend = webMapBackend;
+        if (backend != null) {
+            backend.updatePlayers();
+        }
+        return true;
+    }
+    cn.net.rms.confluxmap.server.web.WebMapFeatures webFeatures(){return webMapBackend==null?null:webMapBackend.features();}
+    private void notifyImageOperators(MinecraftServer server,String notice){
+        String[] parts=notice.split(" \\| ");
+        for(var player:server.getPlayerManager().getPlayerList())if(cn.net.rms.confluxmap.compat.MinecraftAccess.hasPermission(player,2)){
+            var text=cn.net.rms.confluxmap.compat.Texts.literal(parts[0]+" ");
+            if(parts.length==3){text.append(cn.net.rms.confluxmap.compat.Texts.literal("[同意] ").styled(style->style.withClickEvent(cn.net.rms.confluxmap.compat.Texts.runCommand(parts[1]))));text.append(cn.net.rms.confluxmap.compat.Texts.literal("[拒绝]").styled(style->style.withClickEvent(cn.net.rms.confluxmap.compat.Texts.runCommand(parts[2]))));}
+            cn.net.rms.confluxmap.compat.MinecraftAccess.sendSystemMessage(player, text);
+        }
+    }
     public UUID instanceId() {
         UUID current = instanceId;
         if (current == null) {
@@ -453,7 +495,7 @@ public final class ConfluxMapCompanion {
         if (config.webMap.enabled) {
             try {
                 webMapBackend = new FabricWebMapBackend(server, this);
-                webMap = WebMapServer.start(config.webMap, webMapBackend, configIo.directory());
+                webMap = WebMapServer.startShared(config.webMap, webMapBackend, configIo.directory());
                 ConfluxMapMod.LOGGER.info(
                     "[ConfluxMap] web map listening on {}:{}",
                     config.webMap.bindAddress, config.webMap.port

@@ -34,6 +34,8 @@ public final class WebMapServer implements AutoCloseable {
     private static final int SOCKET_TIMEOUT_MS = 60_000;
 
     private final Transport transport;
+    private WebMapGateway gateway;
+    private URI publicUri;
 
     private WebMapServer(final Transport transport) {
         this.transport = transport;
@@ -59,18 +61,42 @@ public final class WebMapServer implements AutoCloseable {
             throw new IOException("remote web-map bind requires allowInsecureRemote=true");
         }
         final Transport transport = new Transport(requestedConfig, backend, configDirectory);
-        transport.start(SOCKET_TIMEOUT_MS, false);
+        try { transport.start(SOCKET_TIMEOUT_MS, false); }
+        catch (IOException | RuntimeException e) { transport.closeTransport(); WebMapFeatures f=backend.features();if(f!=null)f.close();throw e; }
         return new WebMapServer(transport);
     }
 
+    public static WebMapServer startShared(WebMapConfig config, WebMapBackend backend, Path directory) throws IOException {
+        config.normalize();
+        if (!config.sharedGateway || config.port == 0) return start(config, backend, directory);
+        if (!config.loopbackOnly() && !config.allowInsecureRemote) throw new IOException("remote web-map bind requires allowInsecureRemote=true");
+        WebMapConfig internal = WebMapConfig.loopbackEphemeral();
+        byte[] secret=new byte[32];new java.security.SecureRandom().nextBytes(secret);
+        internal.gatewayToken=java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(secret);
+        internal.title=config.title; internal.favicon=config.favicon;
+        internal.maxConnections=config.maxConnections; internal.maxBytesPerSecondPerAddress=config.maxBytesPerSecondPerAddress;
+        internal.minRequestIntervalMs=config.minRequestIntervalMs;
+        WebMapServer local=start(internal, backend, directory);
+        try {
+            local.gateway=new WebMapGateway(config, UUID.fromString(backend.manifest().presentation().serverInstanceId()),
+                local.transport.getListeningPort(), internal.gatewayToken, () -> backend.manifest().presentation().serverDisplayName());
+            local.publicUri=URI.create("http://"+displayHost(config.bindAddress)+":"+config.port+"/");
+            return local;
+        } catch(IOException | RuntimeException e) {local.close();throw e;}
+    }
+
     public URI uri(final String path) {
+        if (publicUri != null) return publicUri.resolve(path);
         return URI.create("http://" + displayHost(transport.config.bindAddress)
             + ":" + transport.getListeningPort() + path);
     }
 
     @Override
     public void close() {
+        if (gateway != null) gateway.close();
         transport.closeTransport();
+        WebMapFeatures features=transport.backend.features();
+        if(features!=null) features.close();
     }
 
     private record StaticAsset(byte[] body, String contentType, String etag) {
@@ -116,7 +142,7 @@ public final class WebMapServer implements AutoCloseable {
 
         @Override
         protected boolean isWebsocketRequested(final IHTTPSession session) {
-            return "/api/v1/map".equals(session.getUri())
+            return gatewayAuthorized(session) && "/api/v1/map".equals(session.getUri())
                 && webSocketOriginAllowed(session)
                 && super.isWebsocketRequested(session);
         }
@@ -128,6 +154,7 @@ public final class WebMapServer implements AutoCloseable {
 
         @Override
         protected Response serveHttp(final IHTTPSession session) {
+            if(!gatewayAuthorized(session)) return secure(text(Response.Status.FORBIDDEN,NanoHTTPD.MIME_PLAINTEXT,"gateway authentication required"));
             final String path = session.getUri();
             if ("/api/v1/map".equals(path) && super.isWebsocketRequested(session)) {
                 return secure(text(
@@ -151,12 +178,28 @@ public final class WebMapServer implements AutoCloseable {
                     "use /api/v1/map websocket"
                 ));
             }
+            if (path.startsWith("/api/v1/waypoint-images/")) {
+                if (session.getMethod() != Method.GET) return methodNotAllowed("GET");
+                try {
+                    String name=path.substring("/api/v1/waypoint-images/".length());
+                    UUID id=UUID.fromString(name.endsWith(".png")?name.substring(0,name.length()-4):name);
+                    WebMapFeatures features=backend.features();
+                    byte[] data=features==null?null:features.image(id);
+                    if(data!=null){Response result=bytes(Response.Status.OK,"image/png",data);result.addHeader("Cache-Control","no-store");return secure(result);}
+                }catch(IllegalArgumentException ignored){}
+                return secure(text(Response.Status.NOT_FOUND,NanoHTTPD.MIME_PLAINTEXT,"image unavailable"));
+            }
             if (path.startsWith("/api/v1/avatars/")) {
                 return avatar(session, path);
             }
             return staticAsset(session, path);
         }
 
+        private boolean gatewayAuthorized(IHTTPSession session){
+            String token=config.gatewayToken;
+            String supplied=header(session,"x-conflux-gateway");
+            return token==null||(supplied!=null&&MessageDigest.isEqual(token.getBytes(StandardCharsets.US_ASCII),supplied.getBytes(StandardCharsets.US_ASCII)));
+        }
         private static boolean webSocketOriginAllowed(final IHTTPSession session) {
             final String originValue = header(session, "origin");
             if (originValue == null || originValue.isBlank()) {
@@ -346,6 +389,7 @@ public final class WebMapServer implements AutoCloseable {
             final WebMapSnapshot snapshot = backend.snapshot();
             for (final MapSocket socket : sockets.values()) {
                 socket.sendMapState(snapshot);
+                socket.sendFeatures();
             }
         }
 
@@ -387,10 +431,13 @@ public final class WebMapServer implements AutoCloseable {
             private final AtomicBoolean registered = new AtomicBoolean();
             private volatile long playerRevision = Long.MIN_VALUE;
             private volatile long waypointRevision = Long.MIN_VALUE;
+            private final String address;
+            private String lastPolicy="", lastChat="", lastImages="";
 
             MapSocket(final IHTTPSession handshakeRequest) {
                 super(handshakeRequest);
-                budget = addressBudget(clientAddress(handshakeRequest));
+                address=clientAddress(handshakeRequest);
+                budget = addressBudget(address);
             }
 
             @Override
@@ -402,6 +449,7 @@ public final class WebMapServer implements AutoCloseable {
                 registered.set(true);
                 sockets.put(clientId, this);
                 sendMapState(backend.snapshot());
+                sendFeatures();
             }
 
             @Override
@@ -421,6 +469,20 @@ public final class WebMapServer implements AutoCloseable {
                             send("pong");
                         } catch (final IOException e) {
                             closeQuietly(WebSocketFrame.CloseCode.GoingAway, "write failed");
+                        }
+                    } else {
+                        String text=frame.getTextPayload();
+                        WebMapFeatures features=backend.features();
+                        if(features!=null && text.length()<=2048){
+                            try{
+                                com.google.gson.JsonObject msg=new com.google.gson.Gson().fromJson(text,com.google.gson.JsonObject.class);
+                                if("chat-send".equals(msg.get("type").getAsString())){
+                                    String error=features.webChat(address,msg.get("text").getAsString());
+                                    com.google.gson.JsonObject response=new com.google.gson.JsonObject();
+                                    response.addProperty("type","chat-result");response.addProperty("message",error);
+                                    sendStatePayload(response.toString());
+                                }
+                            }catch(RuntimeException ignored){}
                         }
                     }
                     return;
@@ -491,6 +553,14 @@ public final class WebMapServer implements AutoCloseable {
                         + snapshot.waypointsJson() + "}";
                     if (sendStatePayload(message)) waypointRevision = snapshot.waypointRevision();
                 }
+            }
+
+            private synchronized void sendFeatures(){
+                WebMapFeatures f=backend.features();if(f==null||!isOpen())return;
+                String policy=f.policyJson(),chat=f.chatJson(),images=f.imagesJson();
+                if(!policy.equals(lastPolicy)&&sendStatePayload(policy))lastPolicy=policy;
+                if(!chat.equals(lastChat)&&sendStatePayload(chat))lastChat=chat;
+                if(!images.equals(lastImages)&&sendStatePayload(images))lastImages=images;
             }
 
             private boolean sendStatePayload(final String payload) {

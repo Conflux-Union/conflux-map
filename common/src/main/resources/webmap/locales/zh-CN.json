@@ -15,5 +15,16 @@
   "entityPanel": "玩家和路径点",
   "players": "玩家",
   "noOnlinePlayers": "没有在线玩家",
-  "goToPlayer": "转到 {player}"
+  "goToPlayer": "转到 {player}",
+  "showPlayers": "显示玩家",
+  "showWaypoints": "显示路径点",
+  "waypoints": "路径点",
+  "searchPlayers": "搜索玩家",
+  "searchWaypoints": "搜索路径点",
+  "noWaypoints": "暂无路径点",
+  "noMatches": "没有匹配结果",
+  "chat": "世界聊天",
+  "chatInput": "输入消息…",
+  "chatSend": "发送",
+  "predictionDark": "预测区域暗色"
 }

@@ -15,5 +15,16 @@
   "entityPanel": "Players and waypoints",
   "players": "Players",
   "noOnlinePlayers": "No online players",
-  "goToPlayer": "Go to {player}"
+  "goToPlayer": "Go to {player}",
+  "showPlayers": "Show players",
+  "showWaypoints": "Show waypoints",
+  "waypoints": "Waypoints",
+  "searchPlayers": "Search players",
+  "searchWaypoints": "Search waypoints",
+  "noWaypoints": "No waypoints",
+  "noMatches": "No matches",
+  "chat": "World chat",
+  "chatInput": "Enter message…",
+  "chatSend": "Send",
+  "predictionDark": "Darken prediction"
 }

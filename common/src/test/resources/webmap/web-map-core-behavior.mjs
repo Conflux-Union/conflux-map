@@ -68,7 +68,7 @@ assert.notEqual(
 );
 assert.match(
   core.cacheTileKey(firstManifest, 1, 2, -3, 4),
-  /^tile:v2:world-a:1\.21\.8:123:minecraft%3Athe_nether:2:-3:4$/
+  /^tile:v3:legacy:world-a:1\.21\.8:123:minecraft%3Athe_nether:2:-3:4$/
 );
 
 assert.equal(core.localeForPreferences('en', ['zh-CN']), 'en');

@@ -369,6 +369,7 @@ final class ConfigRows {
                 y = addToggleRow(y, "confluxmap.config.minimap.show_layer_label", () -> config.showLayerIndicator, v -> config.showLayerIndicator = v);
                 break;
             case MAP:
+                if(cn.net.rms.confluxmap.mc.net.WebMapClient.flag("admin"))y=addActionRow(y,"confluxmap.webmap.admin",()->MinecraftAccess.setScreen(MinecraftClient.getInstance(),new WebMapAdminScreen(screen)));
                 y = addSectionRow(y, "confluxmap.screen.config.section.layers");
                 y = addEnumRow(
                     y, "confluxmap.config.layers.override", ConfluxConfig.LayerOverride.values(),

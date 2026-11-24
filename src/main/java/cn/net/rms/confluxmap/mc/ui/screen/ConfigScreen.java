@@ -107,6 +107,7 @@ public final class ConfigScreen extends ConfluxScreen {
     PlayerMarkerSettingsAccess playerMarkerAccess =
         PlayerMarkerSettingsAccess.from(false);
     boolean manualSeedAvailable;
+    private boolean webAdmin;
     boolean minimapRestrictedByServer;
     boolean waypointsRestrictedByServer;
     /** True while the open reveal should still drive the rows' staggered fade-in. */
@@ -161,6 +162,7 @@ public final class ConfigScreen extends ConfluxScreen {
     public void tick() {
         super.tick();
         rows.tickInputs();
+        boolean nowAdmin=cn.net.rms.confluxmap.mc.net.WebMapClient.flag("admin");if(nowAdmin!=webAdmin){webAdmin=nowAdmin;if(category==Category.MAP)rebuild();}
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
         if (!availability.equals(sharedAvailability)) {
             sharedAvailability = availability;
