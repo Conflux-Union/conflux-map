@@ -44,34 +44,16 @@ public final class CrossWorldSeedObservations {
 
     public CrossWorldSeedObservations copy() {
         final CrossWorldSeedObservations copy = new CrossWorldSeedObservations();
-        for (final Map.Entry<String, Map<String, Entry>> server : servers.entrySet()) {
-            copy.servers.put(server.getKey(), new TreeMap<>(server.getValue()));
-        }
+        copy.servers = WorldScopedMaps.copy(servers);
         return copy;
     }
 
     /** Repairs hand-edited JSON; drops blank keys and empty server sections. */
     public void normalize() {
-        final Map<String, Map<String, Entry>> normalized = new TreeMap<>();
-        if (servers != null) {
-            for (final Map.Entry<String, Map<String, Entry>> server : servers.entrySet()) {
-                if (server.getKey() == null || server.getKey().isBlank() || server.getValue() == null) {
-                    continue;
-                }
-                final Map<String, Entry> worlds = new TreeMap<>();
-                for (final Map.Entry<String, Entry> world : server.getValue().entrySet()) {
-                    if (world.getKey() == null || world.getKey().isBlank() || world.getValue() == null) {
-                        continue;
-                    }
-                    world.getValue().normalize(world.getKey());
-                    worlds.put(world.getKey(), world.getValue());
-                }
-                if (!worlds.isEmpty()) {
-                    normalized.put(server.getKey(), worlds);
-                }
-            }
-        }
-        servers = normalized;
+        servers = WorldScopedMaps.normalize(servers, (storageId, entry) -> {
+            entry.normalize(storageId);
+            return entry;
+        });
     }
 
     private static List<String> nameKeys(final WorldIdentity world) {
