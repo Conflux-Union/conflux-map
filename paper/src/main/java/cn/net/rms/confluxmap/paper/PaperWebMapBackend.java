@@ -7,11 +7,10 @@ import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.server.MessageSender;
-import cn.net.rms.confluxmap.server.web.WebMapBackend;
+import cn.net.rms.confluxmap.server.web.AbstractWebMapBackend;
 import cn.net.rms.confluxmap.server.web.WebMapManifest;
 import cn.net.rms.confluxmap.server.web.WebMapSnapshot;
 import cn.net.rms.confluxmap.server.web.WebPlayerSnapshot;
-import cn.net.rms.confluxmap.server.web.WebAvatarCache;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.HashMap;
@@ -19,20 +18,16 @@ import java.util.Map;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.entity.Player;
 
 /** Paper main-thread adapter for the shared HTTP transport. */
-final class PaperWebMapBackend implements WebMapBackend {
+final class PaperWebMapBackend extends AbstractWebMapBackend {
     private final ConfluxMapPaperPlugin plugin;
     private final PaperCompanion companion;
     private final WebMapManifest manifest;
-    private volatile WebMapSnapshot snapshot = WebMapSnapshot.EMPTY;
-    private volatile Map<UUID, URI> skinUrls = Map.of();
-    private final WebAvatarCache avatars = new WebAvatarCache();
 
     PaperWebMapBackend(final ConfluxMapPaperPlugin plugin, final PaperCompanion companion) {
         this.plugin = plugin;
@@ -99,21 +94,6 @@ final class PaperWebMapBackend implements WebMapBackend {
         Bukkit.getScheduler().runTask(plugin, () -> companion.corrections().remove(clientId));
     }
 
-    @Override
-    public WebPlayerSnapshot players() {
-        return new WebPlayerSnapshot(snapshot.playerRevision(), snapshot.players());
-    }
-
-    @Override
-    public WebMapSnapshot snapshot() {
-        return snapshot;
-    }
-
-    @Override
-    public CompletableFuture<byte[]> avatar(final UUID playerId) {
-        return avatars.face(skinUrls.get(playerId));
-    }
-
     private static MessageSender sender(
         final Consumer<byte[]> response
     ) {
@@ -156,8 +136,7 @@ final class PaperWebMapBackend implements WebMapBackend {
                 }
             }
         }
-        snapshot = snapshot.next(result, waypoints);
-        skinUrls = Map.copyOf(currentSkins);
+        publish(result, waypoints, currentSkins);
     }
 
     private int worldIndex(final DimensionId target) {
