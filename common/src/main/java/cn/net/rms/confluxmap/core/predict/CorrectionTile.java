@@ -493,7 +493,7 @@ public final class CorrectionTile {
         }
         return expectedPatchMode == Proto.PATCH_MODE_RESIDUAL
             && expectedBaselineProfile != null
-            && baselineProfile.equals(expectedBaselineProfile);
+            && expectedBaselineProfile.equals(baselineProfile);
     }
 
     public synchronized PatchCodec.Patch copyPatch() {
@@ -753,11 +753,5 @@ public final class CorrectionTile {
             return first;
         }
         return Math.max(first, second);
-    }
-
-    private static long[] unknownRevisions(final int count) {
-        final long[] revisions = new long[count];
-        Arrays.fill(revisions, Long.MIN_VALUE);
-        return revisions;
     }
 }

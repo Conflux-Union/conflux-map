@@ -24,7 +24,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.logging.log4j.Logger;
 
@@ -81,7 +80,6 @@ public final class XaeroImportService {
         return thread;
     });
     private final AtomicReference<Progress> progress = new AtomicReference<>(Progress.idle());
-    private volatile Future<?> running;
     private volatile boolean cancelRequested;
 
     public XaeroImportService(
@@ -183,7 +181,7 @@ public final class XaeroImportService {
         progress.set(new Progress(
             State.RUNNING, plan.dimension(), Math.min(plan.regionCount(), MAX_REGIONS_PER_IMPORT), 0, 0, 0, null
         ));
-        running = worker.submit(() -> run(plan));
+        worker.submit(() -> run(plan));
     }
 
     private void run(final DimensionPlan plan) {
@@ -228,7 +226,7 @@ public final class XaeroImportService {
         final int[] importedByBucket = new int[4];
         final boolean liveDimension = session.dimension().equals(plan.dimension());
         if (liveDimension) {
-            prefetchLiveRegions(session, plan, region);
+            prefetchLiveRegions(plan, region);
         }
         final int importedTotal;
         try (InputStream stream = region.open()) {
@@ -280,7 +278,7 @@ public final class XaeroImportService {
     }
 
     /** Loads the disk copies of the cache regions this Xaero region feeds, before any import write. */
-    private void prefetchLiveRegions(final SessionGuard.Session session, final DimensionPlan plan, final XaeroRegionFile region) {
+    private void prefetchLiveRegions(final DimensionPlan plan, final XaeroRegionFile region) {
         final RegionDiskCache disk = regionCaches.current();
         if (disk == null) {
             return;

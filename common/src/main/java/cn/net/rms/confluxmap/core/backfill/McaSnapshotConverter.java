@@ -1,7 +1,6 @@
 package cn.net.rms.confluxmap.core.backfill;
 
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
-import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SampleSource;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
@@ -29,7 +28,6 @@ public final class McaSnapshotConverter {
     public static List<ChunkSnapshot> toSnapshots(
         final SummaryCodec.SampledRegion region,
         final long sessionToken,
-        final MapLayer layer,
         final McaColumnBaker baker
     ) {
         if (region.sampleStride() != 1) {
@@ -44,7 +42,7 @@ public final class McaSnapshotConverter {
             }
             final int chunkX = region.rx() * 16 + index % 16;
             final int chunkZ = region.rz() * 16 + index / 16;
-            out.add(toSnapshot(chunk, chunkX, chunkZ, sessionToken, layer, baker, region.sourceMcaMtimeMs()));
+            out.add(toSnapshot(chunk, chunkX, chunkZ, sessionToken, baker, region.sourceMcaMtimeMs()));
         }
         return out;
     }
@@ -54,7 +52,6 @@ public final class McaSnapshotConverter {
         final int chunkX,
         final int chunkZ,
         final long sessionToken,
-        final MapLayer layer,
         final McaColumnBaker baker,
         final long sourceRevision
     ) {

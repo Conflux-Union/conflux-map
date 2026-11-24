@@ -214,7 +214,6 @@ public final class McaBackfillService {
             }
             submit(session, layer, slot, mtime);
         }
-        this.cursor = cursor;
     }
 
     /**
@@ -319,7 +318,7 @@ public final class McaBackfillService {
                 doneRegions.put(slot, mtime);
             }
             final List<ChunkSnapshot> snapshots =
-                McaSnapshotConverter.toSnapshots(scanned, session.token(), layer, baker);
+                McaSnapshotConverter.toSnapshots(scanned, session.token(), baker);
             int accepted = 0;
             final RegionColumns region = world.store(layer).region(regionX, regionZ);
             final List<TileService.RegionUnit> units = new ArrayList<>(snapshots.size());

@@ -873,10 +873,6 @@ public final class TileService {
         }
     }
 
-    private TileUpdate composeTile(final TileKey key, final long token) {
-        return composeTile(key, DirtyWork.full(token));
-    }
-
     private TileUpdate composeTile(final TileKey key, final DirtyWork work) {
         final DaylightModel.State lighting = daylightModel.state();
         return composeTile(
