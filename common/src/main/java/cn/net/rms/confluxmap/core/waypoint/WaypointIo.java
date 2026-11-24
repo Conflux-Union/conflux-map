@@ -220,7 +220,7 @@ public final class WaypointIo {
         try {
             version = schema.getAsBigDecimal().stripTrailingZeros();
         } catch (final NumberFormatException e) {
-            throw new JsonParseException("waypoint file has an invalid schemaVersion");
+            throw new JsonParseException("waypoint file has an invalid schemaVersion", e);
         }
         if (version.scale() > 0) {
             throw new JsonParseException("waypoint schemaVersion must be an integer");
