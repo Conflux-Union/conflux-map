@@ -15,7 +15,6 @@ import cn.net.rms.confluxmap.server.web.WebMapSnapshot;
 import cn.net.rms.confluxmap.server.web.WebPlayerSnapshot;
 import cn.net.rms.confluxmap.server.web.WebAvatarCache;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.ArrayList;
@@ -136,8 +135,9 @@ final class PaperWebMapBackend implements WebMapBackend {
 
     @Override
     public CompletableFuture<byte[]> avatar(final UUID playerId) {
-        URI skin=skinUrls.get(playerId);
-        return avatars.face(skin==null?features.chatSkin(playerId):skin);
+        final URI skin = skinUrls.get(playerId);
+        return avatars.face(skin == null ? features.chatSkin(playerId) : skin,
+            snapshot.publicPlayerName(playerId));
     }
 
     private static PaperCorrectionService.MessageSender sender(
@@ -188,11 +188,8 @@ final class PaperWebMapBackend implements WebMapBackend {
                 ));
                 final java.net.URL skin = player.getPlayerProfile().getTextures().getSkin();
                 if (skin != null) {
-                    try {
-                        currentSkins.put(player.getUniqueId(), skin.toURI());
-                    } catch (final URISyntaxException ignored) {
-                        // The cache independently rejects non-Minecraft texture origins.
-                    }
+                    final URI texture = cn.net.rms.confluxmap.server.web.WebSkinTexture.officialUri(skin.toExternalForm());
+                    if (texture != null) currentSkins.put(player.getUniqueId(), texture);
                 }
             }
         }

@@ -148,8 +148,9 @@ final class FabricWebMapBackend implements WebMapBackend {
 
     @Override
     public CompletableFuture<byte[]> avatar(final UUID playerId) {
-        URI skin=skinUrls.get(playerId);
-        return avatars.face(skin==null?features.chatSkin(playerId):skin);
+        final URI skin = skinUrls.get(playerId);
+        return avatars.face(skin == null ? features.chatSkin(playerId) : skin,
+            snapshot.publicPlayerName(playerId));
     }
 
     private static RegionSummaryService.MessageSender sender(

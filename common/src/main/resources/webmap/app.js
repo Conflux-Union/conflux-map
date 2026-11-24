@@ -676,20 +676,7 @@ function updatePlayerList(players) {
     button.addEventListener('click', () => focusLocation(player));
     const avatar = document.createElement('span');
     avatar.className = 'player-list-avatar';
-    const avatarImage = document.createElement('img');
-    avatarImage.alt = '';
-    avatarImage.src = apiPath(`/api/v1/avatars/${player.id}.png`);
-    avatarImage.addEventListener('load', () => avatar.classList.add('image-loaded'));
-    avatarImage.addEventListener('error', () => {
-      if (avatarImage.src.includes('/api/v1/avatars/')) {
-        avatarImage.src = Math.random() < 0.5 ? '/default-steve.svg' : '/default-alex.svg';
-      } else {
-        avatar.classList.remove('image-loaded');
-      }
-    });
-    const avatarFallback = document.createElement('span');
-    avatarFallback.textContent = player.name.slice(0, 1).toUpperCase();
-    avatar.append(avatarImage, avatarFallback);
+    installPlayerAvatar(avatar, player, 'image-loaded');
     const details = document.createElement('span');
     details.className = 'player-details';
     const name = document.createElement('strong');
@@ -942,19 +929,22 @@ function tileStillCurrent(canvas, dim, lod, tileX, tileZ, generation) {
 function playerIcon(player) {
   const root = document.createElement('div');
   root.className = `web-player${player.translucent ? ' translucent' : ''}`;
+  installPlayerAvatar(root, player, 'skin-loaded');
+  return L.divIcon({className: '', html: root, iconSize: [28, 28], iconAnchor: [14, 14]});
+}
+
+function installPlayerAvatar(root, player, loadedClass) {
   const image = document.createElement('img');
   image.alt = '';
-  image.src = `/api/v1/avatars/${player.id}.png`;
-  const serverId = new URLSearchParams(globalThis.location?.search ?? "").get("serverId");
-  if (serverId) image.src += `?serverId=${encodeURIComponent(serverId)}`;
-  image.addEventListener('load', () => root.classList.add('skin-loaded'));
+  image.addEventListener('load', () => root.classList.add(loadedClass));
   image.addEventListener('error', () => {
-    image.src = Math.random() < 0.5 ? '/default-steve.svg' : '/default-alex.svg';
+    const isAlex = Number.parseInt(player.id.slice(-1), 16) % 2 === 1;
+    image.src = isAlex ? '/default-alex.svg' : '/default-steve.svg';
   }, {once: true});
+  image.src = apiPath(`/api/v1/avatars/${player.id}.png`);
   const fallback = document.createElement('span');
   fallback.textContent = player.name.slice(0, 1).toUpperCase();
   root.append(image, fallback);
-  return L.divIcon({className: '', html: root, iconSize: [28, 28], iconAnchor: [14, 14]});
 }
 
 function message(key, values = {}) {
