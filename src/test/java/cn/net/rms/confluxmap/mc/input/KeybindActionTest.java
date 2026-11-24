@@ -23,13 +23,15 @@ import org.junit.jupiter.api.Test;
 final class KeybindActionTest {
     @Test
     void sharedRegistryContainsEveryExistingActionWithUniqueBackendKeys() {
-        assertEquals(11, KeybindAction.values().length);
+        assertEquals(13, KeybindAction.values().length);
         assertEquals(
             Set.of(
                 "toggle_minimap",
                 "zoom_in",
                 "open_map",
                 "cycle_layer",
+                "toggle_loaded_range",
+                "toggle_chunk_grid",
                 "waypoints",
                 "new_waypoint",
                 "temporary_waypoint",
@@ -65,7 +67,7 @@ final class KeybindActionTest {
             assertTrue(settings.getAllowExtraKeys(), action.configName());
             assertSame(KeyAction.PRESS, settings.getActivateOn(), action.configName());
             assertSame(
-                action == KeybindAction.OPEN_MAP
+                action == KeybindAction.OPEN_MAP || action.mapViewAction()
                     ? KeybindSettings.Context.ANY
                     : KeybindSettings.Context.INGAME,
                 settings.getContext(),

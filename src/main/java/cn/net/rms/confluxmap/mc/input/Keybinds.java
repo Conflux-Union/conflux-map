@@ -30,8 +30,12 @@ public final class Keybinds {
     //$$ public static final KeyBinding.Category CATEGORY = KeyBinding.Category.create(
     //$$     Ids.of("confluxmap", "controls")
     //$$ );
+    //$$ private static final KeyBinding.Category VIEW_CATEGORY = KeyBinding.Category.create(
+    //$$     Ids.of("confluxmap", "view")
+    //$$ );
     //#else
     public static final String CATEGORY = "key.categories.confluxmap";
+    private static final String VIEW_CATEGORY = "key.categories.confluxmap.view";
     //#endif
 
     private final Map<KeybindAction, KeyBinding> vanillaBindings = new EnumMap<>(KeybindAction.class);
@@ -67,7 +71,7 @@ public final class Keybinds {
             ConfluxMapMod.LOGGER.info("MaliLib detected; Conflux Map hotkeys are registered with MaliLib");
         } else {
             for (final KeybindAction action : KeybindAction.values()) {
-                vanillaBindings.put(action, registerTranslation(action.translationKey(), action.vanillaDefaultKey()));
+                vanillaBindings.put(action, registerTranslation(action.translationKey(), action.vanillaDefaultKey(), action.mapViewAction()));
             }
             actionHandler = new KeybindActionHandler(
                 config,
@@ -85,6 +89,11 @@ public final class Keybinds {
     }
 
     private static KeyBinding registerTranslation(final String translationKey, final int key) {
+        return registerTranslation(translationKey, key, false);
+    }
+
+    private static KeyBinding registerTranslation(final String translationKey, final int key, final boolean view) {
+        final var category = view ? VIEW_CATEGORY : CATEGORY;
         //#if MC>=260100
         //$$ return KeyMappingHelper.registerKeyMapping(
         //$$     new KeyMapping(translationKey,
@@ -93,11 +102,11 @@ public final class Keybinds {
         //#else
         //$$         InputConstants.Type.KEYSYM,
         //#endif
-        //$$         key, CATEGORY)
+        //$$         key, category)
         //$$ );
         //#else
         return KeyBindingHelper.registerKeyBinding(
-            new KeyBinding(translationKey, InputUtil.Type.KEYSYM, key, CATEGORY)
+            new KeyBinding(translationKey, InputUtil.Type.KEYSYM, key, category)
         );
         //#endif
     }
@@ -129,6 +138,23 @@ public final class Keybinds {
         return actionHandler.trigger(action);
     }
 
+    //#if MC>=12109
+    //$$ public boolean onMapKey(final net.minecraft.client.input.KeyInput input) {
+    //#else
+    public boolean onMapKey(final int keyCode, final int scanCode) {
+    //#endif
+        for (final var entry : vanillaBindings.entrySet()) {
+            final KeybindAction action = entry.getKey();
+            final KeyBinding binding = entry.getValue();
+            //#if MC>=12109
+            //$$ if (action.mapViewAction() && binding.matchesKey(input)) return trigger(action);
+            //#else
+            if (action.mapViewAction() && binding.matchesKey(keyCode, scanCode)) return trigger(action);
+            //#endif
+        }
+        return false;
+    }
+
     private void poll() {
         if (maliLibBackend != null) {
             if (maliLibHint != null) {
@@ -144,6 +170,7 @@ public final class Keybinds {
         }
         for (final KeybindAction action : KeybindAction.values()) {
             final KeyBinding binding = vanillaBindings.get(action);
+            if (action.mapViewAction()) continue;
             while (binding.wasPressed()) {
                 actionHandler.trigger(action);
             }

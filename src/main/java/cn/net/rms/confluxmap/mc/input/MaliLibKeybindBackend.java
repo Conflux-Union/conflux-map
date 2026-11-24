@@ -153,8 +153,18 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
         manager.addHotkeysForCategory(
             "Conflux Map",
             Texts.translatable("key.confluxmap.malilib.category").getString(),
-            hotkeys
+            hotkeys.stream().filter(hotkey -> !viewHotkey(hotkey)).toList()
         );
+        manager.addHotkeysForCategory(
+            "Conflux Map",
+            Texts.translatable("key.category.confluxmap.view").getString(),
+            hotkeys.stream().filter(MaliLibKeybindBackend::viewHotkey).toList()
+        );
+    }
+
+    private static boolean viewHotkey(final ConfigHotkey hotkey) {
+        return hotkey.getName().equals(KeybindAction.TOGGLE_LOADED_RANGE.configName())
+            || hotkey.getName().equals(KeybindAction.TOGGLE_CHUNK_GRID.configName());
     }
 
     @Override

@@ -111,6 +111,20 @@ final class WebMapFeaturesTest {
             imageId = features.pending().get(0).split(" ", 2)[0];
             assertNull(features.image(UUID.fromString(imageId)));
             assertFalse(features.imagesJson().contains(imageId));
+            final List<JsonObject> repliesFromReview = new ArrayList<>();
+            byte[] request = "{\"type\":\"image-review\",\"index\":0}".getBytes(StandardCharsets.UTF_8);
+            features.handle(player, "Alex", () -> false, () -> true, request,
+                data -> repliesFromReview.add(JsonParser.parseString(new String(data, StandardCharsets.UTF_8))
+                    .getAsJsonObject()), message -> {});
+            assertFalse(repliesFromReview.get(0).has("preview"));
+            features.handle(player, "Alex", () -> true, () -> true, request,
+                data -> repliesFromReview.add(JsonParser.parseString(new String(data, StandardCharsets.UTF_8))
+                    .getAsJsonObject()), message -> {});
+            JsonObject preview = repliesFromReview.get(1);
+            assertEquals(imageId, preview.get("id").getAsString());
+            assertEquals(waypoint.toString(), preview.get("waypoint").getAsString());
+            byte[] jpeg = Base64.getDecoder().decode(preview.get("preview").getAsString());
+            assertEquals(2, ImageIO.read(new java.io.ByteArrayInputStream(jpeg)).getWidth());
 
             assertTrue(features.moderate(UUID.fromString(imageId), "image-approve"));
             assertTrue(features.imagesJson().contains(imageId));
@@ -155,6 +169,46 @@ final class WebMapFeaturesTest {
             assertEquals(List.of("网页地图：hello"), broadcasts);
             assertEquals("Rate limited", features.webChat("127.0.0.1", "again"));
         }
+    }
+
+    @Test
+    void imageStartRequiresAnOwnedWaypoint() {
+        final UUID owner = UUID.randomUUID();
+        final UUID waypoint = UUID.randomUUID();
+        final List<String> replies = new ArrayList<>();
+        try (WebMapFeatures features = new WebMapFeatures(new WebMapConfig(), directory, waypoint::equals,
+            () -> true, Runnable::run, message -> {})) {
+            features.restrictAttachments((actor, w) -> actor.equals(owner) && w.equals(waypoint));
+            String start = "{\"type\":\"image-start\",\"waypoint\":\"" + waypoint + "\",\"length\":8}";
+            send(features, UUID.randomUUID(), new AtomicBoolean(false), start, replies);
+            assertEquals(List.of("Upload refused"), replies);
+            replies.clear();
+            send(features, owner, new AtomicBoolean(false), start, replies);
+            assertTrue(replies.isEmpty());
+        }
+    }
+
+    @Test
+    void configurationWorksWithoutAWebBackendAndLeavesStateUntouchedWhenDenied() {
+        final var config = new cn.net.rms.confluxmap.server.ServerConfig();
+        config.webMap.enabled = false;
+        config.webMap.allowOperatorClientConfig = true;
+        final byte[] change = ("{\"type\":\"admin-set\",\"key\":\"shareChunkLoadState\",\"value\":\"true\"}")
+            .getBytes(StandardCharsets.UTF_8);
+        final List<String> replies = new ArrayList<>();
+        final java.util.function.Consumer<byte[]> capture =
+            data -> replies.add(new String(data, StandardCharsets.UTF_8));
+        assertTrue(ServerConfigControl.handle(change, config, false, () -> true, () -> {}, capture));
+        assertFalse(config.shareChunkLoadState);
+        assertTrue(replies.get(0).contains("Forbidden"));
+        replies.clear();
+        assertTrue(ServerConfigControl.handle(change, config, true, () -> false, () -> {}, capture));
+        assertFalse(config.shareChunkLoadState);
+        assertTrue(replies.get(0).contains("Save failed"));
+        replies.clear();
+        assertTrue(ServerConfigControl.handle(change, config, true, () -> true, () -> {}, capture));
+        assertTrue(config.shareChunkLoadState);
+        assertTrue(replies.get(0).contains("Restart"));
     }
 
     private static void send(

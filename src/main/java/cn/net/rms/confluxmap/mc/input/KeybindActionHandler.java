@@ -70,6 +70,13 @@ final class KeybindActionHandler {
                 configChanged = true;
                 handled = true;
                 break;
+            case TOGGLE_LOADED_RANGE:
+            case TOGGLE_CHUNK_GRID:
+                if (!(MinecraftAccess.screen(MinecraftClient.getInstance()) instanceof FullscreenMapScreen map)
+                    || map.isClosing()) return false;
+                if (action == KeybindAction.TOGGLE_LOADED_RANGE) map.toggleLoadedRange();
+                else map.toggleChunkGrid();
+                return true;
             case OPEN_WAYPOINTS:
                 if (!waypointsAllowed()) {
                     return false;

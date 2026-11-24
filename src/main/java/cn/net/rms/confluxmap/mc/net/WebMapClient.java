@@ -1,5 +1,7 @@
 package cn.net.rms.confluxmap.mc.net;
 
+import cn.net.rms.confluxmap.ConfluxMapClient;
+import cn.net.rms.confluxmap.core.waypoint.library.WaypointMediaService;
 import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.compat.PlayNetworking;
 
@@ -11,7 +13,6 @@ import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.util.Identifier;
 
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
 import java.util.*;
 
 public final class WebMapClient {
@@ -21,7 +22,18 @@ public final class WebMapClient {
     private static ClientPlayNetworkHandler connection;
     private static JsonObject state = new JsonObject();
     private static String result = "";
+    private static String configResult = "";
+    private static final ArrayDeque<PhotoUpload> photos = new ArrayDeque<>();
+    private static final Map<UUID, PendingPublication> publications = new HashMap<>();
+    private static PhotoUpload activePhoto;
+    private static int responseTicks;
+    private static JsonObject admin = new JsonObject();
+    private static JsonObject review = new JsonObject();
+    private static int configRevision;
     private static int ticks;
+
+    private record PhotoUpload(UUID waypoint, WaypointMediaService.Key album, UUID photo) {}
+    private record PendingPublication(WaypointMediaService.Key album, List<UUID> photos, long deadline) {}
 
     private WebMapClient() {}
 
@@ -39,11 +51,24 @@ public final class WebMapClient {
                                                     new String(payload, StandardCharsets.UTF_8),
                                                     JsonObject.class);
                                     switch (o.get("type").getAsString()) {
-                                        case "status" -> state = o;
+                                        case "status" -> {
+                                            if (flag("review") != (o.has("review") && o.get("review").getAsBoolean())) {
+                                                ++configRevision;
+                                            }
+                                            state = o;
+                                        }
                                         case "result" -> {
                                             result = o.get("message").getAsString();
                                             queue.clear();
+                                            activePhoto = null;
                                         }
+                                        case "admin-status" -> {
+                                            if (!admin.equals(o)) ++configRevision;
+                                            admin = o;
+                                        }
+                                        case "admin-result" -> configResult = o.get("message").getAsString();
+                                        case "image-review" -> review = o;
+                                        case "image-target" -> publicationTarget(o);
                                         default -> {}
                                     }
                                 } catch (RuntimeException ignored) {
@@ -58,6 +83,13 @@ public final class WebMapClient {
             connection = client.getNetworkHandler();
             state = new JsonObject();
             queue.clear();
+            photos.clear();
+            publications.clear();
+            activePhoto = null;
+            ++configRevision;
+            admin = new JsonObject();
+            review = new JsonObject();
+            configResult = "";
             result = "";
             ticks = 0;
         }
@@ -67,11 +99,24 @@ public final class WebMapClient {
                 PlayNetworking.sendClient(CHANNEL, queue.removeFirst());
             } catch (RuntimeException e) {
                 queue.clear();
+                activePhoto = null;
                 result = "Upload interrupted";
             }
             return;
         }
-        if (ticks++ % 40 == 0) send(packet("status"));
+        if (activePhoto != null && ++responseTicks >= 600) {
+            activePhoto = null;
+            result = "Upload timed out";
+        }
+        if (activePhoto == null && !photos.isEmpty()) {
+            prepareNext(client);
+            return;
+        }
+        if (ticks++ % 40 == 0) {
+            publications.values().removeIf(pending -> pending.deadline() < System.nanoTime());
+            send(packet("status"));
+            send(packet("admin-status"));
+        }
     }
 
     private static JsonObject packet(String type) {
@@ -103,47 +148,103 @@ public final class WebMapClient {
         return queue.isEmpty() ? result : "Uploading (" + queue.size() + " packets left)";
     }
 
-    public static void set(String key, String value) {
-        if (!queue.isEmpty()) return;
-        JsonObject o = packet("set");
-        o.addProperty("key", key);
-        o.addProperty("value", value);
-        send(o);
+    public static boolean uploadBusy() {
+        return activePhoto != null || !photos.isEmpty();
     }
 
-    public static void upload(UUID waypoint, String file) {
-        if (!flag("upload") || !queue.isEmpty()) {
+    public static String configResult() {
+        return configResult;
+    }
+
+    public static int configRevision() {
+        return configRevision;
+    }
+
+    public static boolean adminAllowed() {
+        return admin.has("allowed") && admin.get("allowed").getAsBoolean();
+    }
+
+    public static String setting(String key) {
+        return admin.has(key) ? admin.get(key).getAsString() : value(key);
+    }
+
+    public static void setServerSetting(String key, String value) {
+        JsonObject request = packet("admin-set");
+        request.addProperty("key", key);
+        request.addProperty("value", value);
+        send(request);
+    }
+
+    public static JsonObject review() {
+        return review;
+    }
+
+    public static void requestReview(int index) {
+        JsonObject request = packet("image-review");
+        request.addProperty("index", index);
+        send(request);
+    }
+
+    public static void moderate(UUID id, boolean approve) {
+        if (activePhoto != null) return;
+        JsonObject request = packet(approve ? "image-approve" : "image-reject");
+        request.addProperty("id", id.toString());
+        send(request);
+    }
+
+    public static void preparePublication(UUID operation, WaypointMediaService.Key album, List<UUID> selected) {
+        if (!selected.isEmpty() && flag("albumUpload")) {
+            publications.put(operation, new PendingPublication(album, List.copyOf(selected),
+                System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(60)));
+        }
+    }
+
+    public static void cancelPublication(UUID operation) {
+        publications.remove(operation);
+    }
+
+    private static void publicationTarget(JsonObject message) {
+        PendingPublication pending = publications.remove(UUID.fromString(message.get("operation").getAsString()));
+        if (pending == null || pending.deadline() < System.nanoTime()) return;
+        UUID waypoint = UUID.fromString(message.get("waypoint").getAsString());
+        upload(waypoint, pending.album(), pending.photos());
+    }
+
+    public static void upload(UUID waypoint, WaypointMediaService.Key album, List<UUID> selected) {
+        if (!flag("albumUpload") || selected.isEmpty() || photos.size() + selected.size() > 4) {
             result = "Upload unavailable";
             return;
         }
-        try {
-            Path path = Path.of(file);
-            long n = Files.size(path);
-            if (n < 1 || n > 2 * 1024 * 1024) throw new IllegalArgumentException();
-            byte[] bytes;
-            try (var in = Files.newInputStream(path)) {
-                bytes = in.readNBytes(2 * 1024 * 1024 + 1);
-            }
-            if (bytes.length != n) throw new IllegalArgumentException();
-            JsonObject start = packet("image-start");
-            start.addProperty("waypoint", waypoint.toString());
-            start.addProperty("length", bytes.length);
-            queue.add(encode(start));
-            for (int i = 0; i < bytes.length; i += 8192) {
-                JsonObject chunk = packet("image-chunk");
-                chunk.addProperty(
-                        "data",
-                        Base64.getEncoder()
-                                .encodeToString(
-                                        Arrays.copyOfRange(
-                                                bytes, i, Math.min(i + 8192, bytes.length))));
-                queue.add(encode(chunk));
-            }
-            queue.add(encode(packet("image-finish")));
-            result = "Waiting for server";
-        } catch (Exception e) {
-            queue.clear();
-            result = "Select a readable PNG/JPEG under 2 MiB";
-        }
+        for (UUID id : selected) photos.add(new PhotoUpload(waypoint, album, id));
+        result = "Preparing photo";
+    }
+
+    private static void prepareNext(MinecraftClient client) {
+        final PhotoUpload request = photos.removeFirst();
+        final ClientPlayNetworkHandler target = connection;
+        activePhoto = request;
+        responseTicks = 0;
+        ConfluxMapClient.get().waypointMediaService().webCopy(request.album(), request.photo())
+            .whenComplete((bytes, error) -> client.execute(() -> {
+                if (connection != target || client.getNetworkHandler() != target || activePhoto != request) return;
+                if (error != null) {
+                    activePhoto = null;
+                    result = "Could not prepare the saved photo";
+                    return;
+                }
+                JsonObject start = packet("image-start");
+                start.addProperty("waypoint", request.waypoint().toString());
+                start.addProperty("length", bytes.length);
+                queue.add(encode(start));
+                for (int offset = 0; offset < bytes.length; offset += 8192) {
+                    JsonObject chunk = packet("image-chunk");
+                    chunk.addProperty("data", Base64.getEncoder().encodeToString(
+                        Arrays.copyOfRange(bytes, offset, Math.min(offset + 8192, bytes.length))
+                    ));
+                    queue.add(encode(chunk));
+                }
+                queue.add(encode(packet("image-finish")));
+                result = "Waiting for server";
+            }));
     }
 }

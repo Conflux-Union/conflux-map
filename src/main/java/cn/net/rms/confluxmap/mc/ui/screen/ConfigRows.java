@@ -398,10 +398,6 @@ final class ConfigRows {
                 y = addToggleRow(y, "confluxmap.config.minimap.show_layer_label", () -> config.showLayerIndicator, v -> config.showLayerIndicator = v);
                 break;
             case MAP:
-                if (WebMapClient.flag("admin")) {
-                    y = addActionRow(y, "confluxmap.webmap.admin", () ->
-                        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WebMapAdminScreen(screen)));
-                }
                 y = addSectionRow(y, "confluxmap.screen.config.section.fullscreen_zoom");
                 y = addFullscreenZoomLimit(
                     y, "confluxmap.config.map.min_zoom",
@@ -841,6 +837,23 @@ final class ConfigRows {
                     ConfigValueLabels::plainText, underlayReason == null, underlayReason
                 );
                 break;
+            case SERVER:
+                if (WebMapClient.adminAllowed()) {
+                    y = addSectionRow(y, "confluxmap.webmap.server_live");
+                    for (String key : List.of("sharePlayers", "allowPlayerSearch", "allowWaypointSearch",
+                        "showWaypointImages", "waypointImageMode", "enableChat", "showGameChat", "allowWebChat")) {
+                        y = addServerSettingRow(y, key);
+                    }
+                    y = addSectionRow(y, "confluxmap.webmap.server_restart");
+                    y = addServerSettingRow(y, "shareChunkLoadState");
+                } else {
+                    y = addSectionRow(y, "confluxmap.webmap.server_unavailable");
+                }
+                if (WebMapClient.flag("review")) {
+                    y = addActionRow(y, "confluxmap.webmap.review", () -> MinecraftAccess.setScreen(
+                        MinecraftClient.getInstance(), new WebMapReviewScreen(screen)));
+                }
+                break;
             case GENERAL:
                 y = addSectionRow(y, "confluxmap.screen.config.section.interface");
                 y = addToggleRow(
@@ -977,6 +990,34 @@ final class ConfigRows {
             setter.accept(value);
             ConfluxMapClient.get().waypointListMemory().save();
         });
+    }
+
+    private int addServerSettingRow(final int y, final String key) {
+        final String label = "confluxmap.webmap." + key;
+        if (!search.matches(label, null, rowCategory.labelKey())) return y;
+        if (!measuring && screen.rowVisible(y)) {
+            final String value = WebMapClient.setting(key);
+            final boolean imageMode = key.equals("waypointImageMode");
+            final Text caption = imageMode
+                ? Texts.literal(Texts.translatable(label).getString() + " · " +
+                    Texts.translatable("confluxmap.webmap.mode." + value).getString())
+                : ConfigValueLabels.boolLabel(label, Boolean.parseBoolean(value));
+            final RowButton button = screen.addRowWidget(new RowButton(
+                screen.rowX(), y, screen.rowWidth, ConfigScreen.ROW_HEIGHT - 2, caption,
+                clicked -> {
+                    if (!WebMapClient.adminAllowed()) return;
+                    if (imageMode) {
+                        var modes = List.of("APPROVAL", "OP_ONLY", "EVERYONE", "DISABLED");
+                        WebMapClient.setServerSetting(key, modes.get((modes.indexOf(WebMapClient.setting(key)) + 1)
+                            % modes.size()));
+                    } else {
+                        WebMapClient.setServerSetting(key, Boolean.toString(!Boolean.parseBoolean(WebMapClient.setting(key))));
+                    }
+                }
+            ));
+            button.active = WebMapClient.adminAllowed();
+        }
+        return y + ConfigScreen.ROW_HEIGHT;
     }
 
     private int addToggleRow(final int y, final String labelKey, final BooleanSupplier getter, final Consumer<Boolean> setter) {

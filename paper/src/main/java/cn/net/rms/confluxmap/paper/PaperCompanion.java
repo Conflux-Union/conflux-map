@@ -227,14 +227,22 @@ final class PaperCompanion implements Listener {
         sharedNetworking.register();
         plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin,"confluxmap:webmap_v1",(channel,player,payload)->{
             PaperWebMapBackend current=webMapBackend;
-            if(current==null||payload.length>16000||!current.features().allowPacket(player.getUniqueId()))return;byte[] stable=payload.clone();
-            Bukkit.getScheduler().runTask(plugin,()->{
-                PaperWebMapBackend b=webMapBackend;if(b!=current||!player.isOnline())return;
-                b.features().handle(player.getUniqueId(),player.getName(),()->player.hasPermission("confluxmap.admin"),
-                    ()->webMapBackend==b&&player.isOnline(),
-                    stable,
-                    reply->pluginMessages.send(PaperPluginMessageDispatcher.recipient(plugin,player),channel,reply),
-                    this::notifyImageOperators);
+            if (payload.length < 2 || payload.length > 16000
+                || current != null && !current.features().allowPacket(player.getUniqueId())) return;
+            byte[] stable = payload.clone();
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (!player.isOnline()) return;
+                PaperWebMapBackend backend = webMapBackend;
+                java.util.function.Consumer<byte[]> reply = data -> sendWebMapPacket(player, data);
+                java.util.function.BooleanSupplier operator = () -> player.hasPermission("confluxmap.admin");
+                if (cn.net.rms.confluxmap.server.web.ServerConfigControl.handle(
+                    stable, config, operator.getAsBoolean(), this::saveWebMapConfig,
+                    () -> { if (backend != null) backend.features().settingsChanged(); }, reply
+                )) return;
+                if (backend != null && backend == current) backend.features().handle(
+                    player.getUniqueId(), player.getName(), operator,
+                    () -> webMapBackend == backend && player.isOnline(), stable, reply, this::notifyImageOperators
+                );
             });
         });
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin,"confluxmap:webmap_v1");
@@ -439,6 +447,12 @@ final class PaperCompanion implements Listener {
 
     /** Identity of this server installation, unaffected by copying the world it hosts. */
     java.nio.file.Path webMapImageDirectory(String worldId){return configIo.directory().resolve("webmap-images").resolve(instanceId().toString()).resolve(worldId);}
+    void sendWebMapPacket(org.bukkit.entity.Player player, byte[] payload) {
+        String channel = cn.net.rms.confluxmap.server.web.WebMapFeatures.CHANNEL;
+        var recipient = PaperPluginMessageDispatcher.recipient(plugin, player);
+        if (recipient.listensTo(channel)) pluginMessages.send(recipient, channel, payload);
+    }
+
     boolean saveWebMapConfig() {
         if (!configIo.saveAtomically(config)) {
             return false;
@@ -491,7 +505,7 @@ final class PaperCompanion implements Listener {
     }
 
     boolean chunkLoadStatesEnabled() {
-        return isEnabled() && config.shareChunkLoadState && chunkLoadStates != null;
+        return isEnabled() && chunkLoadStates != null;
     }
 
     SharedWaypointService sharedWaypoints() {

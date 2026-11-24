@@ -12,6 +12,39 @@ import javax.imageio.stream.ImageInputStream;
 final class WaypointImageCodec {
     private WaypointImageCodec() {}
 
+    static byte[] reviewThumbnail(java.nio.file.Path path) throws IOException {
+        try (ImageInputStream input = ImageIO.createImageInputStream(path.toFile())) {
+            if (input == null) throw new IOException("Missing review image");
+            final Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) throw new IOException("Invalid review image");
+            final ImageReader reader = readers.next();
+            try {
+                reader.setInput(input, false, true);
+                final int width = reader.getWidth(0), height = reader.getHeight(0);
+                for (int limit : new int[]{128, 64}) {
+                    final int stride = 1 + (Math.max(width, height) - 1) / limit;
+                    final var params = reader.getDefaultReadParam();
+                    params.setSourceSubsampling(stride, stride, 0, 0);
+                    final BufferedImage scaled = reader.read(0, params);
+                    final BufferedImage jpeg =
+                        new BufferedImage(scaled.getWidth(), scaled.getHeight(), BufferedImage.TYPE_INT_RGB);
+                    final var graphics = jpeg.createGraphics();
+                    try {
+                        graphics.drawImage(scaled, 0, 0, null);
+                    } finally {
+                        graphics.dispose();
+                    }
+                    final var output = new ByteArrayOutputStream();
+                    if (ImageIO.write(jpeg, "jpeg", output) && output.size() <= 10000)
+                        return output.toByteArray();
+                }
+                throw new IOException("Review preview is too large");
+            } finally {
+                reader.dispose();
+            }
+        }
+    }
+
     static byte[] decode(byte[] data) throws IOException {
         try (ImageInputStream in =
                 new javax.imageio.stream.MemoryCacheImageInputStream(

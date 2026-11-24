@@ -358,7 +358,26 @@ final class CompactWaypointScreen extends ConfluxScreen {
         Waypoint local = entry.shared ? null : local(entry.row.id());
         boolean publish = options.quickPublish && local != null && app.sharedWaypoints().canCreate() && !app.sharedWaypoints().isLocationShared(local) && !app.sharedWaypoints().isCreatePending(local);
         if (options.quickPublish && !entry.shared) action(7, 2, label("publish"), publish, () -> {
-            Entry live = resolve(key); if (options.quickPublish && live != null && !live.shared) { Waypoint waypoint = local(key.waypoint()); if (waypoint != null) app.sharedWaypoints().create(waypoint); }
+            Entry live = resolve(key);
+            if (!options.quickPublish || live == null || live.shared) return;
+            Waypoint waypoint = local(key.waypoint());
+            if (waypoint == null) return;
+            if (!cn.net.rms.confluxmap.mc.net.WebMapClient.flag("albumUpload")) {
+                app.sharedWaypoints().create(waypoint);
+                return;
+            }
+            app.waypointMediaService().list(key).whenComplete((photos, failure) ->
+                MinecraftClient.getInstance().execute(() -> {
+                    final var client = MinecraftClient.getInstance();
+                    if (MinecraftAccess.screen(client) != this || resolve(key) == null) return;
+                    if (failure != null || !photos.isEmpty()) {
+                        MinecraftAccess.setScreen(client, new WaypointShareConfirmScreen(
+                            this, waypoint, WaypointShareConfirmScreen.Target.PUBLIC
+                        ));
+                    } else {
+                        app.sharedWaypoints().create(waypoint);
+                    }
+                }));
         });
         for (Action action : actions) {
             var button = new cn.net.rms.confluxmap.mc.ui.widget.ConfluxTextButton(action.x, action.y, action.width, action.height, action.text, ignored -> action.run.run());

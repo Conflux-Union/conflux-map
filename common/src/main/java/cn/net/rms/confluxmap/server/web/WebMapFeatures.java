@@ -18,6 +18,7 @@ public final class WebMapFeatures implements AutoCloseable {
     private final WebMapConfig cfg;
     private final Path dir;
     private final Predicate<UUID> exists;
+    private BiPredicate<UUID, UUID> owner = (actor, waypoint) -> true;
     private final BooleanSupplier save;
     private final Consumer<Runnable> gameThread;
     private final Consumer<String> broadcast;
@@ -119,6 +120,27 @@ public final class WebMapFeatures implements AutoCloseable {
         } catch (IOException e) {
             System.err.println("[ConfluxMap] image store: " + e.getMessage());
         }
+    }
+
+    public synchronized void restrictAttachments(BiPredicate<UUID, UUID> owner) {
+        this.owner = owner;
+    }
+
+    public static byte[] publicationTarget(
+        cn.net.rms.confluxmap.core.net.shared.SharedWaypointMessage request,
+        java.util.List<cn.net.rms.confluxmap.core.net.shared.SharedWaypointMessage> deltas
+    ) {
+        if (!(request instanceof cn.net.rms.confluxmap.core.net.shared.CreateC2S create)) return null;
+        for (var delta : deltas) {
+            if (delta instanceof cn.net.rms.confluxmap.core.net.shared.UpsertS2C upsert) {
+                JsonObject reply = new JsonObject();
+                reply.addProperty("type", "image-target");
+                reply.addProperty("operation", create.operationId().toString());
+                reply.addProperty("waypoint", upsert.waypoint().id().toString());
+                return JSON.toJson(reply).getBytes(StandardCharsets.UTF_8);
+            }
+        }
+        return null;
     }
 
     private Path file(UUID id) {
@@ -256,6 +278,8 @@ public final class WebMapFeatures implements AutoCloseable {
         o.addProperty("type", "status");
         o.addProperty("admin", op && cfg.allowOperatorClientConfig);
         o.addProperty("upload", canUpload(op));
+        o.addProperty("albumUpload", canUpload(op));
+        o.addProperty("review", op);
         o.addProperty("sharePlayers", cfg.sharePlayers);
         o.addProperty("allowPlayerSearch", cfg.allowPlayerSearch);
         o.addProperty("allowWaypointSearch", cfg.allowWaypointSearch);
@@ -265,6 +289,19 @@ public final class WebMapFeatures implements AutoCloseable {
         o.addProperty("showGameChat", cfg.showGameChat);
         o.addProperty("allowWebChat", cfg.allowWebChat);
         reply.accept(JSON.toJson(o).getBytes(StandardCharsets.UTF_8));
+    }
+
+    public synchronized void settingsChanged() {
+        if (!cfg.enableChat) {
+            history.clear();
+            skins.clear();
+        }
+        if (!cfg.showGameChat) {
+            history.removeIf(c -> c.source.equals("game"));
+            skins.clear();
+        }
+        chatRevision++;
+        imageRevision++;
     }
 
     public synchronized void disconnect(UUID id) {
@@ -296,26 +333,17 @@ public final class WebMapFeatures implements AutoCloseable {
                         return;
                     }
                     String key = o.get("key").getAsString(), value = o.get("value").getAsString();
-                    String previous = setting(key);
+                    String previous = ServerConfigControl.value(cfg, key);
                     if (previous == null) {
                         result(reply, "Unknown setting");
                         return;
                     }
-                    set(key, value);
+                    ServerConfigControl.set(cfg, key, value);
                     if (!save.getAsBoolean()) {
-                        set(key, previous);
+                        ServerConfigControl.set(cfg, key, previous);
                         result(reply, "Save failed");
                     } else {
-                        if (!cfg.enableChat) {
-                            history.clear();
-                            skins.clear();
-                        }
-                        if (!cfg.showGameChat) {
-                            history.removeIf(c -> c.source.equals("game"));
-                            skins.clear();
-                        }
-                        chatRevision++;
-                        imageRevision++;
+                        settingsChanged();
                         result(reply, "Saved");
                     }
                     status(reply, admin);
@@ -325,6 +353,7 @@ public final class WebMapFeatures implements AutoCloseable {
                     int n = o.get("length").getAsInt();
                     if (!canUpload(admin)
                             || !exists.test(w)
+                            || !admin && !owner.test(actor, w)
                             || n < 1
                             || n > MAX_IMAGE
                             || uploads.size() >= 16
@@ -381,6 +410,7 @@ public final class WebMapFeatures implements AutoCloseable {
                                                         notifyOps));
                             });
                 }
+                case "image-review" -> sendReview(o.get("index").getAsInt(), admin, reply);
                 case "image-approve", "image-reject", "image-delete" -> {
                     if (!admin) {
                         result(reply, "Forbidden");
@@ -400,36 +430,25 @@ public final class WebMapFeatures implements AutoCloseable {
         }
     }
 
-    private String setting(String key) {
-        return switch (key) {
-            case "sharePlayers" -> Boolean.toString(cfg.sharePlayers);
-            case "allowPlayerSearch" -> Boolean.toString(cfg.allowPlayerSearch);
-            case "allowWaypointSearch" -> Boolean.toString(cfg.allowWaypointSearch);
-            case "showWaypointImages" -> Boolean.toString(cfg.showWaypointImages);
-            case "waypointImageMode" -> cfg.waypointImageMode.name();
-            case "enableChat" -> Boolean.toString(cfg.enableChat);
-            case "showGameChat" -> Boolean.toString(cfg.showGameChat);
-            case "allowWebChat" -> Boolean.toString(cfg.allowWebChat);
-            default -> null;
-        };
-    }
-
-    private void set(String key, String value) {
-        if (!key.equals("waypointImageMode") && !value.equals("true") && !value.equals("false"))
-            throw new IllegalArgumentException();
-        boolean b = Boolean.parseBoolean(value);
-        switch (key) {
-            case "sharePlayers" -> cfg.sharePlayers = b;
-            case "allowPlayerSearch" -> cfg.allowPlayerSearch = b;
-            case "allowWaypointSearch" -> cfg.allowWaypointSearch = b;
-            case "showWaypointImages" -> cfg.showWaypointImages = b;
-            case "waypointImageMode" ->
-                    cfg.waypointImageMode = WebMapConfig.ImageMode.valueOf(value);
-            case "enableChat" -> cfg.enableChat = b;
-            case "showGameChat" -> cfg.showGameChat = b;
-            case "allowWebChat" -> cfg.allowWebChat = b;
-            default -> throw new IllegalArgumentException();
+    private void sendReview(int index, boolean operator, Consumer<byte[]> reply) throws IOException {
+        final JsonObject review = new JsonObject();
+        review.addProperty("type", "image-review");
+        if (operator) {
+            List<Image> pending = images.values().stream()
+                .filter(image -> !image.approved && exists.test(image.waypoint)).toList();
+            review.addProperty("count", pending.size());
+            if (!pending.isEmpty()) {
+                int selected = Math.floorMod(index, pending.size());
+                Image image = pending.get(selected);
+                review.addProperty("index", selected);
+                review.addProperty("id", image.id.toString());
+                review.addProperty("waypoint", image.waypoint.toString());
+                review.addProperty("author", image.authorName);
+                review.addProperty("preview",
+                    Base64.getEncoder().encodeToString(WaypointImageCodec.reviewThumbnail(file(image.id))));
+            }
         }
+        reply.accept(JSON.toJson(review).getBytes(StandardCharsets.UTF_8));
     }
 
     private synchronized void finish(
@@ -447,6 +466,7 @@ public final class WebMapFeatures implements AutoCloseable {
         if (png == null
                 || !canUpload(admin)
                 || !exists.test(waypoint)
+                || !admin && !owner.test(actor, waypoint)
                 || images.size() >= MAX_IMAGES
                 || images.values().stream().filter(i -> i.waypoint.equals(waypoint)).count() >= 4) {
             result(reply, "Invalid image, forbidden or quota exceeded");

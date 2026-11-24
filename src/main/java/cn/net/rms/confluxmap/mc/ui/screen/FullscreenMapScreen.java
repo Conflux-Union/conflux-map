@@ -610,16 +610,23 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
         final String rangeKey = "confluxmap.map.loaded_range";
         final MapIconButton range = addDrawableChild(new MapIconButton(
-            x, vertical ? y + CONTROL_SIZE + CONTROL_GAP : y, MAP_LOADED_RANGE_ICON, Texts.translatable(rangeKey), button -> {
-                config.fullscreenLoadedRangeVisible = !config.fullscreenLoadedRangeVisible;
-                ConfluxMapClient.get().configIo().save(config);
-                loadedRange.clear();
-                rebuildWaypointControls();
-            }
+            x, vertical ? y + CONTROL_SIZE + CONTROL_GAP : y, MAP_LOADED_RANGE_ICON, Texts.translatable(rangeKey), button -> toggleLoadedRange()
         ));
         range.setSelected(config.fullscreenLoadedRangeVisible);
         setHoverTooltip(range, config.fullscreenLoadedRangeVisible
             ? "confluxmap.map.loaded_range.on" : "confluxmap.map.loaded_range.off");
+    }
+
+    public void toggleLoadedRange() {
+        config.fullscreenLoadedRangeVisible = !config.fullscreenLoadedRangeVisible;
+        ConfluxMapClient.get().configIo().save(config);
+        loadedRange.clear();
+        rebuildWaypointControls();
+    }
+
+    public void toggleChunkGrid() {
+        config.fullmapChunkGrid = !config.fullmapChunkGrid;
+        ConfluxMapClient.get().configIo().save(config);
     }
 
     private void openCoordinateJump() {
@@ -1271,6 +1278,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
     //#endif
         regionSelection = null;
+        //#if MC>=12109
+        //$$ if (ConfluxMapClient.get().keybinds().onMapKey(input)) return true;
+        //#else
+        if (ConfluxMapClient.get().keybinds().onMapKey(keyCode, scanCode)) return true;
+        //#endif
         if (regionSelectDragging && keyCode == cn.net.rms.confluxmap.compat.Keys.ESCAPE) {
             regionSelectDragging = false;
             regionSelectPress = false;
@@ -3042,32 +3054,35 @@ public final class FullscreenMapScreen extends ConfluxScreen {
      * render under {@link #MIN_CHUNK_GRID_SPACING_PX} wide, to avoid moire noise when zoomed far out.
      */
     private void drawChunkGrid(final MatrixStack matrices, final int mouseX, final int mouseY) {
-        if (!config.fullmapChunkGrid) {
+        if (!config.fullmapChunkGrid && !regionSelectDragging) {
             return;
         }
         final int chunkGridColor = Argb.withAlphaPercent(0x000000, config.fullmapChunkGridOpacity);
         final double pxPerBlock = 1.0 / scale;
         final double chunkSpacingPx = 16.0 * pxPerBlock;
-        if (chunkSpacingPx < MIN_CHUNK_GRID_SPACING_PX) {
+        if (!regionSelectDragging && chunkSpacingPx < MIN_CHUNK_GRID_SPACING_PX) {
             return;
         }
+        final int stride = Math.max(1, (int) Math.ceil(MIN_CHUNK_GRID_SPACING_PX / chunkSpacingPx));
 
         // Floor/ceil-then-blockToChunk (arithmetic shift) keeps lines exact on chunk borders
         // for negative world coordinates too.
         final int firstChunkX = TileMath.blockToChunk((int) Math.floor(centerX - width / 2.0 * scale));
         final int lastChunkX = TileMath.blockToChunk((int) Math.ceil(centerX + width / 2.0 * scale));
-        for (int cx = firstChunkX; cx <= lastChunkX + 1; cx++) {
+        for (int cx = Math.floorDiv(firstChunkX, stride) * stride; cx <= lastChunkX + 1; cx += stride) {
             final float screenX = (float) (width / 2.0 + (cx * 16.0 - centerX) * pxPerBlock);
             GuiShapes.fillRect(matrices, screenX, 0f, 1f, height, chunkGridColor);
         }
         final int firstChunkZ = TileMath.blockToChunk((int) Math.floor(centerZ - height / 2.0 * scale));
         final int lastChunkZ = TileMath.blockToChunk((int) Math.ceil(centerZ + height / 2.0 * scale));
-        for (int cz = firstChunkZ; cz <= lastChunkZ + 1; cz++) {
+        for (int cz = Math.floorDiv(firstChunkZ, stride) * stride; cz <= lastChunkZ + 1; cz += stride) {
             final float screenY = (float) (height / 2.0 + (cz * 16.0 - centerZ) * pxPerBlock);
             GuiShapes.fillRect(matrices, 0f, screenY, width, 1f, chunkGridColor);
         }
 
-        drawHoveredChunkHighlight(matrices, mouseX, mouseY, pxPerBlock);
+        if (chunkSpacingPx >= MIN_CHUNK_GRID_SPACING_PX) {
+            drawHoveredChunkHighlight(matrices, mouseX, mouseY, pxPerBlock);
+        }
     }
 
     /** Fills the 16x16-block chunk under the cursor and outlines it, layered on top of the grid lines drawn just above. */

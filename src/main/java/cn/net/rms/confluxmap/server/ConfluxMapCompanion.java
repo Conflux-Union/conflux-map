@@ -82,16 +82,23 @@ public final class ConfluxMapCompanion {
         ConfluxMapCommands.register(this);
         cn.net.rms.confluxmap.compat.PlayNetworking.registerServer(cn.net.rms.confluxmap.compat.Ids.of("confluxmap:webmap_v1"), (server,player,payload) -> {
             FabricWebMapBackend current=webMapBackend;
-            if(current==null||payload.length>16000||!current.features().allowPacket(player.getUuid()))return;
+            if (payload.length < 2 || payload.length > 16000
+                || current != null && !current.features().allowPacket(player.getUuid())) return;
             server.execute(() -> {
-                FabricWebMapBackend b=webMapBackend;if(b!=current)return;
-                var channel=cn.net.rms.confluxmap.compat.Ids.of("confluxmap:webmap_v1");
-                b.features().handle(player.getUuid(),cn.net.rms.confluxmap.compat.MinecraftAccess.playerName(player),
-                    () -> cn.net.rms.confluxmap.compat.MinecraftAccess.hasPermission(player,2),
-                    () -> webMapBackend==b && server.getPlayerManager().getPlayer(player.getUuid())==player,
-                    payload,
-                    reply -> cn.net.rms.confluxmap.compat.PlayNetworking.sendServer(player,channel,reply),
-                    notice -> notifyImageOperators(server,notice));
+                if (server.getPlayerManager().getPlayer(player.getUuid()) != player) return;
+                FabricWebMapBackend backend = webMapBackend;
+                java.util.function.Consumer<byte[]> reply = data -> sendWebMapPacket(player, data);
+                java.util.function.BooleanSupplier operator =
+                    () -> cn.net.rms.confluxmap.compat.MinecraftAccess.hasPermission(player, 2);
+                if (cn.net.rms.confluxmap.server.web.ServerConfigControl.handle(
+                    payload, config, operator.getAsBoolean(), this::saveWebMapConfig,
+                    () -> { if (backend != null) backend.features().settingsChanged(); }, reply
+                )) return;
+                if (backend != null && backend == current) backend.features().handle(
+                    player.getUuid(), cn.net.rms.confluxmap.compat.MinecraftAccess.playerName(player),
+                    operator, () -> webMapBackend == backend && server.getPlayerManager().getPlayer(player.getUuid()) == player,
+                    payload, reply, notice -> notifyImageOperators(server, notice)
+                );
             });
         });
         net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents.DISCONNECT.register((handler,server)->{
@@ -280,6 +287,13 @@ public final class ConfluxMapCompanion {
      * a companion session does not write the file at all.
      */
     java.nio.file.Path webMapImageDirectory(String worldId){return configIo.directory().resolve("webmap-images").resolve(instanceId().toString()).resolve(worldId);}
+    public void sendWebMapPacket(net.minecraft.server.network.ServerPlayerEntity player, byte[] payload) {
+        var channel = cn.net.rms.confluxmap.compat.Ids.of("confluxmap:webmap_v1");
+        if (net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(player, channel)) {
+            cn.net.rms.confluxmap.compat.PlayNetworking.sendServer(player, channel, payload);
+        }
+    }
+
     boolean saveWebMapConfig() {
         if (!configIo.saveAtomically(config)) {
             return false;
@@ -336,7 +350,7 @@ public final class ConfluxMapCompanion {
     }
 
     public boolean chunkLoadStatesEnabled() {
-        return isEnabled() && config.shareChunkLoadState && chunkLoadStates != null;
+        return isEnabled() && chunkLoadStates != null;
     }
 
     /** Returns loaded world state, retained across runtime disable/enable for idempotent retries. */

@@ -42,9 +42,12 @@ final class PaperWebMapBackend implements WebMapBackend {
         this.plugin = plugin;
         this.companion = companion;
         features=new cn.net.rms.confluxmap.server.web.WebMapFeatures(companion.config().webMap,
-            companion.webMapImageDirectory(companion.worldId().toString()), id -> companion.sharedWaypointsEnabled() && snapshot.waypoints().stream().anyMatch(w -> w.id().equals(id.toString())),
+            companion.webMapImageDirectory(companion.worldId().toString()), id -> companion.sharedWaypointsEnabled() && companion.sharedWaypoints().snapshot().waypoints().stream().anyMatch(w -> w.id().equals(id)),
             companion::saveWebMapConfig, task -> Bukkit.getScheduler().runTask(plugin,task),
             text -> Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(net.kyori.adventure.text.Component.text(text))));
+        features.restrictAttachments((actor, id) -> companion.sharedWaypointsEnabled()
+            && companion.sharedWaypoints().snapshot().waypoints().stream()
+                .anyMatch(waypoint -> waypoint.id().equals(id) && waypoint.publisherId().equals(actor)));
         final List<WebMapManifest.Dimension> dimensions = new ArrayList<>();
         for (final PaperWorldDirectory.Entry entry : companion.worlds().entries()) {
             final DimensionId id = DimensionId.parse(entry.dimensionId());

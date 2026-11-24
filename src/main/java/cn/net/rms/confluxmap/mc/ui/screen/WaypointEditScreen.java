@@ -667,11 +667,12 @@ public final class WaypointEditScreen extends ConfluxScreen {
             }
             if (!nameField.visible) setFocused(null);
         }
-        if (createTarget == CreateTarget.PUBLIC && editingId != null && WebMapClient.flag("upload")) {
+        if (createTarget == CreateTarget.PUBLIC && editingId != null && metadataWorld != null
+            && WebMapClient.flag("albumUpload")) {
             addDrawableChild(Widgets.button(
                 Math.max(4, width - 112), 4, 108, FIELD_HEIGHT,
                 Texts.translatable("confluxmap.webmap.image_upload"), button ->
-                    MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WebMapImageScreen(this, editingId))
+                    openWebPhotoSelection()
             ));
         }
         final int footerY = WaypointEditLayout.footerY(height);
@@ -1073,6 +1074,15 @@ public final class WaypointEditScreen extends ConfluxScreen {
         final var library = ConfluxMapClient.get().waypointLibraryService();
         return supportsPrivateAttachments() && metadataWorld != null && metadataWorld.equals(library.world())
             && library.writable() && (createTarget != CreateTarget.LOCAL || boundLocalStore == localStoreSupplier.get());
+    }
+
+    private void openWebPhotoSelection() {
+        var album = new cn.net.rms.confluxmap.core.waypoint.library.WaypointMediaService.Key(
+            metadataWorld, true, metadataId
+        );
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WebMapImageScreen(this, album, List.of(),
+            selected -> WebMapClient.upload(editingId, album, selected), true
+        ));
     }
 
     private void openImages() {

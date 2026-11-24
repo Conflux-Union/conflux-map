@@ -46,7 +46,7 @@ final class FabricWebMapBackend implements WebMapBackend {
         this.server = server;
         this.companion = companion;
         features=new cn.net.rms.confluxmap.server.web.WebMapFeatures(companion.config().webMap,
-            companion.webMapImageDirectory(companion.worldIds().get(server).toString()), id -> companion.sharedWaypointsEnabled() && snapshot.waypoints().stream().anyMatch(w -> w.id().equals(id.toString())),
+            companion.webMapImageDirectory(companion.worldIds().get(server).toString()), id -> companion.sharedWaypointsEnabled() && companion.sharedWaypoints().snapshot().waypoints().stream().anyMatch(w -> w.id().equals(id)),
             companion::saveWebMapConfig, server::execute,
             text -> server.getPlayerManager().getPlayerList().forEach(player ->
                 cn.net.rms.confluxmap.compat.MinecraftAccess.sendSystemMessage(
@@ -54,6 +54,9 @@ final class FabricWebMapBackend implements WebMapBackend {
                 )
             )
         );
+        features.restrictAttachments((actor, id) -> companion.sharedWaypointsEnabled()
+            && companion.sharedWaypoints().snapshot().waypoints().stream()
+                .anyMatch(waypoint -> waypoint.id().equals(id) && waypoint.publisherId().equals(actor)));
         this.manifest = buildManifest();
     }
 

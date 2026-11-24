@@ -23,7 +23,7 @@ final class MaliLibHotkeyFactory {
     }
 
     static KeybindSettings settingsFor(final KeybindAction action) {
-        return pressSettings(action == KeybindAction.OPEN_MAP
+        return pressSettings((action == KeybindAction.OPEN_MAP || action.mapViewAction())
             ? KeybindSettings.Context.ANY
             : KeybindSettings.Context.INGAME
         );
