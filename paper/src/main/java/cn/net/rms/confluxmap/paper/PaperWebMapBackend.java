@@ -4,11 +4,9 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
-import cn.net.rms.confluxmap.core.net.Message;
-import cn.net.rms.confluxmap.core.net.MsgCodec;
-import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
+import cn.net.rms.confluxmap.server.MessageSender;
 import cn.net.rms.confluxmap.server.web.WebMapBackend;
 import cn.net.rms.confluxmap.server.web.WebMapManifest;
 import cn.net.rms.confluxmap.server.web.WebMapSnapshot;
@@ -116,24 +114,10 @@ final class PaperWebMapBackend implements WebMapBackend {
         return avatars.face(skinUrls.get(playerId));
     }
 
-    private static PaperCorrectionService.MessageSender sender(
+    private static MessageSender sender(
         final Consumer<byte[]> response
     ) {
-        return new PaperCorrectionService.MessageSender() {
-            @Override
-            public void send(final Message message) {
-                try {
-                    response.accept(MsgCodec.encode(message));
-                } catch (final ProtoException ignored) {
-                    // Every server-originated message is validated before it reaches this seam.
-                }
-            }
-
-            @Override
-            public void sendEncoded(final Message message, final byte[] payload) {
-                response.accept(payload);
-            }
-        };
+        return MessageSender.forwardingTo(response);
     }
 
     void updatePlayers() {

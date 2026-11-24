@@ -6,9 +6,6 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
-import cn.net.rms.confluxmap.core.net.Message;
-import cn.net.rms.confluxmap.core.net.MsgCodec;
-import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
@@ -125,24 +122,10 @@ final class FabricWebMapBackend implements WebMapBackend {
         return avatars.face(skinUrls.get(playerId));
     }
 
-    private static RegionSummaryService.MessageSender sender(
+    private static MessageSender sender(
         final Consumer<byte[]> response
     ) {
-        return new RegionSummaryService.MessageSender() {
-            @Override
-            public void send(final Message message) {
-                try {
-                    response.accept(MsgCodec.encode(message));
-                } catch (final ProtoException ignored) {
-                    // Every server-originated message is validated before it reaches this seam.
-                }
-            }
-
-            @Override
-            public void sendEncoded(final Message message, final byte[] payload) {
-                response.accept(payload);
-            }
-        };
+        return MessageSender.forwardingTo(response);
     }
 
     void updatePlayers() {
