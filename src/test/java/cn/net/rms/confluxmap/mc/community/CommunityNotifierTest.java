@@ -13,11 +13,22 @@ import java.util.List;
 import net.minecraft.text.Text;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 final class CommunityNotifierTest {
     private static final Logger LOGGER = LogManager.getLogger("CommunityNotifierTest");
+
+    @BeforeAll
+    static void skipWhereHoverEventStaticInitBreaks() {
+        //#if MC>=11800 && MC<12105
+        //$$ Assumptions.abort(
+        //$$     "HoverEvent static init pulls vanilla registries that 1.18+ test jars cannot bootstrap"
+        //$$ );
+        //#endif
+    }
 
     @TempDir
     Path configDir;
@@ -78,7 +89,7 @@ final class CommunityNotifierTest {
 
     private static void assertOpens(final Text link, final String url) {
         assertTrue(link.getStyle().isUnderlined());
-        assertEquals(url, Texts.clickValue(link.getStyle().getClickEvent()));
+        assertEquals(url, Texts.openUrlValue(link.getStyle().getClickEvent()));
         assertNotNull(link.getStyle().getHoverEvent());
     }
 }
