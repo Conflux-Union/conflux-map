@@ -7,15 +7,9 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.zip.DataFormatException;
-import java.util.zip.Deflater;
-import java.util.zip.DeflaterOutputStream;
-import java.util.zip.Inflater;
 
 /**
  * Compact, hostile-input-safe layout for one authoritative correction snapshot.
@@ -188,7 +182,7 @@ public final class PatchCodec {
                         sample == null ? "patch contains null sample" : "duplicate pixel index " + sample.pixelIndex()
                     );
                 }
-                if (!hasBit(evaluated, sample.pixelIndex())) {
+                if (!PatchWire.hasBit(evaluated, sample.pixelIndex())) {
                     throw new IllegalArgumentException("difference pixel was not evaluated: " + sample.pixelIndex());
                 }
                 seen[sample.pixelIndex()] = true;
@@ -198,7 +192,7 @@ public final class PatchCodec {
                 if (light > 15) {
                     throw new IllegalArgumentException("block light outside 0..15 at pixel " + pixel);
                 }
-                if (!hasBit(evaluated, pixel)
+                if (!PatchWire.hasBit(evaluated, pixel)
                     && (sourceRevisions[pixel] != Long.MIN_VALUE || light != 0)) {
                     throw new IllegalArgumentException("metadata exists for unevaluated pixel " + pixel);
                 }
@@ -249,7 +243,7 @@ public final class PatchCodec {
 
         public boolean evaluatedAt(final int pixelIndex) {
             checkPixel(pixelIndex);
-            return hasBit(evaluated, pixelIndex);
+            return PatchWire.hasBit(evaluated, pixelIndex);
         }
 
         public Sample sampleAt(final int pixelIndex) {
@@ -287,7 +281,7 @@ public final class PatchCodec {
         final byte[] difference = new byte[MASK_BYTES];
         for (final Sample sample : patch.samples()) {
             byPixel[sample.pixelIndex()] = sample;
-            setBit(difference, sample.pixelIndex());
+            PatchWire.setBit(difference, sample.pixelIndex());
         }
         final List<Sample> ordered = new ArrayList<>(patch.size());
         for (int pixel = 0; pixel < PIXELS; pixel++) {
@@ -308,7 +302,7 @@ public final class PatchCodec {
             }
             int previousY = 0;
             for (final Sample sample : ordered) {
-                writeZigzagVarint(out, sample.surfaceY() - previousY);
+                PatchWire.writeZigzagVarint(out, sample.surfaceY() - previousY);
                 previousY = sample.surfaceY();
             }
             for (final Sample sample : ordered) {
@@ -323,11 +317,11 @@ public final class PatchCodec {
             for (final Sample sample : ordered) {
                 out.writeByte(sample.floorMapColorId());
             }
-            final Map<String, Integer> materials = materialTable(ordered);
+            final Map<String, Integer> materials = PatchWire.materialTable(ordered);
             if (formatVersion >= MATERIAL_FORMAT_VERSION) {
                 out.writeShort(materials.size());
                 for (final String material : materials.keySet()) {
-                    writeMaterial(out, material);
+                    PatchWire.writeMaterial(out, material);
                 }
                 for (final Sample sample : ordered) {
                     out.writeShort(materials.get(sample.materialId()));
@@ -348,7 +342,7 @@ public final class PatchCodec {
                         continue;
                     }
                     final long revision = patch.sourceRevisions[pixel];
-                    writeZigzagVarLong(out, revision - previousRevision);
+                    PatchWire.writeZigzagVarLong(out, revision - previousRevision);
                     previousRevision = revision;
                 }
                 for (int pixel = 0; pixel < PIXELS; pixel++) {
@@ -362,7 +356,7 @@ public final class PatchCodec {
             if (raw.length > MAX_RAW_BYTES) {
                 throw new IllegalArgumentException("patch body exceeds raw cap");
             }
-            return deflate(raw);
+            return PatchWire.deflate(raw, MAX_COMPRESSED_BYTES);
         } catch (final IOException e) {
             throw new IllegalStateException("in-memory patch encoding failed", e);
         }
@@ -384,7 +378,7 @@ public final class PatchCodec {
         if (body == null || body.length == 0 || body.length > MAX_COMPRESSED_BYTES) {
             throw new ProtoException("invalid patch body length: " + (body == null ? -1 : body.length));
         }
-        final byte[] raw = inflate(body);
+        final byte[] raw = PatchWire.inflate(body, MAX_RAW_BYTES);
         try {
             final DataInputStream in = new DataInputStream(new ByteArrayInputStream(raw));
             final int version = in.readUnsignedByte();
@@ -404,52 +398,26 @@ public final class PatchCodec {
             final int[] pixels = new int[count];
             int next = 0;
             for (int pixel = 0; pixel < PIXELS; pixel++) {
-                if (hasBit(difference, pixel)) {
+                if (PatchWire.hasBit(difference, pixel)) {
                     pixels[next++] = pixel;
                 }
             }
-            final int[] biomes = readUnsignedBytePlane(in, count);
-            final int[] surfaceYs = new int[count];
-            int previousY = 0;
-            for (int i = 0; i < count; i++) {
-                previousY += readZigzagVarint(in);
-                if (previousY < Short.MIN_VALUE || previousY > Short.MAX_VALUE) {
-                    throw new ProtoException("surface height outside i16: " + previousY);
-                }
-                surfaceYs[i] = previousY;
-            }
-            final int[] kinds = readUnsignedBytePlane(in, count);
-            final int[] mapColors = readUnsignedBytePlane(in, count);
-            final int[] fluidDepths = readUnsignedBytePlane(in, count);
-            final int[] floorMapColors = readUnsignedBytePlane(in, count);
-            final String[] materialIds = new String[count];
-            final String[] floorMaterialIds = new String[count];
-            final String[] overlayMaterialIds = new String[count];
-            java.util.Arrays.fill(materialIds, "");
-            java.util.Arrays.fill(floorMaterialIds, "");
-            java.util.Arrays.fill(overlayMaterialIds, "");
-            String[] materials = new String[] {""};
-            if (version >= MATERIAL_FORMAT_VERSION) {
-                materials = readMaterialTable(in);
-                readMaterialPlane(in, materials, materialIds);
-                readMaterialPlane(in, materials, floorMaterialIds);
-            }
-            if (version >= FORMAT_VERSION) {
-                readMaterialPlane(in, materials, overlayMaterialIds);
-            }
+            final PatchWire.ValuePlanes planes = PatchWire.readValuePlanes(
+                in, count, version >= MATERIAL_FORMAT_VERSION, version >= FORMAT_VERSION
+            );
             final long[] sourceRevisions = unknownRevisions();
             final byte[] blockLight = new byte[PIXELS];
             if (version >= SOURCE_LIGHT_FORMAT_VERSION) {
                 long previousRevision = 0L;
                 for (int pixel = 0; pixel < PIXELS; pixel++) {
-                    if (!hasBit(evaluated, pixel)) {
+                    if (!PatchWire.hasBit(evaluated, pixel)) {
                         continue;
                     }
-                    previousRevision += readZigzagVarLong(in);
+                    previousRevision += PatchWire.readZigzagVarLong(in);
                     sourceRevisions[pixel] = previousRevision;
                 }
                 for (int pixel = 0; pixel < PIXELS; pixel++) {
-                    if (!hasBit(evaluated, pixel)) {
+                    if (!PatchWire.hasBit(evaluated, pixel)) {
                         continue;
                     }
                     final int light = in.readUnsignedByte();
@@ -466,15 +434,15 @@ public final class PatchCodec {
             for (int i = 0; i < count; i++) {
                 samples.add(new Sample(
                     pixels[i],
-                    biomes[i],
-                    surfaceYs[i],
-                    kinds[i],
-                    mapColors[i],
-                    fluidDepths[i],
-                    floorMapColors[i],
-                    materialIds[i],
-                    floorMaterialIds[i],
-                    overlayMaterialIds[i]
+                    planes.biomes()[i],
+                    planes.surfaceYs()[i],
+                    planes.kinds()[i],
+                    planes.mapColors()[i],
+                    planes.fluidDepths()[i],
+                    planes.floorMapColors()[i],
+                    planes.materialIds()[i],
+                    planes.floorMaterialIds()[i],
+                    planes.overlayMaterialIds()[i]
                 ));
             }
             return new Patch(evaluated, samples, sourceRevisions, blockLight);
@@ -485,132 +453,12 @@ public final class PatchCodec {
         }
     }
 
-    private static byte[] deflate(final byte[] raw) throws IOException {
-        final ByteArrayOutputStream compressed = new ByteArrayOutputStream(Math.min(raw.length, 64 * 1024));
-        final Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION);
-        try {
-            final DeflaterOutputStream out = new DeflaterOutputStream(compressed, deflater, 8192);
-            out.write(raw);
-            out.finish();
-        } finally {
-            deflater.end();
-        }
-        final byte[] result = compressed.toByteArray();
-        if (result.length > MAX_COMPRESSED_BYTES) {
-            throw new IllegalArgumentException("patch body exceeds compressed cap: " + result.length);
-        }
-        return result;
-    }
-
-    private static Map<String, Integer> materialTable(final List<Sample> samples) {
-        final Map<String, Integer> result = new LinkedHashMap<>();
-        result.put("", 0);
-        for (final Sample sample : samples) {
-            addMaterial(result, sample.materialId());
-            addMaterial(result, sample.floorMaterialId());
-            addMaterial(result, sample.overlayMaterialId());
-        }
-        return result;
-    }
-
-    private static void addMaterial(final Map<String, Integer> materials, final String value) {
-        final String material = value == null ? "" : value;
-        if (!materials.containsKey(material)) {
-            if (materials.size() >= MAX_MATERIALS) {
-                throw new IllegalArgumentException("patch material table exceeds cap");
-            }
-            materials.put(material, materials.size());
-        }
-    }
-
-    private static void writeMaterial(
-        final DataOutputStream out, final String material
-    ) throws IOException {
-        final byte[] bytes = material.getBytes(StandardCharsets.UTF_8);
-        if (bytes.length > MAX_MATERIAL_BYTES) {
-            throw new IllegalArgumentException("patch material id exceeds UTF-8 cap");
-        }
-        out.writeShort(bytes.length);
-        out.write(bytes);
-    }
-
-    private static String[] readMaterialTable(
-        final DataInputStream in
-    ) throws IOException, ProtoException {
-        final int count = in.readUnsignedShort();
-        if (count < 1 || count > MAX_MATERIALS) {
-            throw new ProtoException("invalid patch material count " + count);
-        }
-        final String[] result = new String[count];
-        for (int i = 0; i < count; i++) {
-            final int length = in.readUnsignedShort();
-            if (length > MAX_MATERIAL_BYTES) {
-                throw new ProtoException("patch material id exceeds UTF-8 cap");
-            }
-            final byte[] bytes = new byte[length];
-            in.readFully(bytes);
-            result[i] = new String(bytes, StandardCharsets.UTF_8);
-        }
-        if (!result[0].isEmpty()) {
-            throw new ProtoException("patch material table must start with empty fallback");
-        }
-        return result;
-    }
-
-    private static void readMaterialPlane(
-        final DataInputStream in,
-        final String[] materials,
-        final String[] output
-    ) throws IOException, ProtoException {
-        for (int i = 0; i < output.length; i++) {
-            final int index = in.readUnsignedShort();
-            if (index >= materials.length) {
-                throw new ProtoException("patch material index outside table: " + index);
-            }
-            output[i] = materials[index];
-        }
-    }
-
-    private static byte[] inflate(final byte[] body) throws ProtoException {
-        final Inflater inflater = new Inflater();
-        final ByteArrayOutputStream raw = new ByteArrayOutputStream(Math.min(body.length * 4, MAX_RAW_BYTES));
-        final byte[] buffer = new byte[8192];
-        try {
-            inflater.setInput(body);
-            while (!inflater.finished()) {
-                final int read = inflater.inflate(buffer);
-                if (read > 0) {
-                    if (raw.size() > MAX_RAW_BYTES - read) {
-                        throw new ProtoException("inflated patch body exceeds cap");
-                    }
-                    raw.write(buffer, 0, read);
-                    continue;
-                }
-                if (inflater.needsDictionary()) {
-                    throw new ProtoException("patch body requires a compression dictionary");
-                }
-                if (inflater.needsInput()) {
-                    throw new ProtoException("truncated compressed patch body");
-                }
-                throw new ProtoException("compressed patch body made no progress");
-            }
-            if (inflater.getRemaining() != 0) {
-                throw new ProtoException("trailing compressed patch bytes: " + inflater.getRemaining());
-            }
-            return raw.toByteArray();
-        } catch (final DataFormatException e) {
-            throw new ProtoException("malformed compressed patch body", e);
-        } finally {
-            inflater.end();
-        }
-    }
-
     public static void setEvaluated(final byte[] evaluated, final int pixelIndex) {
         if (evaluated == null || evaluated.length != MASK_BYTES) {
             throw new IllegalArgumentException("invalid evaluated mask");
         }
         checkPixel(pixelIndex);
-        setBit(evaluated, pixelIndex);
+        PatchWire.setBit(evaluated, pixelIndex);
     }
 
     private static byte[] evaluatedFrom(final List<Sample> samples) {
@@ -622,7 +470,7 @@ public final class PatchCodec {
             if (sample == null) {
                 throw new IllegalArgumentException("patch contains null sample");
             }
-            setBit(result, sample.pixelIndex());
+            PatchWire.setBit(result, sample.pixelIndex());
         }
         return result;
     }
@@ -631,18 +479,18 @@ public final class PatchCodec {
         final byte[] coarse = new byte[COARSE_MASK_BYTES];
         final byte[][] fine = new byte[256][];
         for (int pixel = 0; pixel < PIXELS; pixel++) {
-            if (!hasBit(pixels, pixel)) {
+            if (!PatchWire.hasBit(pixels, pixel)) {
                 continue;
             }
             final int x = pixel & 255;
             final int z = pixel >>> 8;
             final int coarseIndex = (z >>> 4) * 16 + (x >>> 4);
             final int fineIndex = (z & 15) * 16 + (x & 15);
-            setBit(coarse, coarseIndex);
+            PatchWire.setBit(coarse, coarseIndex);
             if (fine[coarseIndex] == null) {
                 fine[coarseIndex] = new byte[FINE_MASK_BYTES];
             }
-            setBit(fine[coarseIndex], fineIndex);
+            PatchWire.setBit(fine[coarseIndex], fineIndex);
         }
         out.write(coarse);
         for (final byte[] mask : fine) {
@@ -657,88 +505,27 @@ public final class PatchCodec {
         in.readFully(coarse);
         final byte[] pixels = new byte[MASK_BYTES];
         for (int coarseIndex = 0; coarseIndex < 256; coarseIndex++) {
-            if (!hasBit(coarse, coarseIndex)) {
+            if (!PatchWire.hasBit(coarse, coarseIndex)) {
                 continue;
             }
             final byte[] fine = new byte[FINE_MASK_BYTES];
             in.readFully(fine);
             for (int fineIndex = 0; fineIndex < 256; fineIndex++) {
-                if (!hasBit(fine, fineIndex)) {
+                if (!PatchWire.hasBit(fine, fineIndex)) {
                     continue;
                 }
                 final int x = ((coarseIndex & 15) << 4) | (fineIndex & 15);
                 final int z = ((coarseIndex >>> 4) << 4) | (fineIndex >>> 4);
-                setBit(pixels, (z << 8) | x);
+                PatchWire.setBit(pixels, (z << 8) | x);
             }
         }
         return pixels;
-    }
-
-    private static int[] readUnsignedBytePlane(final DataInputStream in, final int count) throws IOException {
-        final int[] values = new int[count];
-        for (int i = 0; i < count; i++) {
-            values[i] = in.readUnsignedByte();
-        }
-        return values;
     }
 
     private static long[] unknownRevisions() {
         final long[] revisions = new long[PIXELS];
         java.util.Arrays.fill(revisions, Long.MIN_VALUE);
         return revisions;
-    }
-
-    private static void writeZigzagVarLong(final DataOutputStream out, final long value) throws IOException {
-        long encoded = (value << 1) ^ (value >> 63);
-        while ((encoded & ~0x7FL) != 0L) {
-            out.writeByte((int) (encoded & 0x7F) | 0x80);
-            encoded >>>= 7;
-        }
-        out.writeByte((int) encoded);
-    }
-
-    private static long readZigzagVarLong(final DataInputStream in) throws IOException, ProtoException {
-        long encoded = 0L;
-        for (int shift = 0; shift < 70; shift += 7) {
-            final int next = in.readUnsignedByte();
-            if (shift == 63 && (next & 0xFE) != 0) {
-                throw new ProtoException("overlong source revision delta");
-            }
-            encoded |= (long) (next & 0x7F) << shift;
-            if ((next & 0x80) == 0) {
-                return (encoded >>> 1) ^ -(encoded & 1L);
-            }
-        }
-        throw new ProtoException("overlong source revision delta");
-    }
-
-    private static void writeZigzagVarint(final DataOutputStream out, final int value) throws IOException {
-        int encoded = (value << 1) ^ (value >> 31);
-        while ((encoded & ~0x7F) != 0) {
-            out.writeByte((encoded & 0x7F) | 0x80);
-            encoded >>>= 7;
-        }
-        out.writeByte(encoded);
-    }
-
-    private static int readZigzagVarint(final DataInputStream in) throws IOException, ProtoException {
-        int encoded = 0;
-        for (int shift = 0; shift < MAX_DELTA_HEIGHT_BYTES * 7; shift += 7) {
-            final int next = in.readUnsignedByte();
-            encoded |= (next & 0x7F) << shift;
-            if ((next & 0x80) == 0) {
-                return (encoded >>> 1) ^ -(encoded & 1);
-            }
-        }
-        throw new ProtoException("overlong surface height delta");
-    }
-
-    private static void setBit(final byte[] bits, final int index) {
-        bits[index >>> 3] |= (byte) (1 << (index & 7));
-    }
-
-    private static boolean hasBit(final byte[] bits, final int index) {
-        return (bits[index >>> 3] & (1 << (index & 7))) != 0;
     }
 
     private static void checkPixel(final int pixelIndex) {

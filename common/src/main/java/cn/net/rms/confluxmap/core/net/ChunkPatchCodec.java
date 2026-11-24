@@ -8,15 +8,9 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.zip.DataFormatException;
-import java.util.zip.Deflater;
-import java.util.zip.DeflaterOutputStream;
-import java.util.zip.Inflater;
 
 /** Variable-size authoritative correction codec for one cropped 16x16-chunk region page. */
 public final class ChunkPatchCodec {
@@ -30,7 +24,6 @@ public final class ChunkPatchCodec {
     public static final int MAX_COMPRESSED_BYTES = 576 * 1024;
     private static final int MASK_DENSE = 0;
     private static final int MASK_RUNS = 1;
-    private static final int MAX_DELTA_HEIGHT_BYTES = 3;
 
     private ChunkPatchCodec() {
     }
@@ -86,7 +79,7 @@ public final class ChunkPatchCodec {
                         sample == null ? "chunk patch contains a null sample" : "invalid sample index " + sample.pixelIndex()
                     );
                 }
-                if (!hasBit(evaluated, sample.pixelIndex())) {
+                if (!PatchWire.hasBit(evaluated, sample.pixelIndex())) {
                     throw new IllegalArgumentException("difference sample was not evaluated");
                 }
                 seen[sample.pixelIndex()] = true;
@@ -96,7 +89,7 @@ public final class ChunkPatchCodec {
                 if (light > 15) {
                     throw new IllegalArgumentException("block light outside 0..15 at pixel " + pixel);
                 }
-                if (!hasBit(evaluated, pixel) && light != 0) {
+                if (!PatchWire.hasBit(evaluated, pixel) && light != 0) {
                     throw new IllegalArgumentException("block light exists for unevaluated pixel " + pixel);
                 }
             }
@@ -151,12 +144,12 @@ public final class ChunkPatchCodec {
 
         public boolean generatedAt(final int chunkIndex) {
             checkIndex(chunkIndex, chunkWidth * chunkHeight, "chunk");
-            return hasBit(generated, chunkIndex);
+            return PatchWire.hasBit(generated, chunkIndex);
         }
 
         public boolean evaluatedAt(final int pixelIndex) {
             checkIndex(pixelIndex, pixelCount(), "pixel");
-            return hasBit(evaluated, pixelIndex);
+            return PatchWire.hasBit(evaluated, pixelIndex);
         }
 
         public long sourceRevisionAt(final int chunkIndex) {
@@ -188,10 +181,7 @@ public final class ChunkPatchCodec {
     }
 
     public static void setBit(final byte[] bits, final int index) {
-        if (bits == null || index < 0 || index >= bits.length * 8) {
-            throw new IndexOutOfBoundsException("bit index outside mask");
-        }
-        bits[index >>> 3] |= (byte) (1 << (index & 7));
+        PatchWire.setBit(bits, index);
     }
 
     public static byte[] encode(final Patch patch) {
@@ -218,7 +208,7 @@ public final class ChunkPatchCodec {
         final byte[] difference = new byte[maskBytes(patch.pixelCount())];
         for (final PatchCodec.Sample sample : patch.samples()) {
             byPixel[sample.pixelIndex()] = sample;
-            setBit(difference, sample.pixelIndex());
+            PatchWire.setBit(difference, sample.pixelIndex());
         }
         final List<PatchCodec.Sample> ordered = new ArrayList<>(patch.samples().size());
         for (final PatchCodec.Sample sample : byPixel) {
@@ -241,7 +231,7 @@ public final class ChunkPatchCodec {
             }
             int previousY = 0;
             for (final PatchCodec.Sample sample : ordered) {
-                writeZigzagVarint(out, sample.surfaceY() - previousY);
+                PatchWire.writeZigzagVarint(out, sample.surfaceY() - previousY);
                 previousY = sample.surfaceY();
             }
             for (final PatchCodec.Sample sample : ordered) {
@@ -256,11 +246,11 @@ public final class ChunkPatchCodec {
             for (final PatchCodec.Sample sample : ordered) {
                 out.writeByte(sample.floorMapColorId());
             }
-            final Map<String, Integer> materials = materialTable(ordered);
+            final Map<String, Integer> materials = PatchWire.materialTable(ordered);
             if (formatVersion >= MATERIAL_FORMAT_VERSION) {
                 out.writeShort(materials.size());
                 for (final String material : materials.keySet()) {
-                    writeMaterial(out, material);
+                    PatchWire.writeMaterial(out, material);
                 }
                 for (final PatchCodec.Sample sample : ordered) {
                     out.writeShort(materials.get(sample.materialId()));
@@ -277,7 +267,7 @@ public final class ChunkPatchCodec {
             if (formatVersion >= SOURCE_LIGHT_FORMAT_VERSION) {
                 long previousRevision = 0L;
                 for (final long revision : patch.sourceRevisions) {
-                    writeZigzagVarLong(out, revision - previousRevision);
+                    PatchWire.writeZigzagVarLong(out, revision - previousRevision);
                     previousRevision = revision;
                 }
                 for (int pixel = 0; pixel < patch.pixelCount(); pixel++) {
@@ -291,7 +281,7 @@ public final class ChunkPatchCodec {
             if (raw.length > MAX_RAW_BYTES) {
                 throw new IllegalArgumentException("chunk patch exceeds raw cap");
             }
-            return deflate(raw);
+            return PatchWire.deflate(raw, MAX_COMPRESSED_BYTES);
         } catch (final IOException e) {
             throw new IllegalStateException("in-memory chunk patch encoding failed", e);
         }
@@ -397,7 +387,7 @@ public final class ChunkPatchCodec {
         if (body == null || body.length == 0 || body.length > MAX_COMPRESSED_BYTES) {
             throw new ProtoException("invalid chunk patch body length: " + (body == null ? -1 : body.length));
         }
-        final byte[] raw = inflate(body);
+        final byte[] raw = PatchWire.inflate(body, MAX_RAW_BYTES);
         try {
             final DataInputStream in = new DataInputStream(new ByteArrayInputStream(raw));
             final int version = in.readUnsignedByte();
@@ -429,49 +419,23 @@ public final class ChunkPatchCodec {
             final int[] pixelIndexes = new int[count];
             int next = 0;
             for (int pixel = 0; pixel < pixels; pixel++) {
-                if (hasBit(difference, pixel)) {
+                if (PatchWire.hasBit(difference, pixel)) {
                     pixelIndexes[next++] = pixel;
                 }
             }
-            final int[] biomes = readUnsignedBytePlane(in, count);
-            final int[] surfaceYs = new int[count];
-            int previousY = 0;
-            for (int i = 0; i < count; i++) {
-                previousY += readZigzagVarint(in);
-                if (previousY < Short.MIN_VALUE || previousY > Short.MAX_VALUE) {
-                    throw new ProtoException("surface height outside i16: " + previousY);
-                }
-                surfaceYs[i] = previousY;
-            }
-            final int[] kinds = readUnsignedBytePlane(in, count);
-            final int[] mapColors = readUnsignedBytePlane(in, count);
-            final int[] fluidDepths = readUnsignedBytePlane(in, count);
-            final int[] floorMapColors = readUnsignedBytePlane(in, count);
-            final String[] materialIds = new String[count];
-            final String[] floorMaterialIds = new String[count];
-            final String[] overlayMaterialIds = new String[count];
-            java.util.Arrays.fill(materialIds, "");
-            java.util.Arrays.fill(floorMaterialIds, "");
-            java.util.Arrays.fill(overlayMaterialIds, "");
-            String[] materials = new String[] {""};
-            if (version >= MATERIAL_FORMAT_VERSION) {
-                materials = readMaterialTable(in);
-                readMaterialPlane(in, materials, materialIds);
-                readMaterialPlane(in, materials, floorMaterialIds);
-            }
-            if (version >= FORMAT_VERSION) {
-                readMaterialPlane(in, materials, overlayMaterialIds);
-            }
+            final PatchWire.ValuePlanes planes = PatchWire.readValuePlanes(
+                in, count, version >= MATERIAL_FORMAT_VERSION, version >= FORMAT_VERSION
+            );
             final long[] sourceRevisions = unknownRevisions(chunks);
             final byte[] blockLight = new byte[pixels];
             if (version >= SOURCE_LIGHT_FORMAT_VERSION) {
                 long previousRevision = 0L;
                 for (int chunk = 0; chunk < chunks; chunk++) {
-                    previousRevision += readZigzagVarLong(in);
+                    previousRevision += PatchWire.readZigzagVarLong(in);
                     sourceRevisions[chunk] = previousRevision;
                 }
                 for (int pixel = 0; pixel < pixels; pixel++) {
-                    if (!hasBit(evaluated, pixel)) {
+                    if (!PatchWire.hasBit(evaluated, pixel)) {
                         continue;
                     }
                     final int light = in.readUnsignedByte();
@@ -487,9 +451,9 @@ public final class ChunkPatchCodec {
             final List<PatchCodec.Sample> samples = new ArrayList<>(count);
             for (int i = 0; i < count; i++) {
                 samples.add(new PatchCodec.Sample(
-                    pixelIndexes[i], biomes[i], surfaceYs[i], kinds[i], mapColors[i],
-                    fluidDepths[i], floorMapColors[i], materialIds[i], floorMaterialIds[i],
-                    overlayMaterialIds[i]
+                    pixelIndexes[i], planes.biomes()[i], planes.surfaceYs()[i], planes.kinds()[i],
+                    planes.mapColors()[i], planes.fluidDepths()[i], planes.floorMapColors()[i],
+                    planes.materialIds()[i], planes.floorMaterialIds()[i], planes.overlayMaterialIds()[i]
                 ));
             }
             return new Patch(
@@ -505,111 +469,40 @@ public final class ChunkPatchCodec {
         }
     }
 
-    private static Map<String, Integer> materialTable(
-        final List<PatchCodec.Sample> samples
-    ) {
-        final Map<String, Integer> result = new LinkedHashMap<>();
-        result.put("", 0);
-        for (final PatchCodec.Sample sample : samples) {
-            addMaterial(result, sample.materialId());
-            addMaterial(result, sample.floorMaterialId());
-            addMaterial(result, sample.overlayMaterialId());
-        }
-        return result;
-    }
-
-    private static void addMaterial(final Map<String, Integer> materials, final String value) {
-        final String material = value == null ? "" : value;
-        if (!materials.containsKey(material)) {
-            if (materials.size() >= PatchCodec.MAX_MATERIALS) {
-                throw new IllegalArgumentException("chunk patch material table exceeds cap");
-            }
-            materials.put(material, materials.size());
-        }
-    }
-
-    private static void writeMaterial(
-        final DataOutputStream out, final String material
-    ) throws IOException {
-        final byte[] bytes = material.getBytes(StandardCharsets.UTF_8);
-        if (bytes.length > PatchCodec.MAX_MATERIAL_BYTES) {
-            throw new IllegalArgumentException("chunk patch material id exceeds UTF-8 cap");
-        }
-        out.writeShort(bytes.length);
-        out.write(bytes);
-    }
-
-    private static String[] readMaterialTable(
-        final DataInputStream in
-    ) throws IOException, ProtoException {
-        final int count = in.readUnsignedShort();
-        if (count < 1 || count > PatchCodec.MAX_MATERIALS) {
-            throw new ProtoException("invalid chunk patch material count " + count);
-        }
-        final String[] result = new String[count];
-        for (int i = 0; i < count; i++) {
-            final int length = in.readUnsignedShort();
-            if (length > PatchCodec.MAX_MATERIAL_BYTES) {
-                throw new ProtoException("chunk patch material id exceeds UTF-8 cap");
-            }
-            final byte[] bytes = new byte[length];
-            in.readFully(bytes);
-            result[i] = new String(bytes, StandardCharsets.UTF_8);
-        }
-        if (!result[0].isEmpty()) {
-            throw new ProtoException("chunk patch material table must start empty");
-        }
-        return result;
-    }
-
-    private static void readMaterialPlane(
-        final DataInputStream in,
-        final String[] materials,
-        final String[] output
-    ) throws IOException, ProtoException {
-        for (int i = 0; i < output.length; i++) {
-            final int index = in.readUnsignedShort();
-            if (index >= materials.length) {
-                throw new ProtoException("chunk patch material index outside table: " + index);
-            }
-            output[i] = materials[index];
-        }
-    }
-
     private static void writeMask(final DataOutputStream out, final byte[] mask, final int bitCount) throws IOException {
         int runCount = 0;
         int runsBytes = 0;
         int previousEnd = 0;
         for (int bit = 0; bit < bitCount;) {
-            if (!hasBit(mask, bit)) {
+            if (!PatchWire.hasBit(mask, bit)) {
                 bit++;
                 continue;
             }
             final int start = bit;
-            while (bit < bitCount && hasBit(mask, bit)) {
+            while (bit < bitCount && PatchWire.hasBit(mask, bit)) {
                 bit++;
             }
             final int length = bit - start;
-            runsBytes += unsignedVarintBytes(start - previousEnd) + unsignedVarintBytes(length);
+            runsBytes += PatchWire.unsignedVarintBytes(start - previousEnd) + PatchWire.unsignedVarintBytes(length);
             previousEnd = bit;
             runCount++;
         }
-        runsBytes += unsignedVarintBytes(runCount);
+        runsBytes += PatchWire.unsignedVarintBytes(runCount);
         if (1 + runsBytes < 1 + mask.length) {
             out.writeByte(MASK_RUNS);
-            writeUnsignedVarint(out, runCount);
+            PatchWire.writeUnsignedVarint(out, runCount);
             previousEnd = 0;
             for (int bit = 0; bit < bitCount;) {
-                if (!hasBit(mask, bit)) {
+                if (!PatchWire.hasBit(mask, bit)) {
                     bit++;
                     continue;
                 }
                 final int start = bit;
-                while (bit < bitCount && hasBit(mask, bit)) {
+                while (bit < bitCount && PatchWire.hasBit(mask, bit)) {
                     bit++;
                 }
-                writeUnsignedVarint(out, start - previousEnd);
-                writeUnsignedVarint(out, bit - start);
+                PatchWire.writeUnsignedVarint(out, start - previousEnd);
+                PatchWire.writeUnsignedVarint(out, bit - start);
                 previousEnd = bit;
             }
             return;
@@ -631,14 +524,14 @@ public final class ChunkPatchCodec {
         if (mode != MASK_RUNS) {
             throw new ProtoException("unknown chunk mask mode " + mode);
         }
-        final int runCount = readUnsignedVarint(in, 3);
+        final int runCount = PatchWire.readUnsignedVarint(in, 3);
         if (runCount > bitCount) {
             throw new ProtoException("too many chunk mask runs");
         }
         int end = 0;
         for (int run = 0; run < runCount; run++) {
-            final int delta = readUnsignedVarint(in, 3);
-            final int length = readUnsignedVarint(in, 3);
+            final int delta = PatchWire.readUnsignedVarint(in, 3);
+            final int length = PatchWire.readUnsignedVarint(in, 3);
             if (length <= 0 || delta > bitCount - end) {
                 throw new ProtoException("invalid chunk mask run");
             }
@@ -647,144 +540,17 @@ public final class ChunkPatchCodec {
                 throw new ProtoException("chunk mask run exceeds declared size");
             }
             for (int bit = start; bit < start + length; bit++) {
-                setBit(result, bit);
+                PatchWire.setBit(result, bit);
             }
             end = start + length;
         }
         return result;
     }
 
-    private static byte[] deflate(final byte[] raw) throws IOException {
-        final ByteArrayOutputStream compressed = new ByteArrayOutputStream(Math.min(raw.length, 64 * 1024));
-        final Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION);
-        try {
-            final DeflaterOutputStream out = new DeflaterOutputStream(compressed, deflater, 8192);
-            out.write(raw);
-            out.finish();
-        } finally {
-            deflater.end();
-        }
-        final byte[] result = compressed.toByteArray();
-        if (result.length > MAX_COMPRESSED_BYTES) {
-            throw new IllegalArgumentException("chunk patch exceeds compressed cap");
-        }
-        return result;
-    }
-
-    private static byte[] inflate(final byte[] body) throws ProtoException {
-        final Inflater inflater = new Inflater();
-        final ByteArrayOutputStream raw = new ByteArrayOutputStream(Math.min(body.length * 4, MAX_RAW_BYTES));
-        final byte[] buffer = new byte[8192];
-        try {
-            inflater.setInput(body);
-            while (!inflater.finished()) {
-                final int read = inflater.inflate(buffer);
-                if (read > 0) {
-                    if (raw.size() > MAX_RAW_BYTES - read) {
-                        throw new ProtoException("inflated chunk patch exceeds cap");
-                    }
-                    raw.write(buffer, 0, read);
-                    continue;
-                }
-                if (inflater.needsDictionary()) {
-                    throw new ProtoException("chunk patch requires a compression dictionary");
-                }
-                if (inflater.needsInput()) {
-                    throw new ProtoException("truncated compressed chunk patch");
-                }
-                throw new ProtoException("compressed chunk patch made no progress");
-            }
-            if (inflater.getRemaining() != 0) {
-                throw new ProtoException("trailing compressed chunk patch bytes");
-            }
-            return raw.toByteArray();
-        } catch (final DataFormatException e) {
-            throw new ProtoException("malformed compressed chunk patch", e);
-        } finally {
-            inflater.end();
-        }
-    }
-
-    private static int[] readUnsignedBytePlane(final DataInputStream in, final int count) throws IOException {
-        final int[] values = new int[count];
-        for (int i = 0; i < count; i++) {
-            values[i] = in.readUnsignedByte();
-        }
-        return values;
-    }
-
     private static long[] unknownRevisions(final int count) {
         final long[] revisions = new long[count];
         java.util.Arrays.fill(revisions, Long.MIN_VALUE);
         return revisions;
-    }
-
-    private static void writeZigzagVarLong(final DataOutputStream out, final long value) throws IOException {
-        long encoded = (value << 1) ^ (value >> 63);
-        while ((encoded & ~0x7FL) != 0L) {
-            out.writeByte((int) (encoded & 0x7F) | 0x80);
-            encoded >>>= 7;
-        }
-        out.writeByte((int) encoded);
-    }
-
-    private static long readZigzagVarLong(final DataInputStream in) throws IOException, ProtoException {
-        long encoded = 0L;
-        for (int shift = 0; shift < 70; shift += 7) {
-            final int next = in.readUnsignedByte();
-            if (shift == 63 && (next & 0xFE) != 0) {
-                throw new ProtoException("overlong source revision delta");
-            }
-            encoded |= (long) (next & 0x7F) << shift;
-            if ((next & 0x80) == 0) {
-                return (encoded >>> 1) ^ -(encoded & 1L);
-            }
-        }
-        throw new ProtoException("overlong source revision delta");
-    }
-
-    private static void writeZigzagVarint(final DataOutputStream out, final int value) throws IOException {
-        writeUnsignedVarint(out, (value << 1) ^ (value >> 31));
-    }
-
-    private static int readZigzagVarint(final DataInputStream in) throws IOException, ProtoException {
-        final int encoded = readUnsignedVarint(in, MAX_DELTA_HEIGHT_BYTES);
-        return (encoded >>> 1) ^ -(encoded & 1);
-    }
-
-    private static void writeUnsignedVarint(final DataOutputStream out, int value) throws IOException {
-        do {
-            final int next = value & 0x7F;
-            value >>>= 7;
-            out.writeByte(value == 0 ? next : next | 0x80);
-        } while (value != 0);
-    }
-
-    private static int readUnsignedVarint(
-        final DataInputStream in, final int maxBytes
-    ) throws IOException, ProtoException {
-        int value = 0;
-        for (int byteIndex = 0; byteIndex < maxBytes; byteIndex++) {
-            final int next = in.readUnsignedByte();
-            value |= (next & 0x7F) << (byteIndex * 7);
-            if ((next & 0x80) == 0) {
-                return value;
-            }
-        }
-        throw new ProtoException("overlong unsigned varint");
-    }
-
-    private static int unsignedVarintBytes(int value) {
-        int bytes = 1;
-        while ((value & ~0x7F) != 0) {
-            value >>>= 7;
-            bytes++;
-        }
-        return bytes;
-    }
-
-    private static boolean hasBit(final byte[] bits, final int index) {
-        return (bits[index >>> 3] & (1 << (index & 7))) != 0;
     }
 
     private static void requireUnusedBitsClear(final byte[] bits, final int bitCount) {
