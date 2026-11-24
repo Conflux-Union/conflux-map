@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.net;
 
 import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
+import cn.net.rms.confluxmap.core.util.Fnv1a;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -319,33 +320,33 @@ public final class ChunkPatchCodec {
             for (int chunkX = 0; chunkX < patch.chunkWidth(); chunkX++) {
                 final int chunkIndex = chunkZ * patch.chunkWidth() + chunkX;
                 long hash = 0xcbf29ce484222325L;
-                hash = fnv1a(hash, patch.generatedAt(chunkIndex) ? 1 : 0);
+                hash = Fnv1a.fnv1a(hash, patch.generatedAt(chunkIndex) ? 1 : 0);
                 if (profile.carriesSourceMetadata()) {
-                    hash = fnv1aLong(hash, patch.sourceRevisionAt(chunkIndex));
+                    hash = Fnv1a.fnv1aLong(hash, patch.sourceRevisionAt(chunkIndex));
                 }
                 for (int sampleZ = 0; sampleZ < samplesPerChunk; sampleZ++) {
                     for (int sampleX = 0; sampleX < samplesPerChunk; sampleX++) {
                         final int pixel = (chunkZ * samplesPerChunk + sampleZ) * sampleWidth
                             + chunkX * samplesPerChunk + sampleX;
-                        hash = fnv1a(hash, patch.evaluatedAt(pixel) ? 1 : 0);
+                        hash = Fnv1a.fnv1a(hash, patch.evaluatedAt(pixel) ? 1 : 0);
                         if (profile.carriesSourceMetadata()) {
-                            hash = fnv1a(hash, patch.blockLightAt(pixel));
+                            hash = Fnv1a.fnv1a(hash, patch.blockLightAt(pixel));
                         }
                         final PatchCodec.Sample sample = byPixel[pixel];
-                        hash = fnv1a(hash, sample == null ? 0 : 1);
+                        hash = Fnv1a.fnv1a(hash, sample == null ? 0 : 1);
                         if (sample != null) {
                             hash = hashSample(hash, sample);
                             if (profile.carriesMaterialIdentity()) {
-                                hash = fnv1aString(hash, sample.materialId());
-                                hash = fnv1aString(hash, sample.floorMaterialId());
+                                hash = Fnv1a.fnv1aString(hash, sample.materialId());
+                                hash = Fnv1a.fnv1aString(hash, sample.floorMaterialId());
                             }
                             if (profile.carriesOverlay()) {
-                                hash = fnv1aString(hash, sample.overlayMaterialId());
+                                hash = Fnv1a.fnv1aString(hash, sample.overlayMaterialId());
                             }
                         }
                     }
                 }
-                revisions[chunkIndex] = normalizeRevision(hash);
+                revisions[chunkIndex] = Fnv1a.normalizeRevision(hash);
             }
         }
         return revisions;
@@ -379,17 +380,17 @@ public final class ChunkPatchCodec {
             throw new IllegalArgumentException("region revision coverage is incomplete");
         }
         long hash = 0xcbf29ce484222325L;
-        hash = fnv1aInt(hash, lod);
-        hash = fnv1aInt(hash, slice.regionX());
-        hash = fnv1aInt(hash, slice.regionZ());
-        hash = fnv1a(hash, slice.minLocalChunkX());
-        hash = fnv1a(hash, slice.minLocalChunkZ());
-        hash = fnv1a(hash, slice.maxLocalChunkX());
-        hash = fnv1a(hash, slice.maxLocalChunkZ());
+        hash = Fnv1a.fnv1aInt(hash, lod);
+        hash = Fnv1a.fnv1aInt(hash, slice.regionX());
+        hash = Fnv1a.fnv1aInt(hash, slice.regionZ());
+        hash = Fnv1a.fnv1a(hash, slice.minLocalChunkX());
+        hash = Fnv1a.fnv1a(hash, slice.minLocalChunkZ());
+        hash = Fnv1a.fnv1a(hash, slice.maxLocalChunkX());
+        hash = Fnv1a.fnv1a(hash, slice.maxLocalChunkZ());
         for (final long revision : chunkRevisions) {
-            hash = fnv1aLong(hash, revision);
+            hash = Fnv1a.fnv1aLong(hash, revision);
         }
-        return normalizeRevision(hash);
+        return Fnv1a.normalizeRevision(hash);
     }
 
     public static Patch decode(final byte[] body) throws ProtoException {
@@ -807,40 +808,11 @@ public final class ChunkPatchCodec {
     }
 
     private static long hashSample(long hash, final PatchCodec.Sample sample) {
-        hash = fnv1a(hash, sample.biomeId());
-        hash = fnv1aInt(hash, sample.surfaceY());
-        hash = fnv1a(hash, sample.kind());
-        hash = fnv1a(hash, sample.mapColorId());
-        hash = fnv1a(hash, sample.fluidDepth());
-        return fnv1a(hash, sample.floorMapColorId());
-    }
-
-    private static long fnv1aInt(long hash, final int value) {
-        for (int shift = 0; shift < Integer.SIZE; shift += Byte.SIZE) {
-            hash = fnv1a(hash, value >>> shift);
-        }
-        return hash;
-    }
-
-    private static long fnv1aLong(long hash, final long value) {
-        for (int shift = 0; shift < Long.SIZE; shift += Byte.SIZE) {
-            hash = fnv1a(hash, (int) (value >>> shift));
-        }
-        return hash;
-    }
-
-    private static long fnv1aString(long hash, final String value) {
-        for (final byte b : value.getBytes(StandardCharsets.UTF_8)) {
-            hash = fnv1a(hash, b);
-        }
-        return fnv1a(hash, 0);
-    }
-
-    private static long fnv1a(final long hash, final int value) {
-        return (hash ^ (value & 0xFFL)) * 0x100000001b3L;
-    }
-
-    private static long normalizeRevision(final long revision) {
-        return revision == Long.MIN_VALUE ? Long.MAX_VALUE : revision;
+        hash = Fnv1a.fnv1a(hash, sample.biomeId());
+        hash = Fnv1a.fnv1aInt(hash, sample.surfaceY());
+        hash = Fnv1a.fnv1a(hash, sample.kind());
+        hash = Fnv1a.fnv1a(hash, sample.mapColorId());
+        hash = Fnv1a.fnv1a(hash, sample.fluidDepth());
+        return Fnv1a.fnv1a(hash, sample.floorMapColorId());
     }
 }

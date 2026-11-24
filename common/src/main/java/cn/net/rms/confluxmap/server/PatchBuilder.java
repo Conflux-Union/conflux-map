@@ -15,6 +15,7 @@ import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.core.predict.LodSampling;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.QuadrantLayout;
+import cn.net.rms.confluxmap.core.util.Fnv1a;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.ArrayList;
 import java.util.List;
@@ -550,58 +551,32 @@ public final class PatchBuilder {
         final byte[] blockLight
     ) {
         long hash = 0xcbf29ce484222325L;
-        hash = fnv1a(hash, mode);
+        hash = Fnv1a.fnv1a(hash, mode);
         for (final byte value : presence) {
-            hash = fnv1a(hash, value);
+            hash = Fnv1a.fnv1a(hash, value);
         }
         for (final byte value : evaluated) {
-            hash = fnv1a(hash, value);
+            hash = Fnv1a.fnv1a(hash, value);
         }
         for (int pixel = 0; pixel < PatchCodec.PIXELS; pixel++) {
             if ((evaluated[pixel >>> 3] & (1 << (pixel & 7))) == 0) {
                 continue;
             }
-            hash = fnv1aLong(hash, sourceRevisions[pixel]);
-            hash = fnv1a(hash, blockLight[pixel]);
+            hash = Fnv1a.fnv1aLong(hash, sourceRevisions[pixel]);
+            hash = Fnv1a.fnv1a(hash, blockLight[pixel]);
         }
         for (final PatchCodec.Sample sample : records) {
-            hash = fnv1aInt(hash, sample.pixelIndex());
-            hash = fnv1a(hash, sample.biomeId());
-            hash = fnv1aInt(hash, sample.surfaceY());
-            hash = fnv1a(hash, sample.kind());
-            hash = fnv1a(hash, sample.mapColorId());
-            hash = fnv1a(hash, sample.fluidDepth());
-            hash = fnv1a(hash, sample.floorMapColorId());
-            hash = fnv1aString(hash, sample.materialId());
-            hash = fnv1aString(hash, sample.floorMaterialId());
+            hash = Fnv1a.fnv1aInt(hash, sample.pixelIndex());
+            hash = Fnv1a.fnv1a(hash, sample.biomeId());
+            hash = Fnv1a.fnv1aInt(hash, sample.surfaceY());
+            hash = Fnv1a.fnv1a(hash, sample.kind());
+            hash = Fnv1a.fnv1a(hash, sample.mapColorId());
+            hash = Fnv1a.fnv1a(hash, sample.fluidDepth());
+            hash = Fnv1a.fnv1a(hash, sample.floorMapColorId());
+            hash = Fnv1a.fnv1aString(hash, sample.materialId());
+            hash = Fnv1a.fnv1aString(hash, sample.floorMaterialId());
         }
-        return hash == Long.MIN_VALUE ? Long.MAX_VALUE : hash;
-    }
-
-    private static long fnv1aInt(long hash, final int value) {
-        for (int shift = 0; shift < Integer.SIZE; shift += Byte.SIZE) {
-            hash = fnv1a(hash, value >>> shift);
-        }
-        return hash;
-    }
-
-    private static long fnv1aLong(long hash, final long value) {
-        for (int shift = 0; shift < Long.SIZE; shift += Byte.SIZE) {
-            hash = fnv1a(hash, (int) (value >>> shift));
-        }
-        return hash;
-    }
-
-    private static long fnv1aString(long hash, final String value) {
-        final byte[] bytes = value.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        for (final byte b : bytes) {
-            hash = fnv1a(hash, b);
-        }
-        return fnv1a(hash, 0);
-    }
-
-    private static long fnv1a(final long hash, final int value) {
-        return (hash ^ (value & 0xFFL)) * 0x100000001b3L;
+        return Fnv1a.normalizeRevision(hash);
     }
 
     public static Result unavailable() {
