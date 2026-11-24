@@ -84,6 +84,18 @@ public final class Texts {
         //#endif
     }
 
+    /** Open-URL payload carried by a click event, or null for every other action. */
+    public static String openUrlValue(final ClickEvent event) {
+        if (event == null) {
+            return null;
+        }
+        //#if MC>=12105
+        //$$ return event instanceof ClickEvent.OpenUrl open ? open.uri().toString() : null;
+        //#else
+        return event.getAction() == ClickEvent.Action.OPEN_URL ? event.getValue() : null;
+        //#endif
+    }
+
     /** Run-command payload carried by a click event, or null for every other action. */
     public static String runCommandValue(final ClickEvent event) {
         if (event == null) {

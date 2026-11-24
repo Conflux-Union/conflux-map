@@ -112,7 +112,11 @@ package cn.net.rms.confluxmap.gametest;
 //$$         context.runOnClient(minecraft -> {
 //$$             final var options = minecraft.options;
 //$$             options.getGuiScale().setValue(1);
+            //#if MC>=260100
+//$$             minecraft.resizeGui();
+            //#else
 //$$             minecraft.onResolutionChanged();
+            //#endif
 //$$         });
 //$$         resetCache(context, client, textures, defaultLimit);
 //$$         openMap(context);
