@@ -208,7 +208,38 @@ final class WebMapFeaturesTest {
         replies.clear();
         assertTrue(ServerConfigControl.handle(change, config, true, () -> true, () -> {}, capture));
         assertTrue(config.shareChunkLoadState);
-        assertTrue(replies.get(0).contains("Restart"));
+        assertTrue(replies.get(0).contains("Saved"));
+    }
+
+    @Test
+    void numericSettingsValidateRangesAndOnlyApplyAfterSaving() {
+        final var config = new cn.net.rms.confluxmap.server.ServerConfig();
+        config.webMap.allowOperatorClientConfig = true;
+        config.maxSharedWaypointsPerWorld = 100;
+        final int old = config.maxTilesPerRequest;
+        final var applied = new java.util.concurrent.atomic.AtomicInteger();
+        final List<String> replies = new ArrayList<>();
+        final java.util.function.Consumer<byte[]> reply =
+            data -> replies.add(new String(data, StandardCharsets.UTF_8));
+
+        final byte[] change = """
+            {"type":"admin-set","key":"maxTilesPerRequest","value":"17"}
+            """.getBytes(StandardCharsets.UTF_8);
+        assertTrue(ServerConfigControl.handle(change, config, true, () -> false, applied::incrementAndGet, reply));
+        assertEquals(old, config.maxTilesPerRequest);
+        assertEquals(0, applied.get());
+        replies.clear();
+        assertTrue(ServerConfigControl.handle(change, config, true, () -> true, applied::incrementAndGet, reply));
+        assertEquals(17, config.maxTilesPerRequest);
+        assertEquals(1, applied.get());
+        assertTrue(replies.get(1).contains("\"maxTilesPerRequest\":\"17\""));
+        final byte[] invalid = """
+            {"type":"admin-set","key":"maxSharedWaypointsPerPlayer","value":"101"}
+            """.getBytes(StandardCharsets.UTF_8);
+        replies.clear();
+        assertTrue(ServerConfigControl.handle(invalid, config, true, () -> true, applied::incrementAndGet, reply));
+        assertTrue(replies.get(0).contains("Invalid setting"));
+        assertEquals(1, applied.get());
     }
 
     private static void send(

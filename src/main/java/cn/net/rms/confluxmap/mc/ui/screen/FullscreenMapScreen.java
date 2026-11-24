@@ -366,6 +366,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     AnnotationToolbarBounds annotationToolbarBounds;
     AnnotationToolbarBounds annotationColorMenuBounds;
     private FullscreenDisplayMode controlsDisplayMode;
+    private boolean controlsLoadStateAvailable;
+    private boolean controlsBiomeAvailable;
     /** Buttons of the currently expanded tool group with their settle slots, where each rebuild creates them. */
     private final List<FullscreenMapToolPanel.FlyingButton> expansionButtons = new ArrayList<>();
     /** True once the expansion flight has displaced buttons and the settle restore still pends. */
@@ -576,6 +578,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         annotationTooltips.put(settingsButton, "confluxmap.screen.config.title");
         waypointControlsBottom = y + CONTROL_SIZE;
         controlsDisplayMode = displayMode();
+        controlsLoadStateAvailable = displayModeAvailable(FullscreenDisplayMode.CHUNK_LOAD_STATE);
+        controlsBiomeAvailable = displayModeAvailable(FullscreenDisplayMode.BIOME);
 
         final FullscreenMapToolPanel.Group openGroup = toolPanel.openGroup();
         if (openGroup != null) {
@@ -1152,7 +1156,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (!chunkLoadStates.available() && chunkLoadStates.snapshot().active()) {
             chunkLoadStates.reset();
         }
-        if (controlsDisplayMode != displayMode()) {
+        if (controlsDisplayMode != displayMode()
+            || controlsLoadStateAvailable != displayModeAvailable(FullscreenDisplayMode.CHUNK_LOAD_STATE)
+            || controlsBiomeAvailable != displayModeAvailable(FullscreenDisplayMode.BIOME)) {
             rebuildWaypointControls();
             return;
         }

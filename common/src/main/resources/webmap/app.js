@@ -54,15 +54,15 @@ const manifest = await fetch(apiPath('/api/v1/manifest'), {cache: 'no-store'}).t
   if (!response.ok) throw new Error(`manifest ${response.status}`);
   return response.json();
 });
-const limits = requestLimits(manifest);
+let limits = requestLimits(manifest);
+let modeChosen = false;
 const presentation = manifest.presentation ?? {};
 const displayName = presentation.serverDisplayName;
 if (displayName && document.title === 'Conflux Map') {
   document.querySelector('.controls strong').textContent = displayName;
   document.title = displayName;
 }
-if (presentation.defaultMode === 'GENERATED') mode.value = 'generated';
-else if (presentation.defaultMode === 'ALL') mode.value = 'all';
+applyDefaultMode(presentation.defaultMode);
 const mapRenderer = createMapRenderer(manifest);
 
 for (const item of manifest.dimensions) {
@@ -182,7 +182,7 @@ dimension.addEventListener('change', () => {
   syncModeAvailability();
   refresh();
 });
-mode.addEventListener('change', refresh);
+mode.addEventListener('change', () => { modeChosen = true; refresh(); });
 map.on('moveend zoomend', () => {
   scheduleSubscription();
   scheduleVisibleTileSync();
@@ -195,7 +195,17 @@ layer.on('tileunload', event => {
 });
 const extras = installWebExtras({manifest,message,send: value=>mapSocket.send(value),
   onDark: value=>{mapRenderer.setPredictionDark(value);for(const canvas of layer.getContainer().querySelectorAll('canvas.map-tile'))paintTile(canvas);},
-  onPolicy: policy=>{entityControls.policy(policy);renderMapState(currentMapState);}
+  onPolicy: policy => {
+    if (policy.limits) limits = requestLimits(policy);
+    if (!modeChosen && policy.defaultMode) {
+      const previous = mode.value;
+      applyDefaultMode(policy.defaultMode);
+      syncModeAvailability();
+      if (previous !== mode.value) refresh();
+    }
+    entityControls.policy(policy);
+    renderMapState(currentMapState);
+  }
 });
 mapRenderer.setPredictionDark(extras.dark());
 const entityControls = installEntityControls({
@@ -978,6 +988,9 @@ function updateCenterCoordinates() {
   const {lat, lng} = map.getCenter();
   const label = message('centerCoordinates', {x: Math.floor(lng), z: Math.floor(-lat)});
   if (centerCoordinates.textContent !== label) centerCoordinates.textContent = label;
+}
+function applyDefaultMode(value) {
+  mode.value = value === 'GENERATED' ? 'generated' : 'all';
 }
 function syncModeAvailability() {
   const selected = manifest.dimensions.find(item => item.index === Number(dimension.value));

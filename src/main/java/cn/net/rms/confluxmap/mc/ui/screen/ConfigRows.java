@@ -841,11 +841,12 @@ final class ConfigRows {
                 if (WebMapClient.adminAllowed()) {
                     y = addSectionRow(y, "confluxmap.webmap.server_live");
                     for (String key : List.of("sharePlayers", "allowPlayerSearch", "allowWaypointSearch",
-                        "showWaypointImages", "waypointImageMode", "enableChat", "showGameChat", "allowWebChat")) {
+                        "showWaypointImages", "waypointImageMode", "enableChat", "showGameChat",
+                        "allowWebChat", "defaultMode", "shareChunkLoadState", "allowBiomeMap",
+                        "allowStructureSearch", "allowEntityRadar", "allowNonOperatorSharedWaypointManagement",
+                        "maxTilesPerRequest", "minRequestIntervalMs", "maxSharedWaypointsPerPlayer")) {
                         y = addServerSettingRow(y, key);
                     }
-                    y = addSectionRow(y, "confluxmap.webmap.server_restart");
-                    y = addServerSettingRow(y, "shareChunkLoadState");
                 } else {
                     y = addSectionRow(y, "confluxmap.webmap.server_unavailable");
                 }
@@ -997,25 +998,35 @@ final class ConfigRows {
         if (!search.matches(label, null, rowCategory.labelKey())) return y;
         if (!measuring && screen.rowVisible(y)) {
             final String value = WebMapClient.setting(key);
-            final boolean imageMode = key.equals("waypointImageMode");
-            final Text caption = imageMode
-                ? Texts.literal(Texts.translatable(label).getString() + " · " +
-                    Texts.translatable("confluxmap.webmap.mode." + value).getString())
-                : ConfigValueLabels.boolLabel(label, Boolean.parseBoolean(value));
+            final List<String> choices = switch (key) {
+                case "waypointImageMode" -> List.of("APPROVAL", "OP_ONLY", "EVERYONE", "DISABLED");
+                case "defaultMode" -> List.of("AUTO", "ALL", "GENERATED");
+                default -> List.of();
+            };
+            final boolean number = switch (key) {
+                case "maxTilesPerRequest", "minRequestIntervalMs", "maxSharedWaypointsPerPlayer" -> true;
+                default -> false;
+            };
+            final String current = number ? value
+                : !choices.isEmpty() ? ServerSettingScreen.optionLabel(value).getString()
+                : Texts.translatable(Boolean.parseBoolean(value)
+                    ? "confluxmap.value.on" : "confluxmap.value.off").getString();
+            final Text caption = Texts.literal(Texts.translatable(label).getString() + " · " + current);
             final RowButton button = screen.addRowWidget(new RowButton(
                 screen.rowX(), y, screen.rowWidth, ConfigScreen.ROW_HEIGHT - 2, caption,
                 clicked -> {
-                    if (!WebMapClient.adminAllowed()) return;
-                    if (imageMode) {
-                        var modes = List.of("APPROVAL", "OP_ONLY", "EVERYONE", "DISABLED");
-                        WebMapClient.setServerSetting(key, modes.get((modes.indexOf(WebMapClient.setting(key)) + 1)
-                            % modes.size()));
+                    if (!WebMapClient.canEditSettings()) return;
+                    if (number || !choices.isEmpty()) {
+                        MinecraftAccess.setScreen(MinecraftClient.getInstance(),
+                            new ServerSettingScreen(screen, key, choices));
                     } else {
-                        WebMapClient.setServerSetting(key, Boolean.toString(!Boolean.parseBoolean(WebMapClient.setting(key))));
+                        WebMapClient.setServerSetting(key,
+                            Boolean.toString(!Boolean.parseBoolean(WebMapClient.setting(key))));
                     }
                 }
             ));
-            button.active = WebMapClient.adminAllowed();
+            button.active = WebMapClient.canEditSettings() && !value.isEmpty();
+            rowSlots.add(new RowSlot(y, button, List.of(button)));
         }
         return y + ConfigScreen.ROW_HEIGHT;
     }

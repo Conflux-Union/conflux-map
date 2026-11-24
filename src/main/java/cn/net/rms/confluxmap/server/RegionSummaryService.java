@@ -348,7 +348,7 @@ public final class RegionSummaryService {
         final PlayerChannel channel = channels.computeIfAbsent(clientId, ignored -> newPlayerChannel());
         channel.sender = sender;
         if (request.lod() > lodCeiling() || request.tiles().size() > config.maxTilesPerRequest
-            || request.dimIndex() < 0 || !channel.budget.beginRequest(now)) {
+            || request.dimIndex() < 0 || !channel.budget.beginRequest(now, config.minRequestIntervalMs)) {
             sender.send(new ErrorS2C(ErrorS2C.ERR_RATE_LIMITED, "map correction request is rate limited"));
             return;
         }
@@ -459,7 +459,7 @@ public final class RegionSummaryService {
             || request.regions().size() > Proto.MAX_REGION_PAGES_PER_REQ
             || request.regions().size() > config.maxTilesPerRequest
             || request.dimIndex() < 0 || worldAt(server, request.dimIndex()) == null
-            || !channel.budget.beginRequest(now)) {
+            || !channel.budget.beginRequest(now, config.minRequestIntervalMs)) {
             sender.send(new ErrorS2C(
                 ErrorS2C.ERR_RATE_LIMITED, "map region correction request is rate limited"
             ));

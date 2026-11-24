@@ -53,6 +53,9 @@ public final class ConfluxMapCompanion {
     private volatile DatapackLangService datapackLangs;
     private volatile ChunkLoadStateService chunkLoadStates;
     private volatile SharedWaypointService sharedWaypoints;
+    private record LocalLoadStates(MinecraftServer server,
+        java.util.List<cn.net.rms.confluxmap.core.model.DimensionId> dimensions) {}
+    private volatile LocalLoadStates localLoadStates;
     private volatile WebMapServer webMap;
     private volatile FabricWebMapBackend webMapBackend;
     private int webPlayerTicks;
@@ -92,7 +95,7 @@ public final class ConfluxMapCompanion {
                     () -> cn.net.rms.confluxmap.compat.MinecraftAccess.hasPermission(player, 2);
                 if (cn.net.rms.confluxmap.server.web.ServerConfigControl.handle(
                     payload, config, operator.getAsBoolean(), this::saveWebMapConfig,
-                    () -> { if (backend != null) backend.features().settingsChanged(); }, reply
+                    () -> applyServerSettings(server), reply
                 )) return;
                 if (backend != null && backend == current) backend.features().handle(
                     player.getUuid(), cn.net.rms.confluxmap.compat.MinecraftAccess.playerName(player),
@@ -148,7 +151,7 @@ public final class ConfluxMapCompanion {
             current.tick(server);
         }
         final ChunkLoadStateService loadStates = chunkLoadStates;
-        if (loadStates != null) {
+        if (loadStates != null && (!server.isDedicated() || config.shareChunkLoadState)) {
             loadStates.tick(server);
         }
         if (playerPositionBroadcast.tick(isEnabled() && config.allowEntityRadar)) {
@@ -172,8 +175,8 @@ public final class ConfluxMapCompanion {
         summaries = null;
         quadraLayouts = Map.of();
         // Capture spawn chunks before the companion activates on SERVER_STARTED or LAN publish.
-        chunkLoadStates = config.enabled && config.shareChunkLoadState
-            ? new ChunkLoadStateService()
+        chunkLoadStates = !server.isDedicated() || config.enabled
+            ? new ChunkLoadStateService(!server.isDedicated() || config.shareChunkLoadState)
             : null;
         sharedWaypoints = null;
         webMap = null;
@@ -182,6 +185,13 @@ public final class ConfluxMapCompanion {
     }
 
     private void onServerStarted(final MinecraftServer server) {
+        if (!server.isDedicated()) {
+            final var dimensions = new java.util.ArrayList<cn.net.rms.confluxmap.core.model.DimensionId>();
+            for (final var world : server.getWorlds()) {
+                dimensions.add(Dimensions.of(world));
+            }
+            localLoadStates = new LocalLoadStates(server, java.util.List.copyOf(dimensions));
+        }
         // Console-only notice, dedicated servers only: on an integrated server the client
         // entrypoint already runs its own check and notifies in-game.
         if (server.isDedicated() && config.checkForUpdates) {
@@ -242,6 +252,7 @@ public final class ConfluxMapCompanion {
         datapackLangs = null;
         summaries = null;
         quadraLayouts = Map.of();
+        localLoadStates = null;
         chunkLoadStates = null;
         sharedWaypoints = null;
         webMapBackend = null;
@@ -292,6 +303,27 @@ public final class ConfluxMapCompanion {
         if (net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.canSend(player, channel)) {
             cn.net.rms.confluxmap.compat.PlayNetworking.sendServer(player, channel, payload);
         }
+    }
+
+    private void applyServerSettings(final MinecraftServer server) {
+        if (chunkLoadStates != null) {
+            if (server.isDedicated()) {
+                chunkLoadStates.setSamplingEnabled(config.shareChunkLoadState);
+            } else if (!config.shareChunkLoadState) {
+                for (final var player : server.getPlayerManager().getPlayerList()) {
+                    chunkLoadStates.remove(player.getUuid());
+                }
+            }
+        }
+        if (sharedWaypoints != null) {
+            sharedWaypoints.applySettings(config.maxSharedWaypointsPerPlayer, config.sharedWaypointAccessPolicy());
+            sharedWaypointNetworking.onFeatureStateChanged(server);
+        }
+        if (webMapBackend != null) {
+            webMapBackend.refreshManifest();
+            webMapBackend.features().settingsChanged();
+        }
+        networking.broadcastSettings(server);
     }
 
     boolean saveWebMapConfig() {
@@ -350,7 +382,27 @@ public final class ConfluxMapCompanion {
     }
 
     public boolean chunkLoadStatesEnabled() {
-        return isEnabled() && chunkLoadStates != null;
+        return isEnabled() && config.shareChunkLoadState && chunkLoadStates != null;
+    }
+
+    public int localLoadStateDimension(final MinecraftServer server,
+                                       final cn.net.rms.confluxmap.core.model.DimensionId dimension) {
+        final LocalLoadStates local = localLoadStates;
+        return local != null && local.server() == server ? local.dimensions().indexOf(dimension) : -1;
+    }
+
+    public boolean hasLocalLoadStates(final MinecraftServer server) {
+        final LocalLoadStates local = localLoadStates;
+        return local != null && local.server() == server;
+    }
+
+    /** Called on the integrated server thread. The local viewer never uses the remote subscription. */
+    public void subscribeLocalLoadStates(final MinecraftServer server, final java.util.UUID viewer,
+        final cn.net.rms.confluxmap.core.net.LoadStateSubscribeC2S request,
+        final java.util.function.Consumer<cn.net.rms.confluxmap.core.net.LoadStateDeltaS2C> reply) {
+        if (hasLocalLoadStates(server) && chunkLoadStates != null) {
+            chunkLoadStates.subscribe(server, viewer, request, reply);
+        }
     }
 
     /** Returns loaded world state, retained across runtime disable/enable for idempotent retries. */
@@ -522,7 +574,7 @@ public final class ConfluxMapCompanion {
         ConfluxMapMod.LOGGER.info(
             "[ConfluxMap] companion ready (shareSeed={} allowBiomeMap={} allowStructureSearch={} shareCorrections={} shareChunkLoadState={} allowEntityRadar={} shareWaypoints={} maxTilesPerRequest={})",
             config.shareSeed, config.allowBiomeMap, config.allowStructureSearch,
-            config.shareCorrections, chunkLoadStates != null, config.allowEntityRadar,
+            config.shareCorrections, chunkLoadStatesEnabled(), config.allowEntityRadar,
             sharedWaypoints != null, config.maxTilesPerRequest
         );
     }

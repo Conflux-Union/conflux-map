@@ -22,7 +22,7 @@ public final class WebMapConfig {
     public volatile boolean allowWaypointSearch = true;
     public String serverDisplayName = "";
     public enum DefaultMode { AUTO, ALL, GENERATED }
-    public DefaultMode defaultMode = DefaultMode.AUTO;
+    public volatile DefaultMode defaultMode = DefaultMode.AUTO;
     public String title = "Conflux Map";
     public String favicon = "";
     public int maxConnections = 20;

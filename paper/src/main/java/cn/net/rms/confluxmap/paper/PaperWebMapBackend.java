@@ -31,7 +31,7 @@ import org.bukkit.entity.Player;
 final class PaperWebMapBackend implements WebMapBackend {
     private final ConfluxMapPaperPlugin plugin;
     private final PaperCompanion companion;
-    private final WebMapManifest manifest;
+    private volatile WebMapManifest manifest;
     private volatile String defaultGameMode;
     private volatile WebMapSnapshot snapshot = WebMapSnapshot.EMPTY;
     private volatile Map<UUID, URI> skinUrls = Map.of();
@@ -50,6 +50,10 @@ final class PaperWebMapBackend implements WebMapBackend {
         features.restrictAttachments((actor, id) -> companion.sharedWaypointsEnabled()
             && companion.sharedWaypoints().snapshot().waypoints().stream()
                 .anyMatch(waypoint -> waypoint.id().equals(id) && waypoint.publisherId().equals(actor)));
+        refreshManifest();
+    }
+
+    void refreshManifest() {
         final List<WebMapManifest.Dimension> dimensions = new ArrayList<>();
         for (final PaperWorldDirectory.Entry entry : companion.worlds().entries()) {
             final DimensionId id = DimensionId.parse(entry.dimensionId());

@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.waypoint.library.WaypointMediaService;
 import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.compat.PlayNetworking;
+import cn.net.rms.confluxmap.compat.Texts;
 
 import com.google.gson.*;
 
@@ -28,6 +29,7 @@ public final class WebMapClient {
     private static PhotoUpload activePhoto;
     private static int responseTicks;
     private static JsonObject admin = new JsonObject();
+    private static long configRequestDeadline;
     private static JsonObject review = new JsonObject();
     private static int configRevision;
     private static int ticks;
@@ -66,7 +68,11 @@ public final class WebMapClient {
                                             if (!admin.equals(o)) ++configRevision;
                                             admin = o;
                                         }
-                                        case "admin-result" -> configResult = o.get("message").getAsString();
+                                        case "admin-result" -> {
+                                            configRequestDeadline = 0;
+                                            configResult = o.get("message").getAsString();
+                                            ++configRevision;
+                                        }
                                         case "image-review" -> review = o;
                                         case "image-target" -> publicationTarget(o);
                                         default -> {}
@@ -88,6 +94,7 @@ public final class WebMapClient {
             activePhoto = null;
             ++configRevision;
             admin = new JsonObject();
+            configRequestDeadline = 0;
             review = new JsonObject();
             configResult = "";
             result = "";
@@ -111,6 +118,11 @@ public final class WebMapClient {
         if (activePhoto == null && !photos.isEmpty()) {
             prepareNext(client);
             return;
+        }
+        if (configRequestDeadline != 0 && System.nanoTime() - configRequestDeadline >= 0) {
+            configRequestDeadline = 0;
+            configResult = "Request timed out";
+            ++configRevision;
         }
         if (ticks++ % 40 == 0) {
             publications.values().removeIf(pending -> pending.deadline() < System.nanoTime());
@@ -153,7 +165,17 @@ public final class WebMapClient {
     }
 
     public static String configResult() {
-        return configResult;
+        final String key = switch (configResult) {
+            case "Saved" -> "saved";
+            case "Saving" -> "saving";
+            case "Save failed" -> "save_failed";
+            case "Forbidden" -> "forbidden";
+            case "Invalid setting", "Unknown setting" -> "invalid";
+            case "Request timed out" -> "timeout";
+            default -> null;
+        };
+        return key == null ? configResult
+            : Texts.translatable("confluxmap.webmap.server_result." + key).getString();
     }
 
     public static int configRevision() {
@@ -168,7 +190,15 @@ public final class WebMapClient {
         return admin.has(key) ? admin.get(key).getAsString() : value(key);
     }
 
+    public static boolean canEditSettings() {
+        return adminAllowed() && configRequestDeadline == 0;
+    }
+
     public static void setServerSetting(String key, String value) {
+        if (!canEditSettings()) return;
+        configRequestDeadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        configResult = "Saving";
+        ++configRevision;
         JsonObject request = packet("admin-set");
         request.addProperty("key", key);
         request.addProperty("value", value);

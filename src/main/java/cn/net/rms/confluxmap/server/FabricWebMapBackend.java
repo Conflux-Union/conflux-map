@@ -35,7 +35,7 @@ import net.minecraft.server.network.ServerPlayerEntity;
 final class FabricWebMapBackend implements WebMapBackend {
     private final MinecraftServer server;
     private final ConfluxMapCompanion companion;
-    private final WebMapManifest manifest;
+    private volatile WebMapManifest manifest;
     private volatile String defaultGameMode;
     private volatile WebMapSnapshot snapshot = WebMapSnapshot.EMPTY;
     private volatile Map<UUID, URI> skinUrls = Map.of();
@@ -66,6 +66,8 @@ final class FabricWebMapBackend implements WebMapBackend {
     public WebMapManifest manifest() {
         return manifest;
     }
+
+    void refreshManifest() { manifest = buildManifest(); }
 
     private WebMapManifest buildManifest() {
         final String worldgenVersion = MinecraftVersion.current();

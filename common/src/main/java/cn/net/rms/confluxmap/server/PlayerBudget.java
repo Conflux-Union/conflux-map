@@ -12,7 +12,7 @@ public final class PlayerBudget {
     static final int MAX_PATCH_WIRE_BYTES = PatchCodec.MAX_COMPRESSED_BYTES + 64;
 
     private final TokenBucket bytes;
-    private final long minIntervalNanos;
+    private final int minRequestIntervalMs;
     private long lastRequestNanos = Long.MIN_VALUE;
 
     public PlayerBudget(final int bytesPerSecond, final int minRequestIntervalMs) {
@@ -20,10 +20,15 @@ public final class PlayerBudget {
         // A rate bucket must be large enough for one legal atomic packet. Otherwise a raw residual
         // larger than one second's allowance can never leave the FIFO, regardless of wait time.
         this.bytes = new TokenBucket(Math.max(refillRate, MAX_PATCH_WIRE_BYTES), refillRate);
-        this.minIntervalNanos = Math.max(0L, minRequestIntervalMs) * 1_000_000L;
+        this.minRequestIntervalMs = minRequestIntervalMs;
     }
 
-    public synchronized boolean beginRequest(final long nowNanos) {
+    public boolean beginRequest(final long nowNanos) {
+        return beginRequest(nowNanos, minRequestIntervalMs);
+    }
+
+    public synchronized boolean beginRequest(final long nowNanos, final int intervalMs) {
+        final long minIntervalNanos = Math.max(0L, intervalMs) * 1_000_000L;
         if (lastRequestNanos != Long.MIN_VALUE && nowNanos - lastRequestNanos < minIntervalNanos) {
             return false;
         }

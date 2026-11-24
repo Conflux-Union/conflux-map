@@ -20,6 +20,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$         try (var world = context.worldBuilder().create()) {
 //$$             context.waitFor(client -> ConfluxMapClient.get().waypointLibraryService().world() != null, 200);
 //$$             var app = ConfluxMapClient.get();
+//$$             testSingleplayerLoadStates(context, app);
 //$$             context.runOnClient(client -> {
 //$$                 app.config().uiTransitionsEnabled = false;
 //$$                 app.waypointListMemory().options().both = true;
@@ -359,6 +360,29 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$         context.runOnClient(client -> search.setValue("qzxv-test-no-settings"));
 //$$         context.waitFor(client -> (Integer) field(MinecraftAccess.screen(client), "contentHeight") == 0, 100);
 //$$         context.setScreen(() -> null);
+//$$     }
+//$$
+//$$     private static void testSingleplayerLoadStates(
+//$$         ClientGameTestContext context, ConfluxMapClient app
+//$$     ) {
+//$$         final var modeBefore = context.computeOnClient(client -> app.config().fullscreenDisplayMode);
+//$$         final var player = context.computeOnClient(client -> app.gameBridge().player().orElseThrow());
+//$$         context.runOnClient(client -> {
+//$$             app.config().uiTransitionsEnabled = false;
+//$$             if (client.getSingleplayerServer().isPublished()) {
+//$$                 throw new AssertionError("Singleplayer load state drill must run without LAN");
+//$$             }
+//$$         });
+//$$         context.setScreen(() -> FullscreenMapScreen.focusedOnWaypoint(
+//$$             DimensionId.OVERWORLD, player.x(), player.z()));
+//$$         context.runOnClient(client -> ((FullscreenMapScreen) MinecraftAccess.screen(client)).setScaleForTest(1.0));
+//$$         clickLabeledWidget(context, "confluxmap.map.tools.view");
+//$$         clickLabeledWidget(context, "confluxmap.map.display_mode.chunk_load_state");
+//$$         context.waitFor(client -> app.chunkLoadStateClient().snapshot().complete()
+//$$             && !app.chunkLoadStateClient().snapshot().entries().isEmpty(), 140);
+//$$         cn.net.rms.confluxmap.ConfluxMapMod.LOGGER.info("Verified offline singleplayer chunk load states");
+//$$         context.setScreen(() -> null);
+//$$         context.runOnClient(client -> app.config().fullscreenDisplayMode = modeBefore);
 //$$     }
 //$$
 //$$     private static void testMapPositionControls(

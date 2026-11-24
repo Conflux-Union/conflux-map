@@ -499,7 +499,7 @@ public final class WebMapServer implements AutoCloseable {
                 }
                 final long now = System.nanoTime();
                 budget.lastSeen = now;
-                if (!budget.budget.beginRequest(now)) {
+                if (!budget.budget.beginRequest(now, backend.manifest().limits().minRequestIntervalMs())) {
                     closeQuietly(WebSocketFrame.CloseCode.PolicyViolation, "map request is rate limited");
                     return;
                 }
@@ -558,7 +558,7 @@ public final class WebMapServer implements AutoCloseable {
 
             private synchronized void sendFeatures(){
                 WebMapFeatures f=backend.features();if(f==null||!isOpen())return;
-                String policy=f.policyJson(),chat=f.chatJson(),images=f.imagesJson();
+                String policy=f.policyJson(backend.manifest().limits()),chat=f.chatJson(),images=f.imagesJson();
                 if(!policy.equals(lastPolicy)&&sendStatePayload(policy))lastPolicy=policy;
                 if(!chat.equals(lastChat)&&sendStatePayload(chat))lastChat=chat;
                 if(!images.equals(lastImages)&&sendStatePayload(images))lastImages=images;

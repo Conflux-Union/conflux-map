@@ -780,7 +780,7 @@ public final class ConfigScreen extends ConfluxScreen {
             draw.drawTextWithShadow(this.textRenderer, Texts.translatable("confluxmap.screen.config.no_matches").getString(),
                 rowX() + 4, rowsTop() + 6, 0xFFBBBBBB);
         }
-        if (category == Category.SERVER && !searching() && WebMapClient.adminAllowed()) {
+        if (category == Category.SERVER && !searching()) {
             final String status = this.textRenderer.trimToWidth(WebMapClient.configResult(), rowWidth);
             draw.drawTextWithShadow(this.textRenderer, status, rowX(), height - BOTTOM_MARGIN - 10, 0xFFDDDDDD);
         }

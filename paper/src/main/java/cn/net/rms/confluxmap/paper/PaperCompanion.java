@@ -237,7 +237,7 @@ final class PaperCompanion implements Listener {
                 java.util.function.BooleanSupplier operator = () -> player.hasPermission("confluxmap.admin");
                 if (cn.net.rms.confluxmap.server.web.ServerConfigControl.handle(
                     stable, config, operator.getAsBoolean(), this::saveWebMapConfig,
-                    () -> { if (backend != null) backend.features().settingsChanged(); }, reply
+                    this::applyServerSettings, reply
                 )) return;
                 if (backend != null && backend == current) backend.features().handle(
                     player.getUniqueId(), player.getName(), operator,
@@ -451,6 +451,25 @@ final class PaperCompanion implements Listener {
         String channel = cn.net.rms.confluxmap.server.web.WebMapFeatures.CHANNEL;
         var recipient = PaperPluginMessageDispatcher.recipient(plugin, player);
         if (recipient.listensTo(channel)) pluginMessages.send(recipient, channel, payload);
+    }
+
+    private void applyServerSettings() {
+        if (config.shareChunkLoadState && chunkLoadStates == null) {
+            chunkLoadStates = new PaperChunkLoadStateService();
+            liveChunks.forEach((key, chunk) -> chunkLoadStates.onChunkLoad(key.world(), chunk));
+        } else if (!config.shareChunkLoadState && chunkLoadStates != null) {
+            chunkLoadStates.clear();
+            chunkLoadStates = null;
+        }
+        if (sharedWaypoints != null) {
+            sharedWaypoints.applySettings(config.maxSharedWaypointsPerPlayer, config.sharedWaypointAccessPolicy());
+            sharedNetworking.featureStateChanged();
+        }
+        if (webMapBackend != null) {
+            webMapBackend.refreshManifest();
+            webMapBackend.features().settingsChanged();
+        }
+        networking.broadcastSettings();
     }
 
     boolean saveWebMapConfig() {

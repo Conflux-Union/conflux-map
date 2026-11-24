@@ -212,9 +212,14 @@ public final class WebMapFeatures implements AutoCloseable {
         return JSON.toJson(o);
     }
 
-    public synchronized String policyJson() {
+    public synchronized String policyJson(final WebMapManifest.Limits limits) {
         JsonObject o = new JsonObject();
         o.addProperty("type", "web-policy");
+        final JsonObject requestLimits = new JsonObject();
+        requestLimits.addProperty("maxTilesPerRequest", limits.maxTilesPerRequest());
+        requestLimits.addProperty("minRequestIntervalMs", limits.minRequestIntervalMs());
+        o.add("limits", requestLimits);
+        o.addProperty("defaultMode", cfg.defaultMode.name());
         o.addProperty("enableChat", cfg.enableChat);
         o.addProperty("allowWebChat", cfg.enableChat && cfg.allowWebChat);
         o.addProperty("showWaypointImages", cfg.showWaypointImages);
