@@ -2,9 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
-import cn.net.rms.confluxmap.compat.MouseButtons;
 import cn.net.rms.confluxmap.compat.Texts;
-import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.predict.BaselineSampler;
 import cn.net.rms.confluxmap.core.predict.BiomeCandidateSearch;
@@ -14,59 +12,19 @@ import cn.net.rms.confluxmap.core.predict.SearchOrder;
 import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.OptionalInt;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.regex.Pattern;
 import net.minecraft.client.MinecraftClient;
-//#if MC>=12109
-//$$ import net.minecraft.client.gui.Click;
-//#endif
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
 /** Candidate query and result actions for one biome. */
-final class BiomeCandidateScreen extends ConfluxScreen {
-    private static final Pattern INTEGER = Pattern.compile("-?[0-9]*");
-    private static final Pattern POSITIVE_INTEGER = Pattern.compile("[0-9]*");
-    private static final int DEFAULT_RADIUS = 100_000;
-    private static final int DEFAULT_LIMIT = 20;
-    private static final int MAX_RADIUS = 100_000;
-    private static final int MAX_LIMIT = 100;
-    private static final int FIELD_WIDTH = 92;
-    private static final int FIELD_HEIGHT = 20;
-    private static final int GAP = 4;
-
-    private final StructureSearchScreen picker;
+final class BiomeCandidateScreen extends CandidateQueryScreen<BiomeCandidateSearch.Candidate> {
     private final FullscreenMapScreen map;
     private final DimensionId dimension;
     private final Identifier biome;
-    private final SplitMapPane mapPane;
-    private final List<ButtonWidget> waypointButtons = new ArrayList<>();
-
-    private int centerX;
-    private int centerZ;
-    private int radius = DEFAULT_RADIUS;
-    private int limit = DEFAULT_LIMIT;
-    private SearchOrder order = SearchOrder.NEAREST;
     private List<BiomeCandidateSearch.Candidate> results = List.of();
-    private int scrollOffset;
-    private int queryGeneration;
-    private boolean initialQueryStarted;
-    private boolean searching;
-    private boolean draggingScrollBar;
-    private double scrollBarGrabOffset;
-    private TextFieldWidget centerXField;
-    private TextFieldWidget centerZField;
-    private TextFieldWidget radiusField;
-    private TextFieldWidget limitField;
-    private ButtonWidget searchButton;
-    private ButtonWidget orderButton;
-    private int fieldWidth;
-    private int panelContentWidth = 1;
-    private String statusKey;
 
     BiomeCandidateScreen(
         final StructureSearchScreen picker,
@@ -74,145 +32,36 @@ final class BiomeCandidateScreen extends ConfluxScreen {
         final DimensionId dimension,
         final Identifier biome
     ) {
-        super(Texts.translatable(
+        super(map, picker, Texts.translatable(
             "confluxmap.screen.biome_candidates.title",
             StructureSearchScreen.localizedBiomeName(biome)
         ));
-        this.picker = picker;
         this.map = map;
         this.dimension = dimension;
         this.biome = biome;
-        this.mapPane = new SplitMapPane(map);
-        final SearchCenter center = map.searchCenter();
-        centerX = center.blockX();
-        centerZ = center.blockZ();
     }
 
     @Override
-    public boolean isPauseScreen() {
-        return false;
+    protected List<BiomeCandidateSearch.Candidate> results() {
+        return results;
     }
 
     @Override
-    protected void init() {
-        rebuild();
-        if (!initialQueryStarted) {
-            initialQueryStarted = true;
-            submitSearch();
-        }
+    protected Text searchButtonLabel() {
+        return Texts.translatable(searchButtonKey(searching));
     }
 
-    private void rebuild() {
-        clearChildren();
-        waypointButtons.clear();
-        panelContentWidth = requiredPanelContentWidth();
-        final SplitMapLayout layout = splitLayout();
-        fieldWidth = Math.min(FIELD_WIDTH, Math.max(1, (layout.panelContentWidth() - GAP) / 2));
-        final int fieldsWidth = fieldWidth * 2 + GAP;
-        final int left = layout.panelCenterX() - fieldsWidth / 2;
-        final int right = left + fieldWidth + GAP;
-        centerXField = integerField(left, 32, centerX, false);
-        centerZField = integerField(right, 32, centerZ, false);
-        radiusField = integerField(left, 64, radius, true);
-        limitField = integerField(right, 64, limit, true);
-        addDrawableChild(centerXField);
-        addDrawableChild(centerZField);
-        addDrawableChild(radiusField);
-        addDrawableChild(limitField);
-        final int controlsWidth = Math.min(204, layout.panelContentWidth());
-        final int controlWidth = Math.max(1, (controlsWidth - GAP) / 2);
-        final int controlsLeft = layout.panelCenterX() - controlsWidth / 2;
-        searchButton = addDrawableChild(Widgets.button(
-            controlsLeft,
-            88,
-            controlWidth,
-            FIELD_HEIGHT,
-            Texts.translatable(searchButtonKey(searching)),
-            ignored -> search()
-        ));
-        orderButton = addDrawableChild(Widgets.button(
-            controlsLeft + controlWidth + GAP,
-            88,
-            controlWidth,
-            FIELD_HEIGHT,
-            Texts.translatable(CandidateListUi.orderLabelKey(order)),
-            ignored -> toggleOrder()
-        ));
-
-        final CandidateListUi listUi = candidateListUi();
-        scrollOffset = listUi.scrollOffset();
-        for (int index = 0; index < results.size(); index++) {
-            final BiomeCandidateSearch.Candidate candidate = results.get(index);
-            waypointButtons.add(addDrawableChild(Widgets.button(
-                listUi.actionX(),
-                listUi.waypointButtonY(index),
-                listUi.actionWidth(),
-                20,
-                Texts.translatable("confluxmap.screen.structure_candidates.waypoint"),
-                ignored -> map.createWaypointForBiome(
-                    StructureSearchScreen.localizedBiomeName(biome), candidate, this
-                )
-            )));
-        }
-        final int backWidth = Math.min(100, layout.panelContentWidth());
-        addDrawableChild(Widgets.button(
-            layout.panelCenterX() - backWidth / 2,
-            height - 24,
-            backWidth,
-            20,
-            Texts.translatable("confluxmap.screen.structure_search.back"),
-            ignored -> onClose()
-        ));
+    @Override
+    protected void afterTick() {
         searchButton.active = !searching;
         if (orderButton != null) {
             orderButton.active = !searching;
             orderButton.setMessage(Texts.translatable(CandidateListUi.orderLabelKey(order)));
         }
-        updateRows();
-        mapPane.addMenuButtons(this);
     }
 
-    private TextFieldWidget integerField(
-        final int x,
-        final int y,
-        final int value,
-        final boolean positive
-    ) {
-        final TextFieldWidget field = new TextFieldWidget(
-            this.textRenderer, x, y, fieldWidth, FIELD_HEIGHT, Texts.literal("")
-        );
-        field.setMaxLength(11);
-        final Pattern pattern = positive ? POSITIVE_INTEGER : INTEGER;
-        //#if MC>=260100
-        //$$ final String[] lastValid = {Integer.toString(value)};
-        //$$ field.setResponder(text -> {
-        //$$     if (pattern.matcher(text).matches()) {
-        //$$         lastValid[0] = text;
-        //$$     } else {
-        //$$         field.setValue(lastValid[0]);
-        //$$     }
-        //$$ });
-        //#else
-        field.setTextPredicate(text -> pattern.matcher(text).matches());
-        //#endif
-        Widgets.setText(field, Integer.toString(value));
-        return field;
-    }
-
-    private void search() {
-        try {
-            centerX = Integer.parseInt(Widgets.text(centerXField));
-            centerZ = Integer.parseInt(Widgets.text(centerZField));
-            radius = Math.max(1, Math.min(MAX_RADIUS, Integer.parseInt(Widgets.text(radiusField))));
-            limit = Math.max(1, Math.min(MAX_LIMIT, Integer.parseInt(Widgets.text(limitField))));
-        } catch (final NumberFormatException e) {
-            statusKey = "confluxmap.screen.structure_candidates.invalid";
-            return;
-        }
-        submitSearch();
-    }
-
-    private void submitSearch() {
+    @Override
+    protected void submitSearch() {
         final int generation = ++queryGeneration;
         final int queryCenterX = centerX;
         final int queryCenterZ = centerZ;
@@ -276,284 +125,18 @@ final class BiomeCandidateScreen extends ConfluxScreen {
                 : "confluxmap.screen.biome_candidates.not_found_no_prediction"
             : null;
         if (!found.isEmpty()) {
-            focus(found.get(0));
+            focusRow(found.get(0));
         }
         rebuild();
     }
 
-    private void focus(final BiomeCandidateSearch.Candidate candidate) {
+    @Override
+    protected void focusRow(final BiomeCandidateSearch.Candidate candidate) {
         map.focusBiome(candidate);
     }
 
-    private void toggleOrder() {
-        order = CandidateListUi.toggledOrder(order);
-        submitSearch();
-    }
-
-    static String searchButtonKey(final boolean searching) {
-        return searching
-            ? "confluxmap.screen.biome_candidates.searching_button"
-            : "confluxmap.screen.structure_candidates.search";
-    }
-
-    static int statusY(final int screenHeight) {
-        return screenHeight - 36;
-    }
-
-    private int visibleRows() {
-        return candidateListUi().visibleRows();
-    }
-
-    private int rowWidth() {
-        return Math.min(
-            500,
-            Math.max(
-                1,
-                splitLayout().panelContentWidth() - CandidateListUi.scrollBarReservedWidth()
-            )
-        );
-    }
-
-    private int rowX() {
-        final SplitMapLayout layout = splitLayout();
-        final int listWidth = Math.max(
-            1, layout.panelContentWidth() - CandidateListUi.scrollBarReservedWidth()
-        );
-        return layout.panelContentLeft() + (listWidth - rowWidth()) / 2;
-    }
-
-    private CandidateListUi candidateListUi() {
-        return new CandidateListUi(height, rowX(), rowWidth(), results.size(), scrollOffset);
-    }
-
-    private void updateRows() {
-        final CandidateListUi listUi = candidateListUi();
-        scrollOffset = listUi.scrollOffset();
-        for (int index = 0; index < results.size(); index++) {
-            listUi.layoutButton(index, waypointButtons.get(index));
-        }
-    }
-
-    private int requiredPanelContentWidth() {
-        return Math.max(
-            FIELD_WIDTH * 2 + GAP,
-            Math.max(
-                CandidateListUi.preferredContentWidth()
-                    + CandidateListUi.scrollBarReservedWidth(),
-                this.textRenderer.getWidth(getTitle()) + 16
-            )
-        );
-    }
-
-    private SplitMapLayout splitLayout() {
-        return new SplitMapLayout(width, height, panelContentWidth);
-    }
-
     @Override
-    public void tick() {
-        Widgets.tick(centerXField);
-        Widgets.tick(centerZField);
-        Widgets.tick(radiusField);
-        Widgets.tick(limitField);
-    }
-
-    @Override
-    //#if MC>=12109
-    //$$ public boolean mouseClicked(final Click click, final boolean doubledClick) {
-    //$$     final double mouseX = click.x();
-    //$$     final double mouseY = click.y();
-    //$$     final int button = click.button();
-    //#else
-    public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
-    //#endif
-        if (mapPane.menuOpen() && !mapPane.menuContains(mouseX, mouseY)) {
-            mapPane.menuClickedOutside(this, mouseX, mouseY, button, splitLayout());
-            return true;
-        }
-        final CandidateListUi listUi = candidateListUi();
-        if (button == MouseButtons.LEFT && listUi.containsScrollBar(mouseX, mouseY)) {
-            draggingScrollBar = true;
-            scrollBarGrabOffset = listUi.scrollBarGrabOffset(mouseY);
-            updateScrollFromMouse(mouseY);
-            return true;
-        }
-        //#if MC>=12109
-        //$$ if (super.mouseClicked(click, doubledClick)) {
-        //#else
-        if (super.mouseClicked(mouseX, mouseY, button)) {
-        //#endif
-            mapPane.consumePendingMenuAction(this);
-            return true;
-        }
-        if (mapPane.menuOpen()) {
-            return true;
-        }
-        final int candidateIndex = button == MouseButtons.LEFT ? listUi.candidateAt(mouseX, mouseY) : -1;
-        if (candidateIndex >= 0) {
-            focus(results.get(candidateIndex));
-            return true;
-        }
-        return mapPane.mouseClicked(this, mouseX, mouseY, button, splitLayout());
-    }
-
-    @Override
-    //#if MC>=12109
-    //$$ public boolean mouseDragged(final Click click, final double deltaX, final double deltaY) {
-    //$$     final double mouseY = click.y();
-    //$$     final int button = click.button();
-    //#else
-    public boolean mouseDragged(
-        final double mouseX,
-        final double mouseY,
-        final int button,
-        final double deltaX,
-        final double deltaY
-    ) {
-    //#endif
-        if (button == MouseButtons.LEFT && draggingScrollBar) {
-            updateScrollFromMouse(mouseY);
-            return true;
-        }
-        if (mapPane.mouseDragged(button, deltaX, deltaY)) {
-            return true;
-        }
-        //#if MC>=12109
-        //$$ return super.mouseDragged(click, deltaX, deltaY);
-        //#else
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
-        //#endif
-    }
-
-    @Override
-    //#if MC>=12109
-    //$$ public boolean mouseReleased(final Click click) {
-    //$$     final int button = click.button();
-    //#else
-    public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
-    //#endif
-        if (button == MouseButtons.LEFT && draggingScrollBar) {
-            draggingScrollBar = false;
-            return true;
-        }
-        if (mapPane.mouseReleased(button)) {
-            return true;
-        }
-        //#if MC>=12109
-        //$$ return super.mouseReleased(click);
-        //#else
-        return super.mouseReleased(mouseX, mouseY, button);
-        //#endif
-    }
-
-    private void updateScrollFromMouse(final double mouseY) {
-        scrollOffset = candidateListUi().scrollOffsetForThumbTop(
-            mouseY, scrollBarGrabOffset
-        );
-        updateRows();
-    }
-
-    @Override
-    public boolean mouseScrolled(
-        final double mouseX,
-        final double mouseY,
-        //#if MC>=12002
-        //$$ final double horizontalAmount,
-        //#endif
-        final double amount
-    ) {
-        final SplitMapLayout layout = splitLayout();
-        if (amount != 0 && layout.containsPanel(mouseX, mouseY)
-            && results.size() > visibleRows()) {
-            scrollOffset = candidateListUi().scrollBy(amount);
-            updateRows();
-            return true;
-        }
-        if (mapPane.mouseScrolled(this, mouseX, mouseY, amount, layout)) {
-            return true;
-        }
-        //#if MC>=12002
-        //$$ return super.mouseScrolled(mouseX, mouseY, horizontalAmount, amount);
-        //#else
-        return super.mouseScrolled(mouseX, mouseY, amount);
-        //#endif
-    }
-
-    @Override
-    public void onClose() {
-        queryGeneration++;
-        requestClose(picker);
-    }
-
-    @Override
-    protected void renderContents(
-        final GuiDraw draw,
-        final int mouseX,
-        final int mouseY,
-        final float tickDelta
-    ) {
-        final SplitMapLayout layout = splitLayout();
-        mapPane.render(draw, mouseX, mouseY, tickDelta, layout);
-        drawCentered(draw, getTitle().getString(), 8, 0xFFFFFFFF);
-        drawCentered(draw, Texts.translatable(
-            "confluxmap.screen.structure_candidates.center"
-        ).getString(), 20, 0xFFBBBBBB);
-        drawCentered(draw, Texts.translatable(
-            "confluxmap.screen.structure_candidates.bounds"
-        ).getString(), 52, 0xFFBBBBBB);
-        final CandidateListUi listUi = candidateListUi();
-        listUi.drawSurface(draw);
-        final int end = Math.min(results.size(), scrollOffset + listUi.visibleRows());
-        for (int index = scrollOffset; index < end; index++) {
-            final BiomeCandidateSearch.Candidate candidate = results.get(index);
-            draw.drawTextWithShadow(
-                this.textRenderer,
-                fitToWidth(candidateLine(candidate), listUi.textWidth()),
-                rowX(),
-                listUi.rowY(index) + 6,
-                0xFFFFFFFF
-            );
-        }
-        if (statusKey != null) {
-            drawCentered(
-                draw,
-                Texts.translatable(statusKey).getString(),
-                statusY(height),
-                0xFFAAAAAA
-            );
-        }
-        listUi.drawScrollBar(draw);
-    }
-
-    @Override
-    protected void renderAfterWidgets(
-        final GuiDraw draw,
-        final int mouseX,
-        final int mouseY,
-        final float tickDelta
-    ) {
-        mapPane.drawMenuHotkeys(draw, this.textRenderer);
-        final CandidateListUi listUi = candidateListUi();
-        listUi.drawOverflowCues(draw);
-        final int hovered = listUi.candidateAt(mouseX, mouseY);
-        if (hovered >= 0) {
-            listUi.drawRowTooltip(
-                draw,
-                this,
-                this.textRenderer,
-                candidateLine(results.get(hovered)),
-                listUi.textWidth(),
-                mouseX,
-                mouseY
-            );
-        }
-    }
-
-    @Override
-    protected boolean embeddedMenuHotkeyPressed(final int keyCode) {
-        return mapPane.menuHotkeyPressed(this, keyCode);
-    }
-
-    private String candidateLine(final BiomeCandidateSearch.Candidate candidate) {
+    protected String rowText(final BiomeCandidateSearch.Candidate candidate) {
         return CandidateListUi.coordinateText(candidate.blockX(), candidate.blockZ())
             + " · "
             + Texts.translatable(
@@ -564,23 +147,30 @@ final class BiomeCandidateScreen extends ConfluxScreen {
             ).getString();
     }
 
-    private void drawCentered(final GuiDraw draw, final String text, final int y, final int color) {
-        final SplitMapLayout layout = splitLayout();
-        final String visibleText = fitToWidth(text, layout.panelContentWidth());
+    @Override
+    protected void createWaypoint(final BiomeCandidateSearch.Candidate candidate) {
+        map.createWaypointForBiome(StructureSearchScreen.localizedBiomeName(biome), candidate, this);
+    }
+
+    @Override
+    protected void drawRow(final GuiDraw draw, final CandidateListUi listUi, final int index) {
+        final BiomeCandidateSearch.Candidate candidate = results.get(index);
         draw.drawTextWithShadow(
             this.textRenderer,
-            visibleText,
-            layout.panelCenterX() - this.textRenderer.getWidth(visibleText) / 2f,
-            y,
-            color
+            fitToWidth(rowText(candidate), listUi.textWidth()),
+            rowX(),
+            listUi.rowY(index) + 6,
+            0xFFFFFFFF
         );
     }
 
-    private String fitToWidth(final String text, final int maxWidth) {
-        //#if MC>=260100
-        //$$ return this.font.plainSubstrByWidth(text, maxWidth);
-        //#else
-        return this.textRenderer.trimToWidth(text, maxWidth);
-        //#endif
+    static String searchButtonKey(final boolean searching) {
+        return searching
+            ? "confluxmap.screen.biome_candidates.searching_button"
+            : "confluxmap.screen.structure_candidates.search";
+    }
+
+    static int statusY(final int screenHeight) {
+        return screenHeight - 36;
     }
 }

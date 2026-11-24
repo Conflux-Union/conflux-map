@@ -34,7 +34,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 
 /** Shared structure/biome picker with localized filtering and candidate browsing. */
-final class StructureSearchScreen extends ConfluxScreen {
+final class StructureSearchScreen extends SplitMapScreen {
     private static final int FIELD_WIDTH = 240;
     private static final int FIELD_HEIGHT = 20;
     private static final int MODE_TOP = 30;
@@ -57,7 +57,6 @@ final class StructureSearchScreen extends ConfluxScreen {
     private final CompanionSession companion;
     private final List<StructureIndex.StructureType> available;
     private final List<Identifier> biomes = new ArrayList<>();
-    private final SplitMapPane mapPane;
     private final Map<StructureIndex.StructureType, ButtonWidget> visibilityButtons =
         new EnumMap<>(StructureIndex.StructureType.class);
     private final Map<StructureIndex.StructureType, ButtonWidget> locateButtons =
@@ -74,8 +73,6 @@ final class StructureSearchScreen extends ConfluxScreen {
     private int rowWidth;
     private int locateWidth;
     private int panelContentWidth = 1;
-    private boolean draggingScrollBar;
-    private double scrollBarGrabOffset;
 
     StructureSearchScreen(
         final FullscreenMapScreen parent,
@@ -83,14 +80,13 @@ final class StructureSearchScreen extends ConfluxScreen {
         final DimensionId dimension,
         final List<StructureIndex.StructureType> available
     ) {
-        super(Texts.translatable("confluxmap.screen.map_search.title"));
+        super(Texts.translatable("confluxmap.screen.map_search.title"), parent);
         this.parent = parent;
         this.structures = structures;
         this.dimension = dimension;
         final ConfluxMapClient app = ConfluxMapClient.get();
         this.config = app.config();
         this.companion = app.companionSession();
-        this.mapPane = new SplitMapPane(parent);
         this.available = new ArrayList<>(available);
         this.available.sort(Comparator.comparing(StructureSearchScreen::localizedName));
         if (MinecraftClient.getInstance().world != null) {
@@ -578,55 +574,7 @@ final class StructureSearchScreen extends ConfluxScreen {
     }
 
     @Override
-    //#if MC>=12109
-    //$$ public boolean mouseDragged(final Click click, final double deltaX, final double deltaY) {
-    //$$     final double mouseY = click.y();
-    //$$     final int button = click.button();
-    //#else
-    public boolean mouseDragged(
-        final double mouseX,
-        final double mouseY,
-        final int button,
-        final double deltaX,
-        final double deltaY
-    ) {
-    //#endif
-        if (button == MouseButtons.LEFT && draggingScrollBar) {
-            updateScrollFromMouse(mouseY);
-            return true;
-        }
-        if (mapPane.mouseDragged(button, deltaX, deltaY)) {
-            return true;
-        }
-        //#if MC>=12109
-        //$$ return super.mouseDragged(click, deltaX, deltaY);
-        //#else
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
-        //#endif
-    }
-
-    @Override
-    //#if MC>=12109
-    //$$ public boolean mouseReleased(final Click click) {
-    //$$     final int button = click.button();
-    //#else
-    public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
-    //#endif
-        if (button == MouseButtons.LEFT && draggingScrollBar) {
-            draggingScrollBar = false;
-            return true;
-        }
-        if (mapPane.mouseReleased(button)) {
-            return true;
-        }
-        //#if MC>=12109
-        //$$ return super.mouseReleased(click);
-        //#else
-        return super.mouseReleased(mouseX, mouseY, button);
-        //#endif
-    }
-
-    private void updateScrollFromMouse(final double mouseY) {
+    void updateScrollFromMouse(final double mouseY) {
         scrollOffset = scrollBar().offsetForThumbTop(mouseY - scrollBarGrabOffset);
         updateRows();
     }
@@ -725,11 +673,6 @@ final class StructureSearchScreen extends ConfluxScreen {
             visibleRows(),
             scrollOffset
         );
-    }
-
-    @Override
-    protected boolean embeddedMenuHotkeyPressed(final int keyCode) {
-        return mapPane.menuHotkeyPressed(this, keyCode);
     }
 
     private void drawPanelCentered(

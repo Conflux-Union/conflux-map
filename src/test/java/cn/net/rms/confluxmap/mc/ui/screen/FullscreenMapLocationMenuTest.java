@@ -351,19 +351,25 @@ class FullscreenMapLocationMenuTest {
             "the split map pane must reuse the fullscreen menu's button specs"
         );
 
+        final String splitBase = readScreen(root, "SplitMapScreen");
+        final String queryBase = readScreen(root, "CandidateQueryScreen");
         for (final String name : new String[] {
             "StructureSearchScreen", "StructureCandidateScreen", "BiomeCandidateScreen"
         }) {
-            final String source = Files.readString(root.resolve(
-                "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/" + name + ".java"
-            )).replace("\r\n", "\n");
+            final String screen = readScreen(root, name);
+            final String inherited = name.equals("StructureSearchScreen")
+                ? splitBase
+                : splitBase + queryBase;
             assertTrue(
-                source.contains("mapPane.addMenuButtons(this)"),
+                (screen + inherited).contains("mapPane.addMenuButtons(this)"),
                 name + " must re-add the menu buttons when its widgets are rebuilt"
             );
-            final int outsideGuard = source.indexOf("mapPane.menuClickedOutside(this,");
-            final int widgetDispatch = source.indexOf("super.mouseClicked");
-            final int consume = source.indexOf("mapPane.consumePendingMenuAction(this)");
+            // The click ordering means something only inside the file that holds
+            // super.mouseClicked: StructureSearchScreen itself, else the query base.
+            final String clickSource = screen.contains("super.mouseClicked") ? screen : queryBase;
+            final int outsideGuard = clickSource.indexOf("mapPane.menuClickedOutside(this,");
+            final int widgetDispatch = clickSource.indexOf("super.mouseClicked");
+            final int consume = clickSource.indexOf("mapPane.consumePendingMenuAction(this)");
             assertTrue(
                 outsideGuard >= 0 && widgetDispatch > outsideGuard && consume > widgetDispatch,
                 name + " must route clicks around the open menu before its widget dispatch"
@@ -547,12 +553,16 @@ class FullscreenMapLocationMenuTest {
             "the fullscreen map must draw the digit hints over its menu buttons"
         );
 
+        final String splitBase = readScreen(root, "SplitMapScreen");
+        final String queryBase = readScreen(root, "CandidateQueryScreen");
         for (final String name : new String[] {
             "StructureSearchScreen", "StructureCandidateScreen", "BiomeCandidateScreen"
         }) {
-            final String source = Files.readString(root.resolve(
-                "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/" + name + ".java"
-            )).replace("\r\n", "\n");
+            final String screen = readScreen(root, name);
+            final String inherited = name.equals("StructureSearchScreen")
+                ? splitBase
+                : splitBase + queryBase;
+            final String source = screen + inherited;
             assertTrue(
                 source.contains("mapPane.menuHotkeyPressed(this, keyCode)"),
                 name + " must route key events into the open menu's shortcuts"
@@ -580,6 +590,12 @@ class FullscreenMapLocationMenuTest {
         final int endIndex = source.indexOf(end, startIndex);
         assertTrue(startIndex >= 0 && endIndex > startIndex, "expected source section must exist");
         return source.substring(startIndex, endIndex);
+    }
+
+    private static String readScreen(final Path root, final String name) throws IOException {
+        return Files.readString(root.resolve(
+            "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/" + name + ".java"
+        )).replace("\r\n", "\n");
     }
 
     private static Path projectRoot() {
