@@ -225,6 +225,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final Identifier MAP_LOADED_RANGE_ICON = Ids.of(
         "confluxmap", "textures/gui/map_loaded_range.png"
     );
+    private static final Identifier MAP_CHUNK_GRID_ICON = Ids.of(
+        "confluxmap", "textures/gui/map_chunk_grid.png"
+    );
     private static final Identifier MAP_SETTINGS_ICON = Ids.of(
         "confluxmap", "textures/gui/map_settings.png"
     );
@@ -538,9 +541,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int top = MARGIN + this.textRenderer.fontHeight + 5;
         int y = top;
         final int step = CONTROL_SIZE + CONTROL_GAP;
-        final boolean vertical = top + 6 * step + CONTROL_SIZE + MARGIN <= height;
-        addMapPositionControls(x, top, vertical);
-        y += vertical ? 2 * step : step;
+        addCoordinateJumpButton(x, top);
+        y += step;
         final int groupTop = y;
         viewGroupButton = addToolGroupButton(
             x, y, VIEW_GROUP_ICON, "confluxmap.map.tools.view", FullscreenMapToolPanel.Group.VIEW
@@ -600,33 +602,26 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
 
-    private void addMapPositionControls(final int x, final int y, final boolean vertical) {
+    private void addCoordinateJumpButton(final int x, final int y) {
         final String jumpKey = "confluxmap.map.coordinate_jump";
         coordinateJumpButton = addDrawableChild(new MapIconButton(
-            vertical ? x : x - CONTROL_SIZE - CONTROL_GAP, y, MAP_COORDINATE_JUMP_ICON, Texts.translatable(jumpKey),
+            x, y, MAP_COORDINATE_JUMP_ICON, Texts.translatable(jumpKey),
             button -> openCoordinateJump()
         ));
         setHoverTooltip(coordinateJumpButton, jumpKey);
-
-        final String rangeKey = "confluxmap.map.loaded_range";
-        final MapIconButton range = addDrawableChild(new MapIconButton(
-            x, vertical ? y + CONTROL_SIZE + CONTROL_GAP : y, MAP_LOADED_RANGE_ICON, Texts.translatable(rangeKey), button -> toggleLoadedRange()
-        ));
-        range.setSelected(config.fullscreenLoadedRangeVisible);
-        setHoverTooltip(range, config.fullscreenLoadedRangeVisible
-            ? "confluxmap.map.loaded_range.on" : "confluxmap.map.loaded_range.off");
     }
 
-    public void toggleLoadedRange() {
+    private void toggleLoadedRange() {
         config.fullscreenLoadedRangeVisible = !config.fullscreenLoadedRangeVisible;
         ConfluxMapClient.get().configIo().save(config);
         loadedRange.clear();
         rebuildWaypointControls();
     }
 
-    public void toggleChunkGrid() {
+    private void toggleChunkGrid() {
         config.fullmapChunkGrid = !config.fullmapChunkGrid;
         ConfluxMapClient.get().configIo().save(config);
+        rebuildWaypointControls();
     }
 
     private void openCoordinateJump() {
@@ -879,12 +874,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     private void rebuildViewControls(final int top) {
-        int y = top;
+        final int x = secondaryControlsX();
         for (final FullscreenDisplayMode mode : FullscreenDisplayMode.values()) {
             final boolean available = displayModeAvailable(mode);
             final MapIconButton button = addDrawableChild(new MapIconButton(
-                secondaryControlsX(),
-                y,
+                x,
+                top,
                 DisplayModeIconCatalog.icon(mode, available),
                 Texts.translatable(displayModeValueKey(mode)),
                 ignored -> setDisplayMode(mode)
@@ -896,12 +891,26 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             if (displayMode() == mode) {
                 displayModeButton = button;
             }
-            y += CONTROL_SIZE + CONTROL_GAP;
         }
-        annotationToolbarBounds = new AnnotationToolbarBounds(
-            secondaryControlsX(), top, CONTROL_SIZE, y - top - CONTROL_GAP
-        );
+
+        addViewToggle(x, top, MAP_LOADED_RANGE_ICON, "confluxmap.map.loaded_range",
+            config.fullscreenLoadedRangeVisible, this::toggleLoadedRange);
+        addViewToggle(x, top, MAP_CHUNK_GRID_ICON, "confluxmap.map.chunk_grid",
+            config.fullmapChunkGrid, this::toggleChunkGrid);
+        layoutExpandedControls(x, top);
         refreshDisplayModeButton();
+    }
+
+    private void addViewToggle(
+        final int x, final int top, final Identifier icon, final String key,
+        final boolean selected, final Runnable toggle
+    ) {
+        final MapIconButton button = addDrawableChild(
+            new MapIconButton(x, top, icon, Texts.translatable(key), ignored -> toggle.run())
+        );
+        trackExpansionButton(button);
+        button.setSelected(selected);
+        setHoverTooltip(button, key + (selected ? ".on" : ".off"));
     }
 
     private void rebuildWaypointGroupControls(final int top) {
@@ -975,6 +984,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         refreshLayerButtons();
         manageWaypointsButton.active = viewingLiveWorld()
             && ConfluxMapClient.get().companionSession().waypointsAllowed();
+        layoutExpandedControls(x, top);
+    }
+
+    private void layoutExpandedControls(final int x, final int top) {
         final int rows = waypointGroupRows(top, height);
         final int step = CONTROL_SIZE + CONTROL_GAP;
         final int count = expansionButtons.size();
@@ -1278,11 +1291,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
     //#endif
         regionSelection = null;
-        //#if MC>=12109
-        //$$ if (ConfluxMapClient.get().keybinds().onMapKey(input)) return true;
-        //#else
-        if (ConfluxMapClient.get().keybinds().onMapKey(keyCode, scanCode)) return true;
-        //#endif
         if (regionSelectDragging && keyCode == cn.net.rms.confluxmap.compat.Keys.ESCAPE) {
             regionSelectDragging = false;
             regionSelectPress = false;

@@ -119,6 +119,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$             click(context, "confluxmap.map.tools.waypoints");
 //$$             context.getInput().resizeWindow(1280, 720);
 //$$             context.waitTicks(3);
+//$$             click(context, "confluxmap.map.tools.view");
 //$$             click(context, "confluxmap.map.loaded_range");
 //$$             context.runOnClient(client -> app.config().fullscreenLoadedRangeStyle =
 //$$                 cn.net.rms.confluxmap.core.config.ConfluxConfig.LoadedRangeStyle.DASHED);

@@ -8,8 +8,6 @@ public enum KeybindAction {
     CYCLE_ZOOM("zoom_in", "zoomIn", Keys.RIGHT_BRACKET, "RIGHT_BRACKET"),
     OPEN_MAP("open_map", "openMap", Keys.M, "M"),
     CYCLE_LAYER("cycle_layer", "cycleLayer", Keys.Y, "Y"),
-    TOGGLE_LOADED_RANGE("toggle_loaded_range", "toggleLoadedRange", -1, ""),
-    TOGGLE_CHUNK_GRID("toggle_chunk_grid", "toggleChunkGrid", -1, ""),
     OPEN_WAYPOINTS("waypoints", "openWaypoints", Keys.U, "U"),
     TEMPORARY_WAYPOINT("temporary_waypoint", "temporaryWaypoint", -1, ""),
     NEW_WAYPOINT("new_waypoint", "newWaypoint", Keys.B, "B"),
@@ -33,10 +31,6 @@ public enum KeybindAction {
         this.configName = configName;
         this.vanillaDefaultKey = vanillaDefaultKey;
         this.maliLibDefaultKeys = maliLibDefaultKeys;
-    }
-
-    boolean mapViewAction() {
-        return this == TOGGLE_LOADED_RANGE || this == TOGGLE_CHUNK_GRID;
     }
 
     String translationKey() {

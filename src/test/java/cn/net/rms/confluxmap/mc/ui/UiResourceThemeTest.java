@@ -77,6 +77,7 @@ final class UiResourceThemeTest {
             "end_gateway_visibility.png",
             "map_coordinate_jump.png",
             "map_loaded_range.png",
+            "map_chunk_grid.png",
             "nether_portal_visibility.png",
             "screenshot_visibility.png",
             "structure_visibility.png"

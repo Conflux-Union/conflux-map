@@ -300,6 +300,7 @@ public final class UiResourceTheme {
         mapNativeIcon(icons, "end_gateway_visibility.png");
         mapNativeIcon(icons, "map_coordinate_jump.png");
         mapNativeIcon(icons, "map_loaded_range.png");
+        mapNativeIcon(icons, "map_chunk_grid.png");
         mapNativeIcon(icons, "nether_portal_visibility.png");
         mapNativeIcon(icons, "screenshot_visibility.png");
         mapNativeIcon(icons, "structure_visibility.png");

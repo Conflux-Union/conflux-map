@@ -370,8 +370,8 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$         double initialScale = context.computeOnClient(client -> (double) field(map, "scale"));
 //$$         context.runOnClient(client -> {
 //$$             var jump = labeledWidget(map, "confluxmap.map.coordinate_jump");
-//$$             var range = labeledWidget(map, "confluxmap.map.loaded_range");
-//$$             if (jump.getX() != range.getX() || jump.getY() >= range.getY()) {
+//$$             var view = labeledWidget(map, "confluxmap.map.tools.view");
+//$$             if (jump.getX() != view.getX() || jump.getY() >= view.getY()) {
 //$$                 throw new AssertionError("Map toolbar buttons are not vertically aligned");
 //$$             }
 //$$         });
@@ -406,6 +406,12 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$             map.jumpToCoordinates(player.blockX(), player.blockZ());
 //$$             map.setScaleForTest(1.0);
 //$$         });
+//$$         clickLabeledWidget(context, "confluxmap.map.tools.view");
+//$$         boolean gridWasVisible = context.computeOnClient(client -> app.config().fullmapChunkGrid);
+//$$         clickLabeledWidget(context, "confluxmap.map.chunk_grid");
+//$$         context.waitFor(client -> app.config().fullmapChunkGrid != gridWasVisible, 20);
+//$$         clickLabeledWidget(context, "confluxmap.map.chunk_grid");
+//$$         context.waitFor(client -> app.config().fullmapChunkGrid == gridWasVisible, 20);
 //$$         clickLabeledWidget(context, "confluxmap.map.loaded_range");
 //$$         var overlay = context.computeOnClient(client -> (MapLoadedRangeOverlay) field(map, "loadedRange"));
 //$$         context.waitFor(client -> field(overlay, "coverage") instanceof ChunkLoadCoverage coverage
@@ -468,6 +474,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$         } finally {
 //$$             context.getInput().releaseMouse(left);
 //$$         }
+//$$         clickLabeledWidget(context, "confluxmap.map.tools.view");
 //$$         clickLabeledWidget(context, "confluxmap.map.loaded_range");
 //$$         context.waitFor(client -> !app.config().fullscreenLoadedRangeVisible
 //$$             && field(overlay, "coverage") == null, 100);
