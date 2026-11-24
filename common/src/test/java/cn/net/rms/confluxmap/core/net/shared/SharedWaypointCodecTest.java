@@ -501,6 +501,16 @@ class SharedWaypointCodecTest {
             () -> SharedWaypointCodec.encode(new SnapshotS2C(1L, false, List.of(), tooMany)));
     }
 
+    @Test
+    void temporaryWaypointsAreNeverEncoded() {
+        final CreateC2S temporary = new CreateC2S(
+            OPERATION_ID, 41L, "Temp", DimensionId.OVERWORLD, 1.0, 64.0, 2.0,
+            0xFF12AB34, Waypoint.Type.TEMPORARY
+        );
+
+        assertThrows(SharedWaypointProtocolException.class, () -> SharedWaypointCodec.encode(temporary));
+    }
+
     private static SharedWaypointMessage roundTrip(final SharedWaypointMessage message)
         throws SharedWaypointProtocolException {
         return decodeFor(message, SharedWaypointCodec.encode(message));
