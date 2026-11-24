@@ -73,12 +73,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private final DimensionId dimensionId;
     private final Waypoint.Type type;
     private final long createdAtEpochMs;
-    private final double initialX;
-    private final double initialY;
-    private final double initialZ;
-    private final String initialName;
     private final String initialGroup;
-    private final int initialColor;
     private final boolean initialVisible;
     private final CreateTarget createTarget;
     private final SharedWaypointClient sharedWaypoints;
@@ -151,11 +146,6 @@ public final class WaypointEditScreen extends ConfluxScreen {
         this.dimensionId = dimensionId;
         this.type = type;
         this.createdAtEpochMs = createdAtEpochMs;
-        this.initialName = name;
-        this.initialX = x;
-        this.initialY = y;
-        this.initialZ = z;
-        this.initialColor = color;
         this.initialGroup = group == null ? WaypointSet.DEFAULT_NAME : group;
         this.initialVisible = visible;
         this.crossDimensionVisible = crossDimensionVisible;

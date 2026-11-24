@@ -217,7 +217,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     /** Blocks-per-pixel threshold below which every marker's name shows continuously, not just on hover (deliverable C). */
     private static final double NAME_LABEL_MAX_SCALE = 2.0;
     private static final double HOVER_RADIUS_PX = 6.0;
-    private static final double DEFAULT_CREATE_Y = 64.0;
     /** Cursor travel between left-press and left-release below which a hovered marker click edits it, not pans (see {@link #mouseReleased}). */
     static final double CLICK_DRAG_TOLERANCE_PX = 4.0;
     /** Radar markers are ~12px across; cull with enough margin that one straddling the edge doesn't pop. */
@@ -308,8 +307,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private MapIconButton mapExportButton;
     private MapIconButton mapImportButton;
     MapIconButton clientWorldButton;
-    private ButtonWidget worldSelectorButton;
-    private ButtonWidget dimensionSelectorButton;
     private int waypointControlsBottom;
     ServerPlayerRadarState.PlayerView hoveredRadarPlayer;
     final Map<ButtonWidget, String> annotationTooltips = new LinkedHashMap<>();

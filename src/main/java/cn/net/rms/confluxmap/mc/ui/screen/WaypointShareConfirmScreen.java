@@ -110,8 +110,8 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
         this.sharedWaypoints = ConfluxMapClient.get().sharedWaypoints();
         // Chat sharing previews the exact outgoing messages, so name truncation, coordinate
         // flooring and Xaero color snapping are visible before anything is sent.
-        String conflux = null;
-        String xaero = null;
+        String conflux;
+        String xaero;
         try {
             conflux = WaypointChatCodec.format(
                 this.waypoint.name, this.waypoint.dimensionId,

@@ -65,7 +65,6 @@ final class StructureSearchScreen extends ConfluxScreen {
     private final Map<Identifier, ButtonWidget> biomeLocateButtons = new HashMap<>();
 
     private TextFieldWidget searchField;
-    private ButtonWidget modeButton;
     private ButtonWidget masterButton;
     private MapSearchMode mode;
     private String observedQuery = "";
@@ -129,7 +128,7 @@ final class StructureSearchScreen extends ConfluxScreen {
         panelContentWidth = requiredPanelContentWidth();
         final SplitMapLayout layout = splitLayout();
         final int modeWidth = Math.min(160, layout.panelContentWidth());
-        modeButton = addDrawableChild(Widgets.button(
+        addDrawableChild(Widgets.button(
             layout.panelCenterX() - modeWidth / 2,
             MODE_TOP,
             modeWidth,

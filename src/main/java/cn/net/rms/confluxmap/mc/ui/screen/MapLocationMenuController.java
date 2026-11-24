@@ -80,7 +80,6 @@ final class MapLocationMenuController {
     /** The menu's current buttons, so the reveal frame fades them with the panel. */
     private final List<ButtonWidget> menuButtons = new ArrayList<>();
     private ButtonWidget setWaypointLocationButton;
-    private ButtonWidget editWaypointLocationButton;
     private ButtonWidget shareLocationButton;
     private ButtonWidget teleportLocationButton;
     private String teleportLocationUnavailableKey;
@@ -127,7 +126,6 @@ final class MapLocationMenuController {
 
     void clearButtons() {
         setWaypointLocationButton = null;
-        editWaypointLocationButton = null;
         shareLocationButton = null;
         teleportLocationButton = null;
         teleportLocationUnavailableKey = null;
@@ -193,11 +191,10 @@ final class MapLocationMenuController {
             button.active = spec.active();
             switch (spec.action()) {
                 case SET_WAYPOINT -> setWaypointLocationButton = button;
-                case EDIT_WAYPOINT -> editWaypointLocationButton = button;
                 case SHARE_LOCATION -> shareLocationButton = button;
                 case TELEPORT -> teleportLocationButton = button;
-                case DELETE_WAYPOINT, SHARE_WAYPOINT, HIGHLIGHT, HIGHLIGHT_WAYPOINT, CLEAR_HIGHLIGHT,
-                     HIGHLIGHT_PLAYER, CLEAR_PLAYER_HIGHLIGHT, LOOT -> {
+                case EDIT_WAYPOINT, DELETE_WAYPOINT, SHARE_WAYPOINT, HIGHLIGHT, HIGHLIGHT_WAYPOINT,
+                     CLEAR_HIGHLIGHT, HIGHLIGHT_PLAYER, CLEAR_PLAYER_HIGHLIGHT, LOOT -> {
                 }
             }
         }
