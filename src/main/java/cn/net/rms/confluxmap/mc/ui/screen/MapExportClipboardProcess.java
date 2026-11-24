@@ -27,35 +27,36 @@ final class MapExportClipboardProcess {
             .redirectErrorStream(true)
             .start();
         final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        final BufferedReader output = new BufferedReader(new InputStreamReader(
+        try (BufferedReader output = new BufferedReader(new InputStreamReader(
             process.getInputStream(), StandardCharsets.UTF_8
-        ));
-        String detail = null;
-        while (System.nanoTime() < deadline) {
-            while (output.ready()) {
-                final String line = output.readLine();
-                if (READY.equals(line)) {
-                    return;
-                }
-                if (line != null && !line.isBlank()) {
-                    detail = line;
-                }
-            }
-            if (!process.isAlive()) {
-                String line;
-                while ((line = output.readLine()) != null) {
-                    if (!line.isBlank()) {
+        ))) {
+            String detail = null;
+            while (System.nanoTime() < deadline) {
+                while (output.ready()) {
+                    final String line = output.readLine();
+                    if (READY.equals(line)) {
+                        return;
+                    }
+                    if (line != null && !line.isBlank()) {
                         detail = line;
                     }
                 }
-                throw new IOException(detail == null || detail.isBlank()
-                    ? "clipboard helper exited with " + process.exitValue()
-                    : detail);
+                if (!process.isAlive()) {
+                    String line;
+                    while ((line = output.readLine()) != null) {
+                        if (!line.isBlank()) {
+                            detail = line;
+                        }
+                    }
+                    throw new IOException(detail == null || detail.isBlank()
+                        ? "clipboard helper exited with " + process.exitValue()
+                        : detail);
+                }
+                TimeUnit.MILLISECONDS.sleep(25);
             }
-            TimeUnit.MILLISECONDS.sleep(25);
+            process.destroy();
+            throw new IOException("clipboard helper timed out");
         }
-        process.destroy();
-        throw new IOException("clipboard helper timed out");
     }
 
     private static List<String> helperCommand(final Path image) throws IOException {
