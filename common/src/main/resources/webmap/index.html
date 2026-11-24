@@ -25,6 +25,13 @@
         <option value="zh-CN">简体中文</option>
       </select>
     </label>
+    <label id="server-switch" hidden>
+      <span data-i18n="switchServer">Switch server</span> <select id="server"></select>
+    </label>
+    <label id="server-game-mode-option" hidden>
+      <input type="checkbox" id="show-server-game-mode" checked>
+      <span data-i18n="showServerGameMode">Show game mode</span>
+    </label>
     <span id="status" role="status" data-i18n="connecting">Connecting…</span>
   </section>
   <aside id="entity-panel" class="entity-panel" aria-label="Players and waypoints" data-i18n-aria-label="entityPanel">
@@ -43,6 +50,7 @@
     <div id="waypoint-list" class="waypoint-list" aria-live="polite"></div>
   </aside>
   <output id="scale-label" class="scale-label" data-i18n="scale">Scale: 0.50x</output>
+  <output id="center-coordinates" class="center-coordinates"></output>
   <script src="/vendor/leaflet.js"></script>
   <script type="module" src="/app.js"></script>
 </body>

@@ -36,6 +36,7 @@ final class FabricWebMapBackend implements WebMapBackend {
     private final MinecraftServer server;
     private final ConfluxMapCompanion companion;
     private final WebMapManifest manifest;
+    private volatile String defaultGameMode;
     private volatile WebMapSnapshot snapshot = WebMapSnapshot.EMPTY;
     private volatile Map<UUID, URI> skinUrls = Map.of();
     private final WebAvatarCache avatars = new WebAvatarCache();
@@ -45,6 +46,7 @@ final class FabricWebMapBackend implements WebMapBackend {
     FabricWebMapBackend(final MinecraftServer server, final ConfluxMapCompanion companion) {
         this.server = server;
         this.companion = companion;
+        this.defaultGameMode = readDefaultGameMode();
         features=new cn.net.rms.confluxmap.server.web.WebMapFeatures(companion.config().webMap,
             companion.webMapImageDirectory(companion.worldIds().get(server).toString()), id -> companion.sharedWaypointsEnabled() && companion.sharedWaypoints().snapshot().waypoints().stream().anyMatch(w -> w.id().equals(id)),
             companion::saveWebMapConfig, server::execute,
@@ -171,7 +173,21 @@ final class FabricWebMapBackend implements WebMapBackend {
     private static String serverName(String motd,String fallback){String name=motd==null?"":motd.replaceAll("§.","").replaceAll("[\\p{Cc}\\p{Cf}]"," ").strip();if(name.isBlank())return fallback;return name.codePointCount(0,name.length())>80?name.substring(0,name.offsetByCodePoints(0,80)):name;}
     void gameChat(ServerPlayerEntity player,String text){if(!companion.config().webMap.enableChat||!companion.config().webMap.showGameChat)return;features.gameChat(player.getUuid(),player.getName().getString(),text,skin(player));}
 
+    @Override
+    public String defaultGameMode() {
+        return defaultGameMode;
+    }
+
+    private String readDefaultGameMode() {
+        //#if MC>=260100
+        //$$ return server.getDefaultGameType().name();
+        //#else
+        return server.getDefaultGameMode().name();
+        //#endif
+    }
+
     void updatePlayers() {
+        defaultGameMode = readDefaultGameMode();
         final List<WebPlayerSnapshot.Player> result = new ArrayList<>();
         final Map<UUID, URI> currentSkins = new HashMap<>();
         if (companion.config().webMap.sharePlayers) {

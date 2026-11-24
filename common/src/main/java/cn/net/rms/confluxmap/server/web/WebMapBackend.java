@@ -11,6 +11,8 @@ import java.util.function.Consumer;
 public interface WebMapBackend {
     WebMapManifest manifest();
 
+    default String defaultGameMode() { return null; }
+
     default WebMapFeatures features() { return null; }
 
     void requestTiles(

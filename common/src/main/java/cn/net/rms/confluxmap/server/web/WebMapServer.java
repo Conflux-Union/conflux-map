@@ -79,7 +79,8 @@ public final class WebMapServer implements AutoCloseable {
         WebMapServer local=start(internal, backend, directory);
         try {
             local.gateway=new WebMapGateway(config, UUID.fromString(backend.manifest().presentation().serverInstanceId()),
-                local.transport.getListeningPort(), internal.gatewayToken, () -> backend.manifest().presentation().serverDisplayName());
+                local.transport.getListeningPort(), internal.gatewayToken,
+                () -> backend.manifest().presentation().serverDisplayName(), backend::defaultGameMode);
             local.publicUri=URI.create("http://"+displayHost(config.bindAddress)+":"+config.port+"/");
             return local;
         } catch(IOException | RuntimeException e) {local.close();throw e;}

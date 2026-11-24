@@ -23,6 +23,7 @@ const language = document.querySelector('#language');
 const playerList = document.querySelector('#player-list');
 const playerCount = document.querySelector('#player-count');
 const scaleLabel = document.querySelector('#scale-label');
+const centerCoordinates = document.querySelector('#center-coordinates');
 let messages = {
   connecting: 'Connecting…',
   loadError: 'Map loading failed',
@@ -48,7 +49,7 @@ language.addEventListener('change', () => {
   localStorage.setItem('conflux-map-locale', language.value);
   location.reload();
 });
-await chooseServer();
+const hasServerSwitcher = await chooseServer(message);
 const manifest = await fetch(apiPath('/api/v1/manifest'), {cache: 'no-store'}).then(response => {
   if (!response.ok) throw new Error(`manifest ${response.status}`);
   return response.json();
@@ -84,6 +85,7 @@ const map = L.map('map', {
 map.attributionControl.addAttribution('Conflux Map · Leaflet');
 localizeZoomControl();
 updateScaleLabel();
+updateCenterCoordinates();
 
 const playerMarkers = new Map();
 const waypointMarkers = new Map();
@@ -186,6 +188,7 @@ map.on('moveend zoomend', () => {
   scheduleVisibleTileSync();
 });
 map.on('zoom', updateScaleLabel);
+map.on('move', updateCenterCoordinates);
 layer.on('tileunload', event => {
   event.tile.cancelPrediction?.();
   event.tile.disposed = true;
@@ -463,6 +466,7 @@ function connectMapSocket() {
       }, 25000);
       status.classList.remove('error');
       status.textContent = messages.connected;
+      status.hidden = Boolean(hasServerSwitcher);
       scheduleSubscription();
       scheduleVisibleTileSync();
     },
@@ -970,6 +974,11 @@ function updateScaleLabel() {
     scale: formatZoomMultiplier(map.getZoom())
   });
 }
+function updateCenterCoordinates() {
+  const {lat, lng} = map.getCenter();
+  const label = message('centerCoordinates', {x: Math.floor(lng), z: Math.floor(-lat)});
+  if (centerCoordinates.textContent !== label) centerCoordinates.textContent = label;
+}
 function syncModeAvailability() {
   const selected = manifest.dimensions.find(item => item.index === Number(dimension.value));
   const all = mode.querySelector('[value="all"]');
@@ -977,6 +986,7 @@ function syncModeAvailability() {
   if (all.disabled) mode.value = 'generated';
 }
 function showLoadError() {
+  status.hidden = false;
   status.textContent = message('loadError');
   status.classList.add('error');
 }

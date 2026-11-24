@@ -32,6 +32,7 @@ final class PaperWebMapBackend implements WebMapBackend {
     private final ConfluxMapPaperPlugin plugin;
     private final PaperCompanion companion;
     private final WebMapManifest manifest;
+    private volatile String defaultGameMode;
     private volatile WebMapSnapshot snapshot = WebMapSnapshot.EMPTY;
     private volatile Map<UUID, URI> skinUrls = Map.of();
     private final WebAvatarCache avatars = new WebAvatarCache();
@@ -41,6 +42,7 @@ final class PaperWebMapBackend implements WebMapBackend {
     PaperWebMapBackend(final ConfluxMapPaperPlugin plugin, final PaperCompanion companion) {
         this.plugin = plugin;
         this.companion = companion;
+        this.defaultGameMode = Bukkit.getDefaultGameMode().name();
         features=new cn.net.rms.confluxmap.server.web.WebMapFeatures(companion.config().webMap,
             companion.webMapImageDirectory(companion.worldId().toString()), id -> companion.sharedWaypointsEnabled() && companion.sharedWaypoints().snapshot().waypoints().stream().anyMatch(w -> w.id().equals(id)),
             companion::saveWebMapConfig, task -> Bukkit.getScheduler().runTask(plugin,task),
@@ -161,7 +163,13 @@ final class PaperWebMapBackend implements WebMapBackend {
         features.gameChat(player.getUniqueId(),player.getName(),text,skin);
     }
 
+    @Override
+    public String defaultGameMode() {
+        return defaultGameMode;
+    }
+
     void updatePlayers() {
+        defaultGameMode = Bukkit.getDefaultGameMode().name();
         final List<WebPlayerSnapshot.Player> result = new ArrayList<>();
         final Map<UUID, URI> currentSkins = new HashMap<>();
         if (companion.config().webMap.sharePlayers) {

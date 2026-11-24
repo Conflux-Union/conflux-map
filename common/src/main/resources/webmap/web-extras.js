@@ -5,7 +5,7 @@ export function apiPath(path, id = selectedServer) {
   if (!id) return path;
   return `${path}${path.includes('?') ? '&' : '?'}serverId=${encodeURIComponent(id)}`;
 }
-export async function chooseServer() {
+export async function chooseServer(message) {
   try {
     const r = await fetch('/api/v1/servers', { cache: 'no-store' });
     if (!r.ok) return;
@@ -18,44 +18,55 @@ export async function chooseServer() {
       location.replace(url);
       return new Promise(() => {});
     }
-    const select = document.createElement('select');
-    select.setAttribute('aria-label', 'Server');
-    for (const s of servers) {
-      const o = document.createElement('option');
-      o.value = s.id;
-      o.textContent = s.name;
-      select.append(o);
+    const select = document.querySelector('#server');
+    const showGameMode = document.querySelector('#show-server-game-mode');
+    const preference = 'conflux-map-show-server-game-mode';
+    showGameMode.checked = localStorage.getItem(preference) !== 'false';
+    let knownServers = servers;
+    let lastActive = active;
+    function renderOptions() {
+      select.replaceChildren();
+      const online = knownServers.some(server => server.id === lastActive.id);
+      const rows = online ? knownServers : [...knownServers, lastActive];
+      for (const server of rows) {
+        const option = document.createElement('option');
+        option.value = server.id;
+        const mode = server.gameMode;
+        const suffix = showGameMode.checked && ['SURVIVAL', 'CREATIVE', 'ADVENTURE', 'SPECTATOR'].includes(mode)
+          ? '•' + message('gameMode_' + mode) : '';
+        const title = server.name + suffix;
+        option.textContent = !online && server.id === lastActive.id
+          ? message('serverOffline', {server: title}) : title;
+        select.append(option);
+      }
+      select.value = lastActive.id;
     }
-    select.value = active.id;
+    renderOptions();
+    document.querySelector('#server-switch').hidden = false;
+    document.querySelector('#server-game-mode-option').hidden = false;
+    showGameMode.addEventListener('change', () => {
+      localStorage.setItem(preference, String(showGameMode.checked));
+      renderOptions();
+    });
     select.addEventListener('change', () => {
       const url = new URL(location.href);
       url.searchParams.set('serverId', select.value);
       location.assign(url);
     });
-    document.querySelector('.controls').append(select);
     setInterval(async () => {
       try {
-        const next = await fetch('/api/v1/servers', { cache: 'no-store' }).then(
-          (r) => r.json()
-        );
+        const response = await fetch('/api/v1/servers', { cache: 'no-store' });
+        if (!response.ok) return;
+        const next = await response.json();
         if (!Array.isArray(next)) return;
-        const old = select.value;
-        select.replaceChildren();
-        for (const s of next) {
-          const o = document.createElement('option');
-          o.value = s.id;
-          o.textContent = s.name;
-          select.append(o);
-        }
-        if (!next.some((s) => s.id === old)) {
-          const o = document.createElement('option');
-          o.value = old;
-          o.textContent = active.name + ' (offline)';
-          select.append(o);
-        }
-        select.value = old;
-      } catch {}
+        knownServers = next;
+        lastActive = next.find(server => server.id === lastActive.id) ?? lastActive;
+        renderOptions();
+      } catch {
+        // Keep the last available list during a temporary gateway interruption.
+      }
     }, 5000);
+    return true;
   } catch {}
 }
 export function installWebExtras({

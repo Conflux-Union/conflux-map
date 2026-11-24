@@ -12,13 +12,13 @@ import java.util.function.Supplier;
 
 /** Same-user, same-host registry and elected HTTP/WS relay. Only loopback agents are routable. */
 public final class WebMapGateway implements AutoCloseable {
-    private record Agent(UUID id, int port, String name, long expires, String token) {}
+    private record Agent(UUID id, int port, String name, String gameMode, long expires, String token) {}
 
     private final Path dir, own;
     private final UUID id;
     private final int port, localPort;
     private final String host, token;
-    private final Supplier<String> name;
+    private final Supplier<String> name, gameMode;
     private final ScheduledExecutorService heartbeat =
             Executors.newSingleThreadScheduledExecutor(r -> daemon(r, "webmap-election"));
     private final ExecutorService workers =
@@ -32,12 +32,14 @@ public final class WebMapGateway implements AutoCloseable {
     private volatile ServerSocket listener;
 
     public WebMapGateway(
-            WebMapConfig cfg, UUID id, int localPort, String token, Supplier<String> name)
+            WebMapConfig cfg, UUID id, int localPort, String token, Supplier<String> name,
+            Supplier<String> gameMode)
             throws IOException {
         this.id = id;
         this.port = cfg.port;
         this.localPort = localPort;
         this.name = name;
+        this.gameMode = gameMode;
         this.host = cfg.bindAddress;
         this.token = token;
         slots = new Semaphore(Math.max(32, cfg.maxConnections * 4));
@@ -98,6 +100,8 @@ public final class WebMapGateway implements AutoCloseable {
         p.setProperty("id", id.toString());
         p.setProperty("port", Integer.toString(localPort));
         p.setProperty("name", name.get());
+        final String mode = gameMode.get();
+        if (mode != null) p.setProperty("gameMode", mode);
         p.setProperty("expires", Long.toString(System.currentTimeMillis() + 8000));
         p.setProperty("token", token);
         Path tmp = Files.createTempFile(dir, "agent-", ".tmp");
@@ -160,7 +164,8 @@ public final class WebMapGateway implements AutoCloseable {
                             || ex > now + 16000) continue;
                     String auth = p.getProperty("token", "");
                     if (!auth.matches("[A-Za-z0-9_-]{43}")) continue;
-                    list.add(new Agent(aid, ap, p.getProperty("name", "Server"), ex, auth));
+                    list.add(new Agent(aid, ap, p.getProperty("name", "Server"),
+                        p.getProperty("gameMode"), ex, auth));
                 } catch (Exception ignored) {
                 }
             }
@@ -278,8 +283,10 @@ public final class WebMapGateway implements AutoCloseable {
         List<Agent> agents = agents();
         if (target.getPath().equals("/api/v1/servers")) {
             StringJoiner json = new StringJoiner(",", "[", "]");
-            for (Agent a : agents)
-                json.add("{\"id\":" + quote(a.id.toString()) + ",\"name\":" + quote(a.name) + "}");
+            for (Agent a : agents) {
+                String mode = a.gameMode == null ? "" : ",\"gameMode\":" + quote(a.gameMode);
+                json.add("{\"id\":" + quote(a.id.toString()) + ",\"name\":" + quote(a.name) + mode + "}");
+            }
             response(client, 200, "OK", "application/json; charset=utf-8", json.toString());
             return;
         }

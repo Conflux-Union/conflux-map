@@ -357,6 +357,7 @@ final class WebMapServerTest {
         }
         final FakeBackend first = new FakeBackend();
         final FakeBackend second = new FakeBackend();
+        second.gameMode = "CREATIVE";
         final String query = "?serverId=" + second.instanceId;
         final MapViewReqC2S request = new MapViewReqC2S(
             93, 0, 2, List.of(new MapViewReqC2S.TileReq(-3, 4, Long.MIN_VALUE))
@@ -374,7 +375,9 @@ final class WebMapServerTest {
             );
             assertEquals(200, servers.statusCode());
             assertTrue(servers.body().contains(first.instanceId.toString()));
-            assertTrue(servers.body().contains(second.instanceId.toString()));
+            assertTrue(servers.body().contains("\"id\":\"" + second.instanceId
+                + "\",\"name\":\"Test server\",\"gameMode\":\"CREATIVE\""));
+            assertTrue(servers.body().contains("\"id\":\"" + first.instanceId + "\",\"name\":\"Test server\"}"));
             final HttpResponse<String> manifest = client.send(
                 HttpRequest.newBuilder(gateway.uri("/api/v1/manifest" + query)).GET().build(),
                 HttpResponse.BodyHandlers.ofString()
@@ -434,6 +437,13 @@ final class WebMapServerTest {
     }
 
     private static final class FakeBackend implements WebMapBackend {
+        private String gameMode;
+
+        @Override
+        public String defaultGameMode() {
+            return gameMode;
+        }
+
         final UUID instanceId = UUID.randomUUID();
         final AtomicReference<MapViewReqC2S> tileRequest = new AtomicReference<>();
         final AtomicReference<MapRegionSyncSubscribeC2S> subscription = new AtomicReference<>();
