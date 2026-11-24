@@ -899,7 +899,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         if (crossDimensionYField != null) {
             // The field keeps its slot so the options row stays symmetric when the toggle is
             // off; it just stops being editable. active alone does not stop older
-            // TextFieldWidget input handling - setEditable does (see IntSliderInput.setActive).
+            // TextFieldWidget input handling - setEditable does (see SliderInput.setActive).
             crossDimensionYField.active = crossDimensionVisible;
             crossDimensionYField.setEditable(crossDimensionVisible);
         }

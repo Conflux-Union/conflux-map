@@ -1,50 +1,46 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.compat.Widgets;
-import java.util.function.IntConsumer;
-import java.util.function.IntFunction;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
-/** A slider and raw integer field backed by one range-checked value. */
-final class IntSliderInput {
-    private static final Pattern INTEGER_TEXT = Pattern.compile("[+-]?\\d*");
+/** A slider and raw text field kept in step by one range-checked {@link SliderValue}. */
+final class SliderInput<T> {
     private static final int CONTROL_GAP = 4;
     private static final int MIN_INPUT_WIDTH = 40;
     private static final int MAX_INPUT_WIDTH = 56;
-    private static final int MAX_INTEGER_LENGTH = 11;
 
-    private final IntSliderValue value;
-    private final IntConsumer setter;
+    private final SliderValue<T> value;
+    private final Consumer<T> setter;
+    private final Pattern textPattern;
     private final ValueSlider slider;
     private final TextFieldWidget input;
     private String lastAcceptedText;
     private boolean synchronizingInput;
 
-    IntSliderInput(
+    SliderInput(
         final TextRenderer textRenderer,
         final int x,
         final int y,
         final int width,
         final int height,
-        final int min,
-        final int max,
-        final int initialValue,
-        final IntConsumer setter,
-        final IntFunction<Text> message
+        final SliderValue<T> value,
+        final Pattern textPattern,
+        final int maxLength,
+        final Consumer<T> setter,
+        final Function<T, Text> message
     ) {
-        this.value = new IntSliderValue(min, max, initialValue);
+        this.value = value;
         this.setter = setter;
+        this.textPattern = textPattern;
 
-        final int preferredInputWidth = Math.min(
-            MAX_INPUT_WIDTH,
-            Math.max(MIN_INPUT_WIDTH, width / 4)
-        );
-        final int inputWidth = Math.min(preferredInputWidth, Math.max(1, width - CONTROL_GAP - 1));
-        final int sliderWidth = Math.max(1, width - CONTROL_GAP - inputWidth);
+        final int inputWidth = inputWidth(width);
+        final int sliderWidth = sliderWidth(width);
         this.slider = new ValueSlider(x, y, sliderWidth, height, message);
         this.input = new TextFieldWidget(
             textRenderer,
@@ -54,10 +50,22 @@ final class IntSliderInput {
             height,
             message.apply(this.value.value())
         );
-        this.input.setMaxLength(MAX_INTEGER_LENGTH);
+        this.input.setMaxLength(maxLength);
         this.lastAcceptedText = this.value.text();
         Widgets.setText(this.input, this.lastAcceptedText);
         Widgets.setChangedListener(this.input, this::onInputChanged);
+    }
+
+    static int inputWidth(final int width) {
+        final int preferredInputWidth = Math.min(
+            MAX_INPUT_WIDTH,
+            Math.max(MIN_INPUT_WIDTH, width / 4)
+        );
+        return Math.min(preferredInputWidth, Math.max(1, width - CONTROL_GAP - 1));
+    }
+
+    static int sliderWidth(final int width) {
+        return Math.max(1, width - CONTROL_GAP - inputWidth(width));
     }
 
     ClickableWidget slider() {
@@ -86,7 +94,7 @@ final class IntSliderInput {
         if (synchronizingInput) {
             return;
         }
-        if (!INTEGER_TEXT.matcher(text).matches()) {
+        if (!textPattern.matcher(text).matches()) {
             replaceInputText(lastAcceptedText);
             return;
         }
@@ -108,37 +116,37 @@ final class IntSliderInput {
     }
 
     private final class ValueSlider extends RevealedSlider {
-        private final IntFunction<Text> message;
+        private final Function<T, Text> message;
 
         private ValueSlider(
             final int x,
             final int y,
             final int width,
             final int height,
-            final IntFunction<Text> message
+            final Function<T, Text> message
         ) {
-            super(x, y, width, height, IntSliderInput.this.value.position());
+            super(x, y, width, height, SliderInput.this.value.position());
             this.message = message;
             updateMessage();
         }
 
         private void syncFromValue() {
-            this.value = IntSliderInput.this.value.position();
+            this.value = SliderInput.this.value.position();
             updateMessage();
         }
 
         @Override
         protected void updateMessage() {
             if (message != null) {
-                setMessage(message.apply(IntSliderInput.this.value.value()));
+                setMessage(message.apply(SliderInput.this.value.value()));
             }
         }
 
         @Override
         protected void applyValue() {
-            IntSliderInput.this.value.updateFromPosition(value);
-            setter.accept(IntSliderInput.this.value.value());
-            replaceInputText(IntSliderInput.this.value.text());
+            SliderInput.this.value.updateFromPosition(value);
+            setter.accept(SliderInput.this.value.value());
+            replaceInputText(SliderInput.this.value.text());
         }
     }
 }

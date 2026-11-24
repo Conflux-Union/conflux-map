@@ -15,7 +15,7 @@ public final class AnnotationEraserSettingsScreen extends ConfluxScreen {
 
     private final Screen parent;
     private final ConfluxConfig config;
-    private IntSliderInput eraserSizeInput;
+    private SliderInput<Integer> eraserSizeInput;
 
     public AnnotationEraserSettingsScreen(final Screen parent, final ConfluxConfig config) {
         super(Texts.translatable("confluxmap.screen.annotation.eraser.title"));
@@ -32,15 +32,19 @@ public final class AnnotationEraserSettingsScreen extends ConfluxScreen {
     protected void init() {
         final int controlWidth = Math.min(CONTROL_WIDTH, width - 24);
         final int left = width / 2 - controlWidth / 2;
-        eraserSizeInput = new IntSliderInput(
+        eraserSizeInput = new SliderInput<>(
             this.textRenderer,
             left,
             70,
             controlWidth,
             20,
-            ConfluxConfig.MIN_ANNOTATION_ERASER_SIZE,
-            ConfluxConfig.MAX_ANNOTATION_ERASER_SIZE,
-            config.annotationEraserSize,
+            new IntSliderValue(
+                ConfluxConfig.MIN_ANNOTATION_ERASER_SIZE,
+                ConfluxConfig.MAX_ANNOTATION_ERASER_SIZE,
+                config.annotationEraserSize
+            ),
+            IntSliderValue.INTEGER_TEXT,
+            IntSliderValue.MAX_TEXT_LENGTH,
             value -> {
                 config.annotationEraserSize = value;
                 ConfluxMapClient.get().configIo().save(config);
