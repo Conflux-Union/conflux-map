@@ -3,15 +3,13 @@ package cn.net.rms.confluxmap.mixin;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.GuiTransforms;
-import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.config.HudAmbient;
 import cn.net.rms.confluxmap.core.config.HudAvoidanceLayout;
 import cn.net.rms.confluxmap.core.config.HudTransform;
-import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
 import cn.net.rms.confluxmap.core.config.MinimapPlacement;
+import cn.net.rms.confluxmap.mc.ui.hud.MinimapHudGuards;
 import cn.net.rms.confluxmap.mc.ui.hud.VanillaStatusEffectLayout;
-import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 //#if MC>=12100
 //$$ import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 //$$ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
@@ -298,26 +296,12 @@ public abstract class StatusEffectHudMixin {
         final int screenWidth,
         final int screenHeight
     ) {
+        if (!MinimapHudGuards.avoidanceActive()) {
+            return 0f;
+        }
         final ConfluxMapClient app = ConfluxMapClient.get();
         final MinecraftClient client = MinecraftClient.getInstance();
-        if (app == null || client.player == null) {
-            return 0f;
-        }
         final ConfluxConfig config = app.config();
-        if (!config.minimapHudAvoidance) {
-            return 0f;
-        }
-        final var screen = MinecraftAccess.screen(client);
-        if (!MinimapHudVisibility.shouldRender(
-            config.minimapEnabled && app.companionSession().minimapAllowed(),
-            app.gameBridge().session().active(),
-            screen instanceof FullscreenMapScreen,
-            MinecraftAccess.isContainerScreen(screen),
-            MinecraftAccess.isFullDebugOverlayVisible(client),
-            MinecraftAccess.isHudHidden(client)
-        )) {
-            return 0f;
-        }
 
         int beneficialCount = 0;
         int harmfulCount = 0;
