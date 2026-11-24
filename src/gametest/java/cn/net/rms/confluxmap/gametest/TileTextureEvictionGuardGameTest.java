@@ -121,7 +121,9 @@ package cn.net.rms.confluxmap.gametest;
 //$$         resetCache(context, client, textures, defaultLimit);
 //$$         openMap(context);
 //$$         final Set<TileKey> wideVisible = visibleKeys(prediction);
-//$$         final boolean cFull = awaitCacheFull(context, textures, defaultLimit);
+//$$         // Wait for the full post-reset rebuild: on slow software-GL machines a premature
+//$$         // start blames the eviction guard for tiles the uploader has not produced yet.
+//$$         final boolean cFull = awaitFullResidency(context, wideVisible, textures);
 //$$         final Sample c = sample(context, wideVisible, textures);
 //$$         assertPhase("C default limit over", c, wideVisible, textures, cFull, defaultLimit);
 //$$         closeMap(context);
