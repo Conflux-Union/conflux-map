@@ -1,6 +1,5 @@
 package cn.net.rms.confluxmap.core.waypoint.list;
 
-import java.util.Objects;
 import java.util.UUID;
 
 /**

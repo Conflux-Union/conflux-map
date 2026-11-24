@@ -3,7 +3,6 @@ package cn.net.rms.confluxmap.core.predict;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 

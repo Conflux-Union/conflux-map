@@ -9,7 +9,6 @@ import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SampleSource;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
-import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.core.store.MapWorld;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.store.RegionColumns;

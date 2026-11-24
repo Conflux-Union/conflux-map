@@ -1,7 +1,6 @@
 package cn.net.rms.confluxmap.core.export;
 
 import cn.net.rms.confluxmap.core.annotation.Annotation;
-import cn.net.rms.confluxmap.core.annotation.AnnotationBounds;
 import cn.net.rms.confluxmap.core.annotation.AnnotationGeometry;
 import cn.net.rms.confluxmap.core.annotation.AnnotationPoint;
 import cn.net.rms.confluxmap.core.annotation.AnnotationStyle;

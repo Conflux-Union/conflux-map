@@ -30,7 +30,6 @@ import cn.net.rms.confluxmap.server.RegionPatchBuilder;
 import cn.net.rms.confluxmap.server.ServerConfig;
 import cn.net.rms.confluxmap.server.SyncPerformanceMonitor;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;

@@ -1,7 +1,6 @@
 package cn.net.rms.confluxmap.core.api;
 
 import cn.net.rms.confluxmap.api.SharedWaypointApi;
-import cn.net.rms.confluxmap.api.WaypointApi.WaypointType;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import java.util.ArrayList;

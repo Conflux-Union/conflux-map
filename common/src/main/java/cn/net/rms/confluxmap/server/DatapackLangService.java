@@ -2,7 +2,6 @@ package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.core.net.Proto;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.io.IOException;
 import java.io.InputStreamReader;

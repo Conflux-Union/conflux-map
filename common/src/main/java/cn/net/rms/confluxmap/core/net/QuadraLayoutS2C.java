@@ -1,6 +1,5 @@
 package cn.net.rms.confluxmap.core.net;
 
-import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.core.predict.QuadrantLayout;
 import java.util.List;
 

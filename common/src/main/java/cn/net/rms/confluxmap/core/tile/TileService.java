@@ -29,7 +29,6 @@ import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.ChunkViewport;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
