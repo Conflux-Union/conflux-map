@@ -375,8 +375,14 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$                 throw new AssertionError("Map toolbar buttons are not vertically aligned");
 //$$             }
 //$$         });
+//$$         context.takeScreenshot("map-before-coordinate-jump");
 //$$         clickLabeledWidget(context, "confluxmap.map.coordinate_jump");
 //$$         context.waitForScreen(MapCoordinateJumpScreen.class);
+//$$         context.runOnClient(client -> {
+//$$             if (!(boolean) field(map, "openAnnounced")) {
+//$$                 throw new AssertionError("Opening the coordinate dialog closed the world map");
+//$$             }
+//$$         });
 //$$         context.runOnClient(client -> {
 //$$             var jump = MinecraftAccess.screen(client);
 //$$             var x = (net.minecraft.client.gui.components.EditBox) field(jump, "xField");

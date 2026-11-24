@@ -322,6 +322,7 @@ public abstract class ConfluxScreen extends Screen {
     //$$     final float tickDelta
     //$$ ) {
     //$$     final GuiDraw draw = GuiDraw.of(context);
+    //$$     renderBackdrop(draw, tickDelta);
     //$$     final boolean revealFrame = beginRevealFrame(draw);
     //$$     try {
     //$$         renderContents(draw, mouseX, mouseY, tickDelta);
@@ -350,7 +351,7 @@ public abstract class ConfluxScreen extends Screen {
     //$$     final int mouseY,
     //$$     final float tickDelta
     //$$ ) {
-    //$$     if (!renderingVanillaWidgets) {
+    //$$     if (!renderingVanillaWidgets && usesVanillaBackground()) {
     //$$         renderVanillaBackground(context, mouseX, mouseY, tickDelta);
     //$$     }
     //$$ }
@@ -372,6 +373,7 @@ public abstract class ConfluxScreen extends Screen {
     //$$     final float tickDelta
     //$$ ) {
     //$$     final GuiDraw draw = GuiDraw.of(context);
+    //$$     renderBackdrop(draw, tickDelta);
     //$$     final boolean revealFrame = beginRevealFrame(draw);
     //$$     try {
     //$$         renderContents(draw, mouseX, mouseY, tickDelta);
@@ -400,7 +402,7 @@ public abstract class ConfluxScreen extends Screen {
     //$$     final int mouseY,
     //$$     final float tickDelta
     //$$ ) {
-    //$$     if (!renderingVanillaWidgets) {
+    //$$     if (!renderingVanillaWidgets && usesVanillaBackground()) {
     //$$         renderVanillaBackground(context, mouseX, mouseY, tickDelta);
     //$$     }
     //$$ }
@@ -416,7 +418,7 @@ public abstract class ConfluxScreen extends Screen {
     //#else
     //$$ @Override
     //$$ public final void renderBackground(final DrawContext context) {
-    //$$     if (!renderingVanillaWidgets) {
+    //$$     if (!renderingVanillaWidgets && usesVanillaBackground()) {
     //$$         renderVanillaBackground(context);
     //$$     }
     //$$ }
@@ -434,6 +436,7 @@ public abstract class ConfluxScreen extends Screen {
         final float tickDelta
     ) {
         final GuiDraw draw = GuiDraw.of(matrices);
+        renderBackdrop(draw, tickDelta);
         final boolean revealFrame = beginRevealFrame(draw);
         try {
             renderContents(draw, mouseX, mouseY, tickDelta);
@@ -448,6 +451,13 @@ public abstract class ConfluxScreen extends Screen {
         }
     }
     //#endif
+
+    /** Draws a stable background before the foreground reveal transform is applied. */
+    protected void renderBackdrop(final GuiDraw draw, final float tickDelta) {}
+
+    protected boolean usesVanillaBackground() {
+        return true;
+    }
 
     protected abstract void renderContents(GuiDraw draw, int mouseX, int mouseY, float tickDelta);
 

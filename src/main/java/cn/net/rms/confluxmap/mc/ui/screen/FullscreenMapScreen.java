@@ -336,6 +336,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     final MapLoadStateOverlay loadStateOverlay;
     private final MapLoadedRangeOverlay loadedRange = new MapLoadedRangeOverlay(this);
     private MapIconButton coordinateJumpButton;
+    private MapCoordinateJumpScreen coordinateJump;
     private final MapInfoLabels infoLabels;
     private SharedWaypointAvailability sharedAvailability;
     private MapIconButton viewGroupButton;
@@ -603,7 +604,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final String jumpKey = "confluxmap.map.coordinate_jump";
         coordinateJumpButton = addDrawableChild(new MapIconButton(
             vertical ? x : x - CONTROL_SIZE - CONTROL_GAP, y, MAP_COORDINATE_JUMP_ICON, Texts.translatable(jumpKey),
-            button -> MinecraftAccess.setScreen(MinecraftClient.getInstance(), new MapCoordinateJumpScreen(this))
+            button -> openCoordinateJump()
         ));
         setHoverTooltip(coordinateJumpButton, jumpKey);
 
@@ -619,6 +620,35 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         range.setSelected(config.fullscreenLoadedRangeVisible);
         setHoverTooltip(range, config.fullscreenLoadedRangeVisible
             ? "confluxmap.map.loaded_range.on" : "confluxmap.map.loaded_range.off");
+    }
+
+    private void openCoordinateJump() {
+        coordinateJump = new MapCoordinateJumpScreen(this);
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), coordinateJump);
+    }
+
+    void renderCoordinateJumpBackdrop(final GuiDraw draw, final int width, final int height, final float tickDelta) {
+        final int previousWidth = this.width;
+        final int previousHeight = this.height;
+        this.width = width;
+        this.height = height;
+        try {
+            renderContents(draw, -1, -1, tickDelta);
+        } finally {
+            this.width = previousWidth;
+            this.height = previousHeight;
+        }
+    }
+
+    void coordinateJumpRemoved(final MapCoordinateJumpScreen dialog, final boolean returnedToMap) {
+        if (coordinateJump != dialog) {
+            return;
+        }
+        coordinateJump = null;
+        if (!returnedToMap) {
+            releaseMapView();
+            detachMapScreen();
+        }
     }
 
     void jumpToCoordinates(final int blockX, final int blockZ) {
@@ -1203,6 +1233,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     @Override
     public void removed() {
+        if (coordinateJump == null) {
+            detachMapScreen();
+        }
+        super.removed();
+    }
+
+    private void detachMapScreen() {
         screenshotOverlay.clear();
         waypointPhotoOverlay.clear();
         waypointHover.clear();
@@ -1217,7 +1254,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 api.fireFullscreenMapClosed(gameBridge.session().dimension());
             }
         }
-        super.removed();
     }
 
     @Override

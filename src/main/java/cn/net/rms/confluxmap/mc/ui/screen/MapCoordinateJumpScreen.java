@@ -1,8 +1,10 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 
@@ -18,6 +20,7 @@ final class MapCoordinateJumpScreen extends ConfluxScreen {
     private int panelLeft;
     private int fieldWidth;
     private boolean valid;
+    private boolean returnedToMap;
 
     MapCoordinateJumpScreen(final FullscreenMapScreen parent) {
         super(Texts.translatable("confluxmap.map.coordinate_jump"));
@@ -79,7 +82,20 @@ final class MapCoordinateJumpScreen extends ConfluxScreen {
     }
 
     @Override
+    protected boolean usesVanillaBackground() {
+        return false;
+    }
+
+    @Override
+    protected void renderBackdrop(final GuiDraw draw, final float tickDelta) {
+        parent.renderCoordinateJumpBackdrop(draw, width, height, tickDelta);
+        draw.fillPopup(0, 0, width, height, 0x35000000);
+    }
+
+    @Override
     protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float delta) {
+        draw.fillPopup(panelLeft - 10, panelTop - 9, width - panelLeft + 10,
+            panelTop + 100, 0xF023272B);
         drawCentered(draw, getTitle().getString(), width / 2, panelTop, 0xFFFFFFFF);
         drawCentered(draw, "X", panelLeft + fieldWidth / 2, panelTop + 19, 0xFFFFFFFF);
         drawCentered(draw, "Z", panelLeft + fieldWidth + GAP + fieldWidth / 2, panelTop + 19, 0xFFFFFFFF);
@@ -103,6 +119,13 @@ final class MapCoordinateJumpScreen extends ConfluxScreen {
 
     @Override
     public void onClose() {
-        requestClose(parent);
+        returnedToMap = true;
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+    }
+
+    @Override
+    public void removed() {
+        parent.coordinateJumpRemoved(this, returnedToMap);
+        super.removed();
     }
 }
