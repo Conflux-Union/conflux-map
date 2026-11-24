@@ -25,7 +25,8 @@
       "cn.net.rms.confluxmap.gametest.HudAvoidanceClientGameTest",
       "cn.net.rms.confluxmap.gametest.PredictionE2EClientGameTest",
       "cn.net.rms.confluxmap.gametest.SurfaceCarpetClientGameTest",
-      "cn.net.rms.confluxmap.gametest.XaeroAuthoritativeParityClientGameTest"
+      "cn.net.rms.confluxmap.gametest.XaeroAuthoritativeParityClientGameTest",
+      "cn.net.rms.confluxmap.gametest.TileTextureEvictionGuardGameTest"
     ]
   },
   "depends": {
