@@ -10,7 +10,7 @@
  *
  * Build (same source list as bench_legacy.c, plus the web predictor):
  *   zig cc -O2 -Inative/jni -Inative/cubiomes native/cubiomes/... \
- *       native/test_web_legacy.c -lm -o build/bin/test_web_legacy
+ *       native/test/test_web_legacy.c -lm -o build/bin/test_web_legacy
  */
 #define _GNU_SOURCE
 #include <stdio.h>

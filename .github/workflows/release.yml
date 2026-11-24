@@ -43,7 +43,7 @@ jobs:
         .github/**
         .gitignore
         README.md
-        README-CN.md
+        README_CN.md
         THIRD_PARTY_NOTICES.md
         docs/**
         native/README.md
@@ -59,9 +59,11 @@ jobs:
         versions/**/gradle.properties
     secrets:
       mimo-api-key: ${{ secrets.MIMO_API_KEY }}
+  # The build branch runs beside Generate-Changelog: no build reads the
+  # changelog, and every publishing job waits for both branches.
   Get-Versions:
     runs-on: ubuntu-24.04
-    needs: Generate-Changelog
+    needs: Validate-Release
     outputs:
       versions: ${{ steps.Get_Versions.outputs.versions }}
       latest: ${{ steps.Get_Versions.outputs.latest }}
@@ -167,7 +169,7 @@ jobs:
   Publish-Modrinth-Matrix:
     if: vars.ENABLE_MODRINTH == 'true'
     runs-on: ubuntu-24.04
-    needs: [ Build-Matrix, Get-Versions ]
+    needs: [ Build-Matrix, Get-Versions, Generate-Changelog ]
     strategy:
       matrix:
         minecraft_version: ${{ fromJson(needs.Get-Versions.outputs.versions) }}
@@ -252,7 +254,7 @@ jobs:
   Publish-CurseForge-Matrix:
     if: vars.ENABLE_CURSEFORGE == 'true'
     runs-on: ubuntu-24.04
-    needs: [ Build-Matrix, Get-Versions ]
+    needs: [ Build-Matrix, Get-Versions, Generate-Changelog ]
     strategy:
       fail-fast: false
       matrix:
@@ -336,7 +338,7 @@ jobs:
   Publish-Paper-Modrinth:
     if: vars.ENABLE_MODRINTH == 'true'
     runs-on: ubuntu-24.04
-    needs: [ Build-Paper, Get-Versions ]
+    needs: [ Build-Paper, Get-Versions, Generate-Changelog ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -395,7 +397,7 @@ jobs:
           # runtime dependency (plugin.yml declares none).
   Github-Release:
     runs-on: ubuntu-24.04
-    needs: [ Build-Matrix, Build-Paper, Get-Versions ]
+    needs: [ Build-Matrix, Build-Paper, Get-Versions, Generate-Changelog ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5

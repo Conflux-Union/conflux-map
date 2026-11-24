@@ -20,15 +20,15 @@ that wants to serve correction data.
 
 ## Contents
 
-1. [Common framing rules](#1-common-framing-rules)
+1. [Common framing rules](#1-Common-framing-rules)
 2. [`map_sync`: handshake and policy](#2-map_sync-handshake-and-policy)
 3. [`map_sync`: client feature restrictions](#3-map_sync-client-feature-restrictions)
 4. [`map_sync`: negotiation, capabilities, radar](#4-map_sync-negotiation-capabilities-radar)
 5. [`map_sync`: message reference](#5-map_sync-message-reference)
 6. [`waypoints_v1`: session and versioning](#6-waypoints_v1-session-and-versioning)
 7. [`waypoints_v1`: message reference](#7-waypoints_v1-message-reference)
-8. [Versioning and compatibility](#8-versioning-and-compatibility)
-9. [Implementing a third-party server](#9-implementing-a-third-party-server)
+8. [Versioning and compatibility](#8-Versioning-and-compatibility)
+9. [Implementing a third-party server](#9-Implementing-a-third-party-server)
 
 ## 1. Common framing rules
 
@@ -97,7 +97,7 @@ u8 × M  capabilityId, capabilityVersion
 ```
 
 A third-party server can **ignore the entire advertisement** and still deliver policy and
-restrictions (see [§9](#9-implementing-a-third-party-server)). Parsing it is only needed to
+restrictions (see [§9](#9-Implementing-a-third-party-server)). Parsing it is only needed to
 select correction profiles or to advertise capabilities (e.g. radar positions).
 
 ### 2.2 Server reply order
@@ -117,7 +117,7 @@ The companion replies to HELLO with this sequence; only the last frame is mandat
 
 Frames sent **before** `0x02` are decoded without capability checks. Once `0x02` arrives the
 client session is ACTIVE and every capability-gated frame (see
-[§4.2](#42-capability-gating)) must be covered by the negotiated selection, or the client
+[§4.2](#42-Capability-gating)) must be covered by the negotiated selection, or the client
 rejects it. A silent server (no `0x02` within 100 ticks) is treated as "no companion":
 the client keeps working with local features only, but **restrictions already delivered are
 still enforced** — `0x19` sent before the timeout binds even if no policy ever follows.
@@ -214,7 +214,7 @@ Delivery rules:
   precedent.
 - Client support is **not advertised** in HELLO. Clients older than the restriction release
   silently drop the frame; you cannot detect this at handshake. Plan deployments
-  accordingly (see [§8.3](#83-client-release-support)).
+  accordingly (see [§8.3](#83-Client-release-support)).
 
 Related restriction bits that predate `0x19` and live in the policy flags byte
 (`0x02`/`0x05`): `entityRadarForbidden` (`0x10`), `biomeMapForbidden` (`0x04`),
@@ -302,7 +302,7 @@ by the client after the session activates:
 Important: a server that replies **without any selection frame** leaves the client on the
 legacy capability set, which excludes `SERVER_VIEW_DISTANCE`, `SERVER_INSTANCE`,
 `PLAYER_POSITIONS`, and `QUADRA_LAYOUT`. To deliver radar positions you **must** send `0x12`
-selecting capability 8 (see [§9.2](#92-serving-radar-positions)).
+selecting capability 8 (see [§9.2](#92-Serving-radar-positions)).
 
 ### 4.3 PLAYER_POSITIONS (0x14, S2C)
 

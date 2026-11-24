@@ -4,24 +4,23 @@ title: Waypoints
 
 # Waypoints
 
-- Names, colors, and sets; the list supports search, filtering, and batch
-  moving.
-- Each dimension records death points automatically: five by default,
-  adjustable from 0 to 50.
-- Waypoints appear in the world as beams, names, and distances; waypoints
-  outside the view are indicated at the screen edge, with a configurable
-  distance limit.
-- Overworld and Nether waypoints are shown in both dimensions using the 1:8
-  portal coordinate ratio by default, which can be disabled in settings; End
-  waypoints are shown only in the End.
-- On a server whose sub-worlds share one seed, waypoints from those
-  same-seed worlds can be shown in every sub-world. This is off by default
-  and enabled with the "Show Same-Seed World Waypoints" setting.
-- Coordinates shared in chat can be previewed in both Conflux Map and Xaero
-  formats before sending, and coordinates shared by other players can be
-  imported with one click.
-- Waypoints can be imported from Xaero's Minimap and VoxelMap with one
-  click; duplicates are skipped and the original files remain unchanged.
+Waypoints mark important coordinates in the world and on the map. Press `B` to create one at your current position, `U` to open the list, or `J` to toggle local waypoints.
+
+## Core Features
+
+- **Sets & Management**: Names, colors, and sets; the list supports search, filtering, and batch moving.
+- **Death Points**: Automatically recorded per dimension (5 by default, adjustable from `0` to `50`).
+- **In-World Rendering**: Shown as beams, labels, and distances in the world; off-screen waypoints appear as screen-edge indicators with a configurable distance limit.
+
+## Cross-Dimension & Same-Seed Sharing
+
+- **Overworld ↔ Nether 1:8 Ratio**: Overworld and Nether waypoints are shown in both dimensions using the `1:8` portal coordinate ratio by default (configurable in settings); End waypoints appear only in the End.
+- **Same-Seed Worlds**: On servers with multiple sub-worlds sharing one seed, enable "Show Same-Seed World Waypoints" in settings to display waypoints across those worlds (off by default).
+
+## Sharing & One-Click Migration
+
+- **Chat Coordinate Sharing**: Preview coordinates in both Conflux Map and Xaero formats before sending, and import coordinates shared by other players in one click (no server companion required).
+- **One-Click Import**: Import waypoints from **Xaero's Minimap** and **VoxelMap** in one click; duplicates are skipped and original files remain untouched.
 
 ## Waypoint enhancements (26.3)
 
@@ -31,5 +30,6 @@ For a saved waypoint, open **Notes & Tags → Photos** to import or drag in PNG/
 
 Legacy halfmasa CM settings and list memory are imported once from `config/halfmasa`, preserving the original files and subsequent native preferences. Disable halfmasa's CM extension master switch before using the port to avoid duplicate handling.
 
-See also: [Shared waypoints](shared-waypoints.md),
-[Portal markers](portal-markers.md), [Keybinds](../reference/keybinds.md)
+---
+
+See also: [Shared waypoints](shared-waypoints.md) · [Portal markers](portal-markers.md) · [Keybinds](../reference/keybinds.md)

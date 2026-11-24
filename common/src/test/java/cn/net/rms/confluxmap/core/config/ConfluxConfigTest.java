@@ -110,13 +110,16 @@ final class ConfluxConfigTest {
     }
 
     @Test
-    void predictionBackendDefaultsToGpuSurvivesCopyAndNormalizesNull() {
+    void predictionBackendDefaultsToAutoSurvivesCopyAndNormalizesNull() {
         final ConfluxConfig config = new ConfluxConfig();
-        assertEquals(PredictionBackend.GPU, config.predictionBackend);
+        assertEquals(PredictionBackend.AUTO, config.predictionBackend);
 
         config.predictionBackend = null;
         config.normalize();
-        assertEquals(PredictionBackend.GPU, config.predictionBackend);
+        assertEquals(PredictionBackend.AUTO, config.predictionBackend);
+
+        config.predictionBackend = PredictionBackend.GPU;
+        assertEquals(PredictionBackend.GPU, config.copy().predictionBackend);
 
         config.predictionBackend = PredictionBackend.CPU;
         assertEquals(PredictionBackend.CPU, config.copy().predictionBackend);
@@ -333,6 +336,16 @@ final class ConfluxConfigTest {
         config.unsupportedPlatformWarningDismissed = true;
 
         assertTrue(config.copy().unsupportedPlatformWarningDismissed);
+    }
+
+    @Test
+    void communityInviteDismissalSurvivesConfigCopy() {
+        final ConfluxConfig config = new ConfluxConfig();
+        assertFalse(config.communityInviteDismissed);
+
+        config.communityInviteDismissed = true;
+
+        assertTrue(config.copy().communityInviteDismissed);
     }
 
     @Test

@@ -132,8 +132,9 @@ object so single, batch, and nearest queries all use the same check. Chunk-origi
 marker coordinates remain unchanged. The 1.17 air-height versus modern
 support-height sea-level boundary is handled explicitly.
 
-The standalone references in [native/reference](../../native/reference/README.md)
-examined five seeds and 1,024 attempts per seed for each of four versions:
+The standalone vanilla oracle references (untracked local tools under
+`tools/nether-fossil-reference`) examined five seeds and 1,024 attempts per seed
+for each of four versions:
 20,480 validity decisions. All matched the repaired native implementation.
 For 1.17.1, validity uses vanilla columns and biomes plus its transcribed landing
 loop; the other versions invoke vanilla's actual generation-point/supplier method.

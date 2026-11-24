@@ -1,4 +1,4 @@
-# Vanilla references; regenerate with native/reference.
+# Vanilla references; regenerate with the untracked oracle tools in tools/nether-fossil-reference.
 ## Each row: version,seed,1024 validity bits (low bit first in each hex digit).
 ## Regions [-16,15] on each axis, Z outer loop, X inner loop.
 1.17.1,146008555,000004fd000004a2000003e1000009d10020c6a00018f35000f8934000cc4620000a4431000a9c93000aa9a000001171000146d0000941100000850000120300003e05400040c0c00080f2600004e7200000670000000300000000000000000000000000000000000000000000000000000060000000b0000000700000044900

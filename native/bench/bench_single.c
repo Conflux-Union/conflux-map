@@ -1,3 +1,7 @@
+/* Single-core per-LOD solve-time benchmark for the 1.18+ overview path
+ * (benchNative). Fixed seed, 512x512 region, strides 1/2/4/8/16; each LOD
+ * reports strict single-thread ms plus an FNV checksum over poisoned output
+ * buffers. Pin the process to P-cores (taskset) before comparing numbers. */
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>

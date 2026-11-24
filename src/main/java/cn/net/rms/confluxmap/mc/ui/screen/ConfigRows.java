@@ -820,7 +820,13 @@ final class ConfigRows {
                     () -> config.predictionBackend,
                     v -> {
                         config.predictionBackend = v;
-                        GpuBackend.configure(v);
+                        // AUTO stores as the user's choice but configures the engine with the
+                        // resolved verdict, and a switch to AUTO starts the benchmark if this
+                        // process has not run it yet.
+                        GpuBackend.configure(GpuBackend.resolved(v));
+                        if (v == PredictionBackend.AUTO) {
+                            ConfluxMapClient.get().ensureAutoBenchmark();
+                        }
                     }, ConfigValueLabels::predictionBackendKey,
                     true, null
                 );

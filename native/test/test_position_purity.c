@@ -1,3 +1,10 @@
+/* Position purity harness (testNativePurity / testNativePuritySmoke).
+ *
+ * Asserts that cfxOverviewHeightsImpl output is bit-identical for the same
+ * world cells regardless of tile geometry (clean 512x512 grid vs the
+ * production 258x258 window vs an off-phase origin), then prints stride
+ * 1/2/4/16 accuracy stats (MAE, <=2/<=4-block rates) against the exact
+ * cubiomes heights for a few seeds and positions. */
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>

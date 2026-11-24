@@ -24,7 +24,7 @@ jobs:
         .github/**
         .gitignore
         README.md
-        README-CN.md
+        README_CN.md
         THIRD_PARTY_NOTICES.md
         docs/**
         native/README.md

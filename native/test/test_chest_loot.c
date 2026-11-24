@@ -1,3 +1,9 @@
+/* Chest-loot harness (testNativeChestLoot).
+ *
+ * Pins the cubiomes fork's loot library: the fork's outpost known-answer
+ * case (Fortune I book), then a per-structure-type smoke matrix over
+ * MC 1.21.9 / 1.17 that rolls every loot table reachable from structure
+ * pieces and counts rollable vs unrollable chests. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

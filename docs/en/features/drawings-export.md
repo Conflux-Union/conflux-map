@@ -2,31 +2,34 @@
 title: Drawings & export
 ---
 
-# Drawing and export
+# Drawings & export
 
-- Lines, shapes, freehand paths, and text labels can be drawn on the map.
-  Finished drawings can be selected, moved, recolored, and deleted, with
-  undo and redo. Drawings are kept with the world and can also be displayed
-  on the minimap.
-- The measure tool places points with left-click and shows the length of
-  every segment plus the running total; right-click or Ctrl+Z removes the
-  last point, and points are kept per dimension until undone.
-- Dragging with the right button on the fullscreen map selects a region
-  snapped to chunk borders and labels its size in chunks and blocks at the
-  center; the selection stays highlighted until the next input anywhere on
-  the map.
-- Any area can be exported as a PNG at a chosen resolution by entering two
-  corner coordinates or selecting a rectangle on the map. The export runs in
-  the background with a size estimate, progress display, and cancellation,
-  and the result can be copied to the clipboard or opened in its output
-  directory.
-- Terrain data recorded by Xaero's World Map can be imported into the map:
-  open the map screen's action tools and pick the import entry. Conflux Map
-  reads the explored terrain from that installation's own data files, one
-  dimension at a time, and merges it into the local map cache wherever no
-  own capture exists yet, so previously explored terrain shows up even
-  without the server companion. Re-importing never overwrites terrain
-  captured by Conflux Map itself, and revisiting an imported area live
-  replaces the imported copy.
+The fullscreen world map includes built-in annotation tools, a measure tool, region PNG export, and one-click Xaero map data migration.
 
-See also: [World map](world-map.md), [Waypoints](waypoints.md)
+## Map Drawings
+
+- Draw **lines, shapes, freehand paths, and text labels** directly on the map.
+- Select, move, recolor, and delete finished drawings with undo and redo support.
+- Drawings are saved per world and can also be shown on the minimap.
+
+## Measure Tool
+
+- Left-click to place points and view both segment lengths and the running total.
+- Right-click or press `Ctrl+Z` to remove the last point; points are kept per dimension until all are undone.
+
+## Region Selection & PNG Export
+
+- **Chunk-Aligned Selection**: Drag with the **right mouse button** on the fullscreen map to select a region snapped to chunk borders, with chunk and block counts labeled at the center.
+- **Background PNG Export**: Export any area at a chosen resolution by entering corner coordinates or using the current selection. Exports run in the background with size estimates, progress, cancellation, and buttons to **copy to clipboard** or **open the output directory**.
+
+## One-Click Xaero Map Data Migration
+
+Open the fullscreen map's action tools and choose the import entry to merge data recorded by **Xaero's World Map**:
+
+- Reads explored map data per dimension from Xaero's files and merges it into the local cache **only where Conflux Map has no capture yet**.
+- Previously explored areas become visible even without the server companion.
+- Re-importing never overwrites terrain captured by Conflux Map itself, and revisiting an area live replaces the imported copy.
+
+---
+
+See also: [World map](world-map.md) · [Waypoints](waypoints.md)

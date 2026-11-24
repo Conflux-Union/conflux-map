@@ -27,8 +27,9 @@ import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 
 /**
- * Render-thread-only cache of {@link TileKey} to GPU texture, an LRU capped at
- * {@link ConfluxConfig#gpuTileCacheLimit}. Pulls finished compositions off
+ * Render-thread-only cache of {@link TileKey} to GPU texture, an LRU whose cap at
+ * {@link ConfluxConfig#gpuTileCacheLimit} never evicts a tile a recent frame drew (see
+ * {@link #evictOverLimit}). Pulls finished compositions off
  * {@link TileService}'s upload queue and writes their pixels into a
  * {@link NativeImageBackedTexture}; {@link NativeImages} normalizes the version-specific
  * native pixel representation to the core's ARGB colors.
@@ -47,6 +48,12 @@ public final class TileTextureManager {
     /** Full-tile pixel rewrites are ~0.2ms each; 4 keeps a worst-case 256-tile sweep near a second. */
     private static final int RELIGHTS_PER_FRAME = 4;
     private static final int TILE_SIZE = 256;
+    /**
+     * Ceiling on the eviction guard's growth: 2048 tiles = 512 MiB, the largest
+     * {@link ConfluxConfig#gpuTileCacheLimit} accepts. Only a drawn set larger than this - very
+     * wide GUIs on the finest tiers - evicts drawn tiles again.
+     */
+    private static final int HARD_CACHE_LIMIT = 2048;
 
     private final ConfluxConfig config;
     private final TileService tiles;
@@ -54,6 +61,15 @@ public final class TileTextureManager {
     private final DaylightModel daylightModel;
     /** Access-order so the least-recently-bound tile is always first (LRU eviction). */
     private final LinkedHashMap<TileKey, TileTexture> textures = new LinkedHashMap<>(64, 0.75f, true);
+    /**
+     * Keys bound by a draw this frame and last frame, across every bind path (fullscreen real,
+     * predicted, minimap, fallbacks): eviction skips them, so the cap limits tiles nothing is
+     * looking at.
+     */
+    private final Set<TileKey> drawnThisFrame = new HashSet<>();
+    private final Set<TileKey> drawnLastFrame = new HashSet<>();
+    /** Set once per hard-cap excursion so the warning can't spam every frame. */
+    private boolean hardCapLogged;
 
     /**
      * A cached tile texture plus the lightmap state its pixels currently embody: {@code appliedDaylight}
@@ -87,6 +103,11 @@ public final class TileTextureManager {
     /** Render thread: drains a handful of freshly-composed tiles and uploads them to the GPU. */
     public void beginFrame() {
         assert RenderSystem.isOnRenderThread() : "TileTextureManager.beginFrame() must run on the render thread";
+        // Roll the draw sets forward: whether beginFrame lands before or after this frame's
+        // binds, eviction guards everything either frame drew.
+        drawnLastFrame.clear();
+        drawnLastFrame.addAll(drawnThisFrame);
+        drawnThisFrame.clear();
         final List<TileUpdate> updates = tiles.drainUploads(UPLOADS_PER_FRAME);
         for (final TileUpdate update : updates) {
             upload(update);
@@ -110,6 +131,9 @@ public final class TileTextureManager {
             entry = new TileTexture(new NativeImageBackedTexture(TILE_SIZE, TILE_SIZE, false));
             //#endif
             textures.put(update.key(), entry);
+            // Guard the fresh texture against same-frame eviction; tiles nothing draws lose
+            // the guard on the next frame's roll.
+            drawnThisFrame.add(update.key());
             if (!PredictedTileKeys.isPredicted(update.key())) {
                 tiles.retainTile(update.key());
             }
@@ -262,16 +286,52 @@ public final class TileTextureManager {
         //#endif
     }
 
+    /**
+     * Tiles a draw bound this frame or last frame are pinned against eviction: dropping a
+     * visible tile makes the next frame request it again, and once the drawn set alone exceeds
+     * the limit, that request-upload-evict cycle blinks tiles on a static map. Eviction
+     * therefore falls on tiles nothing drew - preload-ring entries, minimap leftovers - and
+     * only when every resident tile was drawn recently does the cache grow past the limit
+     * instead, up to {@link #HARD_CACHE_LIMIT}, beyond which the oldest tiles are evicted
+     * regardless of drawing to keep the VRAM use bounded.
+     */
     private void evictOverLimit() {
         final int limit = config.gpuTileCacheLimit;
-        final Iterator<Map.Entry<TileKey, TileTexture>> it = textures.entrySet().iterator();
-        while (textures.size() > limit && it.hasNext()) {
+        int over = textures.size() - limit;
+        if (over <= 0) {
+            return;
+        }
+        Iterator<Map.Entry<TileKey, TileTexture>> it = textures.entrySet().iterator();
+        while (over > 0 && it.hasNext()) {
             final Map.Entry<TileKey, TileTexture> oldest = it.next();
+            if (drawnThisFrame.contains(oldest.getKey()) || drawnLastFrame.contains(oldest.getKey())) {
+                continue;
+            }
             it.remove();
             oldest.getValue().texture.close();
             // Nothing holds this tile's pixels any more, so the composer must stop refreshing it
             // and go back to composing it in full when bind() next asks for it.
             tiles.forgetTile(oldest.getKey());
+            over--;
+        }
+        if (over > 0 && textures.size() > HARD_CACHE_LIMIT) {
+            if (!hardCapLogged) {
+                hardCapLogged = true;
+                ConfluxMapMod.LOGGER.warn(
+                    "TileTextureManager: {} drawn tiles exceed the {}-tile hard cache cap, evicting"
+                        + " drawn tiles again - raise gpuTileCacheLimit or lower the map quality",
+                    textures.size(), HARD_CACHE_LIMIT
+                );
+            }
+            over = textures.size() - HARD_CACHE_LIMIT;
+            it = textures.entrySet().iterator();
+            while (over > 0 && it.hasNext()) {
+                final Map.Entry<TileKey, TileTexture> oldest = it.next();
+                it.remove();
+                oldest.getValue().texture.close();
+                tiles.forgetTile(oldest.getKey());
+                over--;
+            }
         }
     }
 
@@ -350,6 +410,7 @@ public final class TileTextureManager {
         if (entry == null) {
             return false;
         }
+        drawnThisFrame.add(key);
         //#if MC>=12108
         //$$ TextureBinds.bindTexture(entry.texture.getGlTextureView());
         //#elseif MC>=12105
@@ -368,6 +429,9 @@ public final class TileTextureManager {
             tiles.forgetTile(entry.getKey());
         }
         textures.clear();
+        drawnThisFrame.clear();
+        drawnLastFrame.clear();
+        hardCapLogged = false;
         ConfluxMapMod.LOGGER.debug("TileTextureManager: released all tile textures");
     }
 
@@ -387,6 +451,8 @@ public final class TileTextureManager {
         if (released > 0) {
             ConfluxMapMod.LOGGER.info("TileTextureManager: released {} predicted tile textures", released);
         }
+        drawnThisFrame.clear();
+        drawnLastFrame.clear();
     }
 
     /** Test-support only: snapshot of the keys with a resident GPU texture (monitor-guarded). */

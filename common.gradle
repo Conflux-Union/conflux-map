@@ -345,6 +345,9 @@ tasks.named('processGametestResources') {
     def clientTests = mcVersion >= 12104 && project.hasProperty('waypointSmoke')
         ? [mcVersion >= 260100 ? 'cn.net.rms.confluxmap.mc.ui.screen.WaypointLibraryClientGameTest' : 'cn.net.rms.confluxmap.mc.ui.screen.WaypointPortClientGameTest']
         : ['cn.net.rms.confluxmap.gametest.ClientConnectionGameTest', 'cn.net.rms.confluxmap.gametest.HudAvoidanceClientGameTest', 'cn.net.rms.confluxmap.gametest.PredictionE2EClientGameTest', 'cn.net.rms.confluxmap.gametest.SurfaceCarpetClientGameTest', 'cn.net.rms.confluxmap.gametest.XaeroAuthoritativeParityClientGameTest']
+    if (mcVersion >= 12104 && !project.hasProperty('waypointSmoke')) {
+        clientTests.add('cn.net.rms.confluxmap.gametest.TileTextureEvictionGuardGameTest')
+    }
     inputs.property 'clientTestEntrypoints', clientTests
     def legacyClientTests = mcVersion < 12104 && project.hasProperty('legacyWaypointSmoke')
         ? ['cn.net.rms.confluxmap.mc.ui.screen.LegacyWaypointPortClientTest'] : []

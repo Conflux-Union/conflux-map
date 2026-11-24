@@ -414,9 +414,11 @@ public final class ConfluxConfig {
     /**
      * Engine for the predicted underlay: GPU uses the OpenCL executor when the machine has a
      * working device and silently serves the CPU reference otherwise; CPU never touches the
-     * GPU. Both backends produce the same baseline, so residual patches remain compatible.
+     * GPU; AUTO serves whichever side the one-time hardware benchmark measured faster (GPU
+     * while undecided). All backends produce the same baseline, so residual patches remain
+     * compatible.
      */
-    public PredictionBackend predictionBackend = PredictionBackend.GPU;
+    public PredictionBackend predictionBackend = PredictionBackend.AUTO;
     /**
      * Client-side opt-out for the companion handshake / correction sync. When false the client
      * skips HELLO_C2S and never sends MAP_VIEW_REQ; the predicted underlay still works in
@@ -461,6 +463,8 @@ public final class ConfluxConfig {
     public long surveyReminderNextPromptAtMillis = SurveyReminderSchedule.FIRST_DELAY_MILLIS;
     /** Permanent local opt-out selected through the survey reminder's chat action. */
     public boolean surveyReminderDismissed;
+    /** Permanent local opt-out selected through the community invitation's chat action. */
+    public boolean communityInviteDismissed;
 
     public ConfluxConfig copy() {
         final ConfluxConfig c = new ConfluxConfig();
@@ -589,6 +593,7 @@ public final class ConfluxConfig {
         c.surveyReminderGameOpenMillis = surveyReminderGameOpenMillis;
         c.surveyReminderNextPromptAtMillis = surveyReminderNextPromptAtMillis;
         c.surveyReminderDismissed = surveyReminderDismissed;
+        c.communityInviteDismissed = communityInviteDismissed;
         return c;
     }
 
@@ -763,7 +768,7 @@ public final class ConfluxConfig {
             radarDisplayMode = RadarDisplayMode.PORTRAITS;
         }
         if (predictionBackend == null) {
-            predictionBackend = PredictionBackend.GPU;
+            predictionBackend = PredictionBackend.AUTO;
         }
         if (sharedWaypointCrossDimensionVisibleIds == null) {
             sharedWaypointCrossDimensionVisibleIds = new LinkedHashSet<>();

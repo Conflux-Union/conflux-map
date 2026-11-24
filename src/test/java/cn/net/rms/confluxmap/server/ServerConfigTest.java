@@ -266,12 +266,12 @@ class ServerConfigTest {
     }
 
     @Test
-    void predictionBackendDefaultsToGpuAndNormalizesNull(@TempDir final Path tmp) throws IOException {
+    void predictionBackendDefaultsToAutoAndNormalizesNull(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("server.json");
         Files.createDirectories(file.getParent());
         Files.writeString(file, "{\"schemaVersion\":1,\"predictionBackend\":null}", StandardCharsets.UTF_8);
         final ServerConfig loaded = new ServerConfigIo(file, LOGGER).load();
-        assertEquals(PredictionBackend.GPU, loaded.predictionBackend);
+        assertEquals(PredictionBackend.AUTO, loaded.predictionBackend);
     }
 
     @Test
