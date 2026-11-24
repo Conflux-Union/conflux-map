@@ -1,14 +1,13 @@
 package cn.net.rms.confluxmap.nativepredict;
 
+import cn.net.rms.confluxmap.core.util.AtomicFiles;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParseException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.Optional;
 import org.apache.logging.log4j.Logger;
 
@@ -146,7 +145,7 @@ public final class GpuBenchmarkStore {
             return Optional.of(entry);
         } catch (final IOException | JsonParseException unreadable) {
             logger.warn("Benchmark cache {} unreadable ({}), quarantining", file, unreadable.toString());
-            quarantine();
+            AtomicFiles.quarantine(file, logger);
             return Optional.empty();
         }
     }
@@ -184,36 +183,13 @@ public final class GpuBenchmarkStore {
             return Optional.of(entry);
         } catch (final IOException | JsonParseException unreadable) {
             logger.warn("Benchmark cache {} unreadable ({}), quarantining", file, unreadable.toString());
-            quarantine();
+            AtomicFiles.quarantine(file, logger);
             return Optional.empty();
         }
     }
 
     /** Atomically writes the entry (tmp + move); a failed write logs and leaves the old file. */
     public void save(final Entry entry) {
-        try {
-            Files.createDirectories(file.getParent());
-            final Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-            Files.writeString(tmp, GSON.toJson(entry), StandardCharsets.UTF_8);
-            move(tmp);
-        } catch (final IOException e) {
-            logger.error("Failed to save benchmark cache to {}", file, e);
-        }
-    }
-
-    private void move(final Path tmp) throws IOException {
-        try {
-            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (final AtomicMoveNotSupportedException e) {
-            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    private void quarantine() {
-        try {
-            Files.move(file, file.resolveSibling(file.getFileName() + ".bad"), StandardCopyOption.REPLACE_EXISTING);
-        } catch (final IOException e) {
-            logger.warn("Could not quarantine {}", file, e);
-        }
+        AtomicFiles.writeStringAtomic(file, GSON.toJson(entry), logger, "Failed to save benchmark cache to {}");
     }
 }

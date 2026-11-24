@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.portal;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.util.AtomicFiles;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
@@ -11,10 +12,8 @@ import com.google.gson.reflect.TypeToken;
 import java.io.IOException;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -87,7 +86,7 @@ public final class PortalIo {
             return result;
         } catch (final IOException | RuntimeException e) {
             logger.warn("Portal file {} unreadable ({}), quarantining and starting empty", file, e.toString());
-            quarantine(file, logger);
+            AtomicFiles.quarantine(file, logger);
             return new LinkedHashMap<>();
         }
     }
@@ -128,7 +127,7 @@ public final class PortalIo {
         root.add("dimensions", dimensions);
         final Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
         Files.writeString(tmp, GSON.toJson(root), StandardCharsets.UTF_8);
-        move(tmp, file);
+        AtomicFiles.moveReplacing(tmp, file);
     }
 
     private static PortalMarker toMarker(final DimensionId dimension, final MarkerEntry entry) {
@@ -147,21 +146,5 @@ public final class PortalIo {
             throw new JsonParseException("portal file has no numeric schemaVersion");
         }
         return schema.getAsInt() > SCHEMA_VERSION;
-    }
-
-    private static void move(final Path tmp, final Path file) throws IOException {
-        try {
-            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (final AtomicMoveNotSupportedException e) {
-            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    private static void quarantine(final Path file, final Logger logger) {
-        try {
-            Files.move(file, file.resolveSibling(file.getFileName() + ".bad"), StandardCopyOption.REPLACE_EXISTING);
-        } catch (final IOException e) {
-            logger.warn("Could not quarantine {}", file, e);
-        }
     }
 }

@@ -1,14 +1,13 @@
 package cn.net.rms.confluxmap.core.config;
 
+import cn.net.rms.confluxmap.core.util.AtomicFiles;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParseException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import org.apache.logging.log4j.Logger;
 
 /**
@@ -46,7 +45,7 @@ public final class ConfigIo {
             return config;
         } catch (final IOException | JsonParseException e) {
             logger.warn("Config file {} unreadable ({}), quarantining and using defaults", file, e.toString());
-            quarantine();
+            AtomicFiles.quarantine(file, logger);
             final ConfluxConfig fresh = new ConfluxConfig();
             save(fresh);
             return fresh;
@@ -54,14 +53,7 @@ public final class ConfigIo {
     }
 
     public void save(final ConfluxConfig config) {
-        try {
-            Files.createDirectories(file.getParent());
-            final Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-            Files.writeString(tmp, GSON.toJson(config), StandardCharsets.UTF_8);
-            move(tmp);
-        } catch (final IOException e) {
-            logger.error("Failed to save config to {}", file, e);
-        }
+        AtomicFiles.writeStringAtomic(file, GSON.toJson(config), logger, "Failed to save config to {}");
     }
 
     /**
@@ -81,22 +73,6 @@ public final class ConfigIo {
         if (!GSON.toJson(config).equals(onDisk)) {
             logger.info("Updating config {} to the current schema (missing fields added)", file);
             save(config);
-        }
-    }
-
-    private void move(final Path tmp) throws IOException {
-        try {
-            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (final AtomicMoveNotSupportedException e) {
-            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    private void quarantine() {
-        try {
-            Files.move(file, file.resolveSibling(file.getFileName() + ".bad"), StandardCopyOption.REPLACE_EXISTING);
-        } catch (final IOException e) {
-            logger.warn("Could not quarantine {}", file, e);
         }
     }
 }
