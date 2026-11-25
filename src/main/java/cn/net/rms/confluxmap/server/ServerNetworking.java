@@ -27,6 +27,7 @@ import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.NegotiatedMapSync;
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.net.PolicyUpdateS2C;
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.net.PlayerPositionsS2C;
 import cn.net.rms.confluxmap.core.net.ServerInstanceS2C;
@@ -473,6 +474,18 @@ public final class ServerNetworking {
         }
     }
 
+    void broadcastSettings(final MinecraftServer server) {
+        final ServerConfig config = companion.config();
+        final HelloPolicyS2C.Flags flags = policyFlags(config);
+        final HelloPolicyS2C.Budgets budgets = CompanionPolicy.budgets(config);
+        for (final ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            final NegotiatedMapSync session = peerSession(player);
+            if (session != null) {
+                sendNegotiated(player, session, new PolicyUpdateS2C(compatibleFlags(flags, session), budgets));
+            }
+        }
+    }
+
     private HelloPolicyS2C buildPolicy(
         final MinecraftServer server,
         final NegotiatedMapSync session
@@ -481,12 +494,7 @@ public final class ServerNetworking {
         final HelloPolicyS2C.Flags configured = policyFlags(cfg);
         final HelloPolicyS2C.Flags flags = compatibleFlags(configured, session);
         final UUID worldId = companion.worldIds().get(server);
-        final HelloPolicyS2C.Budgets budgets = new HelloPolicyS2C.Budgets(
-            cfg.maxBytesPerSecondPerPlayer,
-            cfg.maxTilesPerRequest,
-            cfg.minRequestIntervalMs,
-            Proto.DEFAULT_MAX_PATCH_LOD
-        );
+        final HelloPolicyS2C.Budgets budgets = CompanionPolicy.budgets(cfg);
         final List<HelloPolicyS2C.DimDescriptor> dims = buildDimDescriptors(server, flags.seedGranted());
         return new HelloPolicyS2C(flags, worldId.toString(), WORLDGEN_VERSION, budgets, dims);
     }

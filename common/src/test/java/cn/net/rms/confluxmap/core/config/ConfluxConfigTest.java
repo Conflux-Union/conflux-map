@@ -47,17 +47,66 @@ final class ConfluxConfigTest {
     }
 
     @Test
-    void controlStyleDefaultsToAutoAndSurvivesCopyAndNormalize() {
-        final ConfluxConfig config = new ConfluxConfig();
-        assertEquals(ConfluxConfig.ControlStyle.AUTO, config.controlStyle);
+    void fullscreenPortalKindsAreIndependentAndCopied() {
+        var config = new ConfluxConfig();
+        config.fullscreenNetherPortalsVisible = false;
+        var copy = config.copy();
+        assertFalse(copy.fullscreenPortalIconVisible(cn.net.rms.confluxmap.core.portal.PortalKind.NETHER_PORTAL));
+        assertTrue(copy.fullscreenPortalIconVisible(cn.net.rms.confluxmap.core.portal.PortalKind.END_GATEWAY));
+        assertTrue(copy.fullscreenPortalIconVisible(cn.net.rms.confluxmap.core.portal.PortalKind.END_PORTAL));
+    }
 
-        config.controlStyle = ConfluxConfig.ControlStyle.CONFLUX;
+    @Test
+    void fullscreenLoadedRangePreferencesAreCopiedAndNormalized() {
+        final ConfluxConfig config = new ConfluxConfig();
+        assertFalse(config.fullscreenLoadedRangeVisible);
+        assertEquals(ConfluxConfig.LoadedRangeStyle.DIM, config.fullscreenLoadedRangeStyle);
+        assertEquals(50, config.fullscreenUnloadedBrightnessPercent);
+
+        config.fullscreenLoadedRangeVisible = true;
+        config.fullscreenLoadedRangeStyle = ConfluxConfig.LoadedRangeStyle.DASHED;
+        config.fullscreenUnloadedBrightnessPercent = 151;
         final ConfluxConfig copy = config.copy();
-        assertEquals(ConfluxConfig.ControlStyle.CONFLUX, copy.controlStyle);
+        copy.normalize();
+        assertTrue(copy.fullscreenLoadedRangeVisible);
+        assertEquals(ConfluxConfig.LoadedRangeStyle.DASHED, copy.fullscreenLoadedRangeStyle);
+        assertEquals(100, copy.fullscreenUnloadedBrightnessPercent);
+    }
+
+    @Test
+    void fullscreenZoomLimitsPreserveDefaultsAndClampEditedPercentages() {
+        final ConfluxConfig config = new ConfluxConfig();
+        assertEquals(16.0, config.clampFullscreenMapScale(100.0));
+        assertEquals(0.125, config.clampFullscreenMapScale(0.01));
+
+        config.fullscreenMinZoomPercent = 19;
+        config.fullscreenMaxZoomPercent = 201;
+        config.normalize();
+        final ConfluxConfig copy = config.copy();
+        assertEquals(20, copy.fullscreenMinZoomPercent);
+        assertEquals(200, copy.fullscreenMaxZoomPercent);
+        assertEquals(80.0, copy.clampFullscreenMapScale(100.0));
+        assertEquals(0.0625, copy.clampFullscreenMapScale(0.01));
+
+        copy.fullscreenMinZoomPercent = 200;
+        copy.fullscreenMaxZoomPercent = 20;
+        assertEquals(8.0, copy.clampFullscreenMapScale(100.0));
+        assertEquals(0.625, copy.clampFullscreenMapScale(0.01));
+        assertEquals(2.0, copy.clampFullscreenMapScale(2.0));
+    }
+
+    @Test
+    void controlStyleDefaultsToConfluxAndPreservesExplicitChoices() {
+        final ConfluxConfig config = new ConfluxConfig();
+        assertEquals(ConfluxConfig.ControlStyle.CONFLUX, config.controlStyle);
+
+        config.controlStyle = ConfluxConfig.ControlStyle.VANILLA;
+        final ConfluxConfig copy = config.copy();
+        assertEquals(ConfluxConfig.ControlStyle.VANILLA, copy.controlStyle);
 
         copy.controlStyle = null;
         copy.normalize();
-        assertEquals(ConfluxConfig.ControlStyle.AUTO, copy.controlStyle);
+        assertEquals(ConfluxConfig.ControlStyle.CONFLUX, copy.controlStyle);
     }
 
     @Test
@@ -287,16 +336,6 @@ final class ConfluxConfigTest {
         config.unsupportedPlatformWarningDismissed = true;
 
         assertTrue(config.copy().unsupportedPlatformWarningDismissed);
-    }
-
-    @Test
-    void communityInviteDismissalSurvivesConfigCopy() {
-        final ConfluxConfig config = new ConfluxConfig();
-        assertFalse(config.communityInviteDismissed);
-
-        config.communityInviteDismissed = true;
-
-        assertTrue(config.copy().communityInviteDismissed);
     }
 
     @Test

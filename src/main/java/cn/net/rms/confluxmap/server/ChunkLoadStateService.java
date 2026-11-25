@@ -24,6 +24,23 @@ public final class ChunkLoadStateService {
     private final LinkedHashSet<LoadedKey> levelCheckQueue = new LinkedHashSet<>();
     private final Map<UUID, Consumer<LoadStateDeltaS2C>> subscribers = new LinkedHashMap<>();
 
+    private boolean samplingEnabled;
+    private int initialChecks;
+
+    ChunkLoadStateService(final boolean samplingEnabled) {
+        this.samplingEnabled = samplingEnabled;
+    }
+
+    void setSamplingEnabled(final boolean enabled) {
+        if (samplingEnabled == enabled) return;
+        samplingEnabled = enabled;
+        initialChecks = enabled ? levelCheckQueue.size() : 0;
+        if (!enabled) {
+            publisher.clear();
+            subscribers.clear();
+        }
+    }
+
     private record LoadedKey(ServerWorld world, int chunkX, int chunkZ) {
     }
 
@@ -32,7 +49,7 @@ public final class ChunkLoadStateService {
         final LoadedKey key = new LoadedKey(world, chunkX(pos), chunkZ(pos));
         loadedChunks.put(key, pos);
         levelCheckQueue.add(key);
-        refresh(key, pos);
+        if (samplingEnabled) refresh(key, pos);
     }
 
     public void onChunkUnload(final ServerWorld world, final WorldChunk chunk) {
@@ -71,7 +88,10 @@ public final class ChunkLoadStateService {
     }
 
     public void tick(final MinecraftServer server) {
-        refreshLevels(MAX_LEVEL_CHECKS_PER_TICK);
+        if (!samplingEnabled || (subscribers.isEmpty() && initialChecks == 0)) return;
+        final int inspected = refreshLevels(MAX_LEVEL_CHECKS_PER_TICK);
+        initialChecks = Math.min(levelCheckQueue.size(), Math.max(0, initialChecks - inspected));
+        if (initialChecks > 0) return;
         int snapshotBudget = MAX_CHUNK_INSPECTIONS_PER_TICK - MAX_LEVEL_CHECKS_PER_TICK;
         int remainingSubscribers = Math.min(subscribers.size(), snapshotBudget);
         while (remainingSubscribers > 0) {
@@ -100,9 +120,9 @@ public final class ChunkLoadStateService {
         subscribers.clear();
     }
 
-    private void refreshLevels(final int budget) {
-        final int available = levelCheckQueue.size();
-        for (int inspected = 0; inspected < available && inspected < budget; inspected++) {
+    private int refreshLevels(final int budget) {
+        final int inspections = Math.min(levelCheckQueue.size(), budget);
+        for (int inspected = 0; inspected < inspections; inspected++) {
             final Iterator<LoadedKey> iterator = levelCheckQueue.iterator();
             final LoadedKey key = iterator.next();
             iterator.remove();
@@ -113,6 +133,7 @@ public final class ChunkLoadStateService {
             levelCheckQueue.add(key);
             refresh(key, pos);
         }
+        return inspections;
     }
 
     private void refresh(final LoadedKey key, final ChunkPos pos) {

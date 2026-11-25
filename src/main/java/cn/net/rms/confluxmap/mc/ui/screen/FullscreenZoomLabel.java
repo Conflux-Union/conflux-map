@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
+import java.math.BigDecimal;
 import java.util.Locale;
 
 final class FullscreenZoomLabel {
@@ -24,5 +25,9 @@ final class FullscreenZoomLabel {
             length--;
         }
         return fixedPrecision.substring(0, length) + "x";
+    }
+
+    static String formatMultiplier(final double zoomMultiplier) {
+        return BigDecimal.valueOf(zoomMultiplier).stripTrailingZeros().toPlainString() + "x";
     }
 }

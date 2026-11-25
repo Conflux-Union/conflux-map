@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.portal.PortalKind;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
+import cn.net.rms.confluxmap.mc.net.WebMapClient;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.nativepredict.GpuBackend;
@@ -44,7 +45,6 @@ final class ConfigRows {
     private static final int SECTION_TEXT_COLOR = 0xFFA0A0A0;
     private static final int SECTION_LINE_COLOR = 0xFF3A3A3A;
     private static final int ICON_TEXT_COLOR = 0xFFE0E0E0;
-
     /**
      * One built row: every widget that fades together during a tab switch or the open
      * stagger, in build order. The slot carries the row's current fade alpha so the
@@ -109,6 +109,9 @@ final class ConfigRows {
     private final ConfigScreen screen;
     private final ConfluxConfig config;
     private final ConfigIo configIo;
+    private ConfigSearch search;
+    private ConfigScreen.Category rowCategory;
+    private boolean measuring;
 
     private final List<SliderInput<?>> sliderInputs = new ArrayList<>();
     private final List<TextFieldWidget> textFields = new ArrayList<>();
@@ -182,6 +185,13 @@ final class ConfigRows {
             }
         }
         return null;
+    }
+
+    boolean scrollSizeInput(double x, double y, double amount) {
+        for (final SliderInput<?> input : sliderInputs) {
+            if (input.scrollAt(x, y, amount)) return true;
+        }
+        return false;
     }
 
     void tickInputs() {
@@ -310,7 +320,27 @@ final class ConfigRows {
     int addRows() {
         final int rowsTop = screen.rowsTop();
         int y = rowsTop - screen.pane.scrollOffset();
-        switch (screen.category) {
+        search = new ConfigSearch(screen.searchQuery());
+        if (!search.active()) return addCategoryRows(screen.category, y);
+        for (ConfigScreen.Category category : ConfigScreen.Category.values()) {
+            measuring = true;
+            int end;
+            try {
+                end = addCategoryRows(category, y);
+            } finally {
+                measuring = false;
+            }
+            if (end > y) {
+                y = addVisibleSection(y, category.labelKey());
+                y = addCategoryRows(category, y);
+            }
+        }
+        return y;
+    }
+
+    private int addCategoryRows(ConfigScreen.Category category, int y) {
+        rowCategory = category;
+        switch (category) {
             case MINIMAP:
                 y = addToggleRow(
                     y, "confluxmap.config.minimap.enabled",
@@ -364,6 +394,32 @@ final class ConfigRows {
                 y = addToggleRow(y, "confluxmap.config.minimap.show_layer_label", () -> config.showLayerIndicator, v -> config.showLayerIndicator = v);
                 break;
             case MAP:
+                y = addSectionRow(y, "confluxmap.screen.config.section.fullscreen_zoom");
+                y = addFullscreenZoomLimit(
+                    y, "confluxmap.config.map.min_zoom",
+                    ConfluxConfig.ORIGINAL_FULLSCREEN_MIN_ZOOM,
+                    () -> config.fullscreenMinZoomPercent, v -> config.fullscreenMinZoomPercent = v
+                );
+                y = addFullscreenZoomLimit(
+                    y, "confluxmap.config.map.max_zoom",
+                    ConfluxConfig.ORIGINAL_FULLSCREEN_MAX_ZOOM,
+                    () -> config.fullscreenMaxZoomPercent, v -> config.fullscreenMaxZoomPercent = v
+                );
+                y = addSectionRow(y, "confluxmap.screen.config.section.loaded_range");
+                y = addToggleRow(y, "confluxmap.config.map.loaded_range_visible",
+                    () -> config.fullscreenLoadedRangeVisible, value -> config.fullscreenLoadedRangeVisible = value);
+                y = addEnumRow(
+                    y, "confluxmap.config.map.loaded_range_style", ConfluxConfig.LoadedRangeStyle.values(),
+                    () -> config.fullscreenLoadedRangeStyle, value -> config.fullscreenLoadedRangeStyle = value,
+                    value -> "confluxmap.value.loaded_range." + value.name().toLowerCase(java.util.Locale.ROOT)
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.map.unloaded_brightness", 0, 100,
+                    () -> config.fullscreenUnloadedBrightnessPercent,
+                    value -> config.fullscreenUnloadedBrightnessPercent = value,
+                    ConfigValueLabels::percentText, "confluxmap.config.map.unloaded_brightness.tooltip"
+                );
+                y = addMapPhotoOptions(y);
                 y = addSectionRow(y, "confluxmap.screen.config.section.layers");
                 y = addEnumRow(
                     y, "confluxmap.config.layers.override", ConfluxConfig.LayerOverride.values(),
@@ -442,6 +498,12 @@ final class ConfigRows {
                     y, "confluxmap.config.portals.show_icons",
                     () -> config.portalIconsEnabled, v -> config.portalIconsEnabled = v
                 );
+                y = addToggleRow(y, "confluxmap.map.layers.nether_portals",
+                    () -> config.fullscreenNetherPortalsVisible,
+                    v -> config.fullscreenNetherPortalsVisible = v);
+                y = addToggleRow(y, "confluxmap.map.layers.end_gateways",
+                    () -> config.fullscreenEndGatewaysVisible,
+                    v -> config.fullscreenEndGatewaysVisible = v);
                 y = addIconTextureRow(
                     y, "confluxmap.config.portals.icon_texture.nether", PortalKind.NETHER_PORTAL
                 );
@@ -596,6 +658,7 @@ final class ConfigRows {
                 );
                 break;
             case WAYPOINTS:
+                y = addWaypointEnhancements(y);
                 y = addSectionRow(y, "confluxmap.screen.config.section.teleport");
                 y = addActionRow(
                     y,
@@ -770,6 +833,24 @@ final class ConfigRows {
                     ConfigValueLabels::plainText, underlayReason == null, underlayReason
                 );
                 break;
+            case SERVER:
+                if (WebMapClient.adminAllowed()) {
+                    y = addSectionRow(y, "confluxmap.webmap.server_live");
+                    for (String key : List.of("sharePlayers", "allowPlayerSearch", "allowWaypointSearch",
+                        "showWaypointImages", "waypointImageMode", "enableChat", "showGameChat",
+                        "allowWebChat", "defaultMode", "shareChunkLoadState", "allowBiomeMap",
+                        "allowStructureSearch", "allowEntityRadar", "allowNonOperatorSharedWaypointManagement",
+                        "maxTilesPerRequest", "minRequestIntervalMs", "maxSharedWaypointsPerPlayer")) {
+                        y = addServerSettingRow(y, key);
+                    }
+                } else {
+                    y = addSectionRow(y, "confluxmap.webmap.server_unavailable");
+                }
+                if (WebMapClient.flag("review")) {
+                    y = addActionRow(y, "confluxmap.webmap.review", () -> MinecraftAccess.setScreen(
+                        MinecraftClient.getInstance(), new WebMapReviewScreen(screen)));
+                }
+                break;
             case GENERAL:
                 y = addSectionRow(y, "confluxmap.screen.config.section.interface");
                 y = addToggleRow(
@@ -841,8 +922,107 @@ final class ConfigRows {
      * the label itself is drawn in {@code renderContents} like the icon-texture labels.
      */
     private int addSectionRow(final int y, final String labelKey) {
+        return search.active() ? y : addVisibleSection(y, labelKey);
+    }
+
+    private int addVisibleSection(final int y, final String labelKey) {
         if (screen.rowVisible(y)) {
             sectionLabels.add(new SectionLabel(y, labelKey));
+        }
+        return y + ConfigScreen.ROW_HEIGHT;
+    }
+
+    private int addMapPhotoOptions(int y) {
+        final var memory = ConfluxMapClient.get().waypointListMemory();
+        final var options = memory.options();
+        final var modes = cn.net.rms.confluxmap.core.waypoint.library.WaypointListMemory.MapPhotoMode.values();
+        y = addSectionRow(y, "confluxmap.config.map.photos");
+        y = addEnumRow(y, "confluxmap.config.map.screenshots", modes,
+            () -> options.screenshotMode, mode -> { options.setScreenshotMode(mode); memory.save(); }, ConfigRows::photoModeKey);
+        y = addEnumRow(y, "confluxmap.config.map.waypoint_photos", modes,
+            () -> options.waypointPhotoMode, mode -> { options.waypointPhotoMode = mode; memory.save(); }, ConfigRows::photoModeKey);
+        y = addToggleRow(y, "confluxmap.config.map.photo_gestures",
+            () -> options.photoGestures, value -> { options.photoGestures = value; memory.save(); });
+        return y;
+    }
+
+    private static String photoModeKey(cn.net.rms.confluxmap.core.waypoint.library.WaypointListMemory.MapPhotoMode mode) {
+        return "confluxmap.value.map_photo." + mode.name().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private int addWaypointEnhancements(int y) {
+        final var memory = ConfluxMapClient.get().waypointListMemory();
+        final var options = memory.options();
+        y = addSectionRow(y, "confluxmap.screen.config.section.waypoint_enhancements");
+        y = enhancementToggle(y, "favorites", () -> options.favorites, v -> options.favorites = v);
+        y = enhancementToggle(y, "details", () -> options.details, v -> options.details = v);
+        y = enhancementToggle(y, "images", () -> options.images, v -> options.images = v);
+        y = enhancementToggle(y, "list_photo_preview", () -> options.listPhotoPreview, v -> options.listPhotoPreview = v);
+        y = enhancementToggle(y, "compact", () -> options.compact, v -> options.compact = v);
+        y = compactSizeRow(y, "confluxmap.enhancements.compact_width", options::compactWidthPercent, v -> { options.setCompactWidthPercent(v); memory.save(); });
+        y = compactSizeRow(y, "confluxmap.enhancements.compact_height", options::compactHeightPercent, v -> { options.setCompactHeightPercent(v); memory.save(); });
+        y = enhancementToggle(y, "both", () -> options.both, v -> options.both = v);
+        y = enhancementToggle(y, "hover_actions", () -> options.hoverActions, v -> options.hoverActions = v);
+        y = enhancementToggle(y, "source_priority", () -> options.sourcePriority, v -> options.sourcePriority = v);
+        y = enhancementToggle(y, "local_first", () -> options.localFirst, v -> options.localFirst = v);
+        y = enhancementToggle(y, "dimension", () -> options.dimension, v -> options.dimension = v);
+        y = enhancementToggle(y, "distance", () -> options.distance, v -> options.distance = v);
+        y = enhancementToggle(y, "quick_publish", () -> options.quickPublish, v -> options.quickPublish = v);
+        y = enhancementToggle(y, "remember", () -> options.remember, v -> options.remember = v);
+        y = enhancementToggle(y, "temporary_waypoint", () -> options.temporaryWaypoint, v -> options.temporaryWaypoint = v);
+        y = enhancementToggle(y, "unknown_height_fallback", () -> options.unknownHeightFallback, v -> options.unknownHeightFallback = v);
+        return addIntSliderRow(y, "confluxmap.enhancements.unknown_height", -2048, 4096,
+            () -> options.unknownHeight, v -> { options.unknownHeight = v; memory.save(); }, ConfigValueLabels::plainText);
+    }
+
+    private int compactSizeRow(int y, String key, IntSupplier getter, IntConsumer setter) {
+        return addIntSliderRow(y, key,
+            cn.net.rms.confluxmap.core.waypoint.library.WaypointGridLayout.MIN_PERCENT,
+            cn.net.rms.confluxmap.core.waypoint.library.WaypointGridLayout.MAX_PERCENT,
+            getter, setter, ConfigValueLabels::percentText, true, null, null, true, null);
+    }
+
+    private int enhancementToggle(int y, String key, BooleanSupplier getter, Consumer<Boolean> setter) {
+        return addToggleRow(y, "confluxmap.enhancements." + key, getter, value -> {
+            setter.accept(value);
+            ConfluxMapClient.get().waypointListMemory().save();
+        });
+    }
+
+    private int addServerSettingRow(final int y, final String key) {
+        final String label = "confluxmap.webmap." + key;
+        if (!search.matches(label, null, rowCategory.labelKey())) return y;
+        if (!measuring && screen.rowVisible(y)) {
+            final String value = WebMapClient.setting(key);
+            final List<String> choices = switch (key) {
+                case "waypointImageMode" -> List.of("APPROVAL", "OP_ONLY", "EVERYONE", "DISABLED");
+                case "defaultMode" -> List.of("AUTO", "ALL", "GENERATED");
+                default -> List.of();
+            };
+            final boolean number = switch (key) {
+                case "maxTilesPerRequest", "minRequestIntervalMs", "maxSharedWaypointsPerPlayer" -> true;
+                default -> false;
+            };
+            final String current = number ? value
+                : !choices.isEmpty() ? ServerSettingScreen.optionLabel(value).getString()
+                : Texts.translatable(Boolean.parseBoolean(value)
+                    ? "confluxmap.value.on" : "confluxmap.value.off").getString();
+            final Text caption = Texts.literal(Texts.translatable(label).getString() + " · " + current);
+            final RowButton button = screen.addRowWidget(new RowButton(
+                screen.rowX(), y, screen.rowWidth, ConfigScreen.ROW_HEIGHT - 2, caption,
+                clicked -> {
+                    if (!WebMapClient.canEditSettings()) return;
+                    if (number || !choices.isEmpty()) {
+                        MinecraftAccess.setScreen(MinecraftClient.getInstance(),
+                            new ServerSettingScreen(screen, key, choices));
+                    } else {
+                        WebMapClient.setServerSetting(key,
+                            Boolean.toString(!Boolean.parseBoolean(WebMapClient.setting(key))));
+                    }
+                }
+            ));
+            button.active = WebMapClient.canEditSettings() && !value.isEmpty();
+            rowSlots.add(new RowSlot(y, button, List.of(button)));
         }
         return y + ConfigScreen.ROW_HEIGHT;
     }
@@ -869,7 +1049,8 @@ final class ConfigRows {
         final boolean active,
         final String disabledTooltipKey
     ) {
-        if (screen.rowVisible(y)) {
+        if (!search.matches(labelKey, disabledTooltipKey, rowCategory.labelKey())) return y;
+        if (!measuring && screen.rowVisible(y)) {
             final RowButton button = screen.addRowWidget(new RowButton(
                 screen.rowX(), y, screen.rowWidth, ConfigScreen.ROW_HEIGHT - 2,
                 ConfigValueLabels.boolLabel(labelKey, getter.getAsBoolean()),
@@ -934,7 +1115,8 @@ final class ConfigRows {
         final String disabledTooltipKey,
         final String hoverTooltipKey
     ) {
-        if (screen.rowVisible(y)) {
+        if (!search.matches(labelKey, hoverTooltipKey == null ? disabledTooltipKey : hoverTooltipKey, rowCategory.labelKey())) return y;
+        if (!measuring && screen.rowVisible(y)) {
             final RowButton button = screen.addRowWidget(new RowButton(
                 screen.rowX(), y, screen.rowWidth, ConfigScreen.ROW_HEIGHT - 2,
                 ConfigValueLabels.enumLabel(labelKey, getter.get(), valueKeyFn),
@@ -960,7 +1142,8 @@ final class ConfigRows {
      * path that no loaded pack provides falls back to the built-in icon at draw time.
      */
     private int addIconTextureRow(final int y, final String labelKey, final PortalKind kind) {
-        if (screen.rowVisible(y)) {
+        if (!search.matches(labelKey, "confluxmap.config.portals.icon_texture.tooltip", rowCategory.labelKey())) return y;
+        if (!measuring && screen.rowVisible(y)) {
             final Text label = Texts.translatable(labelKey);
             final int labelWidth = Math.min(screen.textRenderer().getWidth(label) + 6, screen.rowWidth / 2);
             final TextFieldWidget field = new TextFieldWidget(
@@ -1007,8 +1190,28 @@ final class ConfigRows {
         return true;
     }
 
+    private int addFullscreenZoomLimit(
+        final int y, final String labelKey, final double originalMultiplier,
+        final IntSupplier getter, final IntConsumer setter
+    ) {
+        final String tooltipKey = "confluxmap.config.map.zoom_limit.tooltip";
+        return addIntSliderRow(
+            y, labelKey, ConfluxConfig.MIN_FULLSCREEN_ZOOM_LIMIT_PERCENT,
+            ConfluxConfig.MAX_FULLSCREEN_ZOOM_LIMIT_PERCENT, getter, value -> {
+                setter.accept(value);
+                configIo.save(config);
+            }, ConfigValueLabels::percentText, true, null, tooltipKey, true,
+            () -> Texts.translatable(
+                tooltipKey,
+                FullscreenZoomLabel.formatMultiplier(originalMultiplier),
+                FullscreenZoomLabel.formatMultiplier(ConfluxConfig.fullscreenZoomLimit(originalMultiplier, getter.getAsInt()))
+            )
+        );
+    }
+
     private int addZoomRow(final int y) {
-        if (screen.rowVisible(y)) {
+        if (!search.matches("confluxmap.config.minimap.zoom", null, rowCategory.labelKey())) return y;
+        if (!measuring && screen.rowVisible(y)) {
             final RowButton button = screen.addRowWidget(new RowButton(
                 screen.rowX(), y, screen.rowWidth, ConfigScreen.ROW_HEIGHT - 2,
                 ConfigValueLabels.zoomLabel(config.minimapZoomIndex),
@@ -1034,7 +1237,8 @@ final class ConfigRows {
         final boolean active,
         final String disabledTooltipKey
     ) {
-        if (screen.rowVisible(y)) {
+        if (!search.matches(labelKey, disabledTooltipKey, rowCategory.labelKey())) return y;
+        if (!measuring && screen.rowVisible(y)) {
             final RowButton button = screen.addRowWidget(new RowButton(
                 screen.rowX(), y, screen.rowWidth, ConfigScreen.ROW_HEIGHT - 2,
                 Texts.translatable(labelKey), ignored -> action.run()
@@ -1110,7 +1314,20 @@ final class ConfigRows {
         final String disabledTooltipKey,
         final String hoverTooltipKey
     ) {
-        if (screen.rowVisible(y)) {
+        return addIntSliderRow(y, labelKey, min, max, getter, value -> {
+            setter.accept(value);
+            configIo.save(config);
+        }, valueText, active, disabledTooltipKey, hoverTooltipKey, false, null);
+    }
+
+    private int addIntSliderRow(
+        final int y, final String labelKey, final int min, final int max,
+        final IntSupplier getter, final IntConsumer setter, final IntFunction<String> valueText,
+        final boolean active, final String disabledTooltipKey, final String hoverTooltipKey,
+        final boolean wheelEnabled, final Supplier<Text> hoverTooltip
+    ) {
+        if (!search.matches(labelKey, hoverTooltipKey == null ? disabledTooltipKey : hoverTooltipKey, rowCategory.labelKey())) return y;
+        if (!measuring && screen.rowVisible(y)) {
             final SliderInput<Integer> sliderInput = new SliderInput<>(
                 screen.textRenderer(),
                 screen.rowX(),
@@ -1120,20 +1337,23 @@ final class ConfigRows {
                 new IntSliderValue(min, max, getter.getAsInt()),
                 IntSliderValue.INTEGER_TEXT,
                 IntSliderValue.MAX_TEXT_LENGTH,
-                value -> {
-                    setter.accept(value);
-                    configIo.save(config);
-                },
+                value -> setter.accept(value),
                 value -> Texts.translatable(labelKey, valueText.apply(value))
             );
             sliderInput.setActive(active);
+            if (wheelEnabled) sliderInput.enableWheel();
             sliderInputs.add(sliderInput);
             screen.addRowWidget(sliderInput.slider());
             screen.addRowWidget(sliderInput.input());
             screen.setDisabledTooltip(sliderInput.slider(), disabledTooltipKey);
             screen.setDisabledTooltip(sliderInput.input(), disabledTooltipKey);
-            screen.setHoverTooltip(sliderInput.slider(), hoverTooltipKey);
-            screen.setHoverTooltip(sliderInput.input(), hoverTooltipKey);
+            if (hoverTooltip != null) {
+                screen.setDynamicHoverTooltip(sliderInput.slider(), hoverTooltip);
+                screen.setDynamicHoverTooltip(sliderInput.input(), hoverTooltip);
+            } else {
+                screen.setHoverTooltip(sliderInput.slider(), hoverTooltipKey);
+                screen.setHoverTooltip(sliderInput.input(), hoverTooltipKey);
+            }
             rowSlots.add(new RowSlot(y, null, List.of(sliderInput.slider(), sliderInput.input())));
         }
         return y + ConfigScreen.ROW_HEIGHT;
@@ -1151,7 +1371,8 @@ final class ConfigRows {
         final boolean active,
         final String disabledTooltipKey
     ) {
-        if (screen.rowVisible(y)) {
+        if (!search.matches(labelKey, disabledTooltipKey, rowCategory.labelKey())) return y;
+        if (!measuring && screen.rowVisible(y)) {
             final SliderInput<Double> sliderInput = new SliderInput<>(
                 screen.textRenderer(),
                 screen.rowX(),

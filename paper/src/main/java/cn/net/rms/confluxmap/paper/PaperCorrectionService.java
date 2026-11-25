@@ -218,7 +218,7 @@ final class PaperCorrectionService implements AutoCloseable {
             || request.tiles().size() > config.maxTilesPerRequest
             || request.dimIndex() < 0
             || worlds.at(request.dimIndex()) == null
-            || !channel.budget.beginRequest(now)) {
+            || !channel.budget.beginRequest(now, config.minRequestIntervalMs)) {
             sender.send(new ErrorS2C(ErrorS2C.ERR_RATE_LIMITED, "map correction request is rate limited"));
             return;
         }
@@ -304,7 +304,7 @@ final class PaperCorrectionService implements AutoCloseable {
             || request.regions().isEmpty()
             || request.regions().size() > Proto.MAX_REGION_PAGES_PER_REQ
             || request.regions().size() > config.maxTilesPerRequest
-            || !channel.budget.beginRequest(now)) {
+            || !channel.budget.beginRequest(now, config.minRequestIntervalMs)) {
             sender.send(new ErrorS2C(
                 ErrorS2C.ERR_RATE_LIMITED, "map region correction request is rate limited"
             ));

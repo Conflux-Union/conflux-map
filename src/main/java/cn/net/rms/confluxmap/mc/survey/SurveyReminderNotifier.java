@@ -12,9 +12,14 @@ import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
-/** Posts the optional survey reminder after enough cumulative client-open time. */
+/**
+ * Posts the optional survey reminder, which also links the community, after enough cumulative
+ * client-open time.
+ */
 public final class SurveyReminderNotifier {
     public static final String SURVEY_URL = "https://survey.cxu.org.cn/s/zx6xgPHk1Uj0ex0VcFdAV";
+    private static final String QQ_GROUP_URL = "https://qm.qq.com/q/Qimxluy2UW";
+    private static final String DISCORD_URL = "https://discord.gg/eyFaJhfnV6";
 
     private static final long CHECKPOINT_MILLIS = TimeUnit.MINUTES.toMillis(5L);
 
@@ -64,18 +69,30 @@ public final class SurveyReminderNotifier {
     }
 
     private void tick() {
-        advanceClock();
-        if (schedule.isDue() && client.player != null) {
-            schedule.markShown();
-            persist();
+        if (takeDueReminder(client.player != null)) {
             //#if MC>=260100
             //$$ client.player.sendSystemMessage(buildMessage());
             //#else
             client.player.sendMessage(buildMessage(), false);
             //#endif
-        } else if (unsavedMillis >= CHECKPOINT_MILLIS) {
-            persist();
         }
+    }
+
+    /**
+     * Advances the clock and checkpoints the tally like every tick. True means a due reminder was
+     * taken: the repeat delay is started and persisted, and the caller must post it now.
+     */
+    boolean takeDueReminder(final boolean inWorld) {
+        advanceClock();
+        if (!schedule.isDue() || !inWorld) {
+            if (unsavedMillis >= CHECKPOINT_MILLIS) {
+                persist();
+            }
+            return false;
+        }
+        schedule.markShown();
+        persist();
+        return true;
     }
 
     private void advanceClock() {
@@ -106,23 +123,37 @@ public final class SurveyReminderNotifier {
         config.surveyReminderDismissed = snapshot.dismissed();
     }
 
-    private static Text buildMessage() {
-        final MutableText open = Texts.translatable("confluxmap.survey.chat.open")
+    static Text buildMessage() {
+        return line("confluxmap.survey.chat.intro")
+            .append(link("confluxmap.survey.chat.open", SURVEY_URL))
+            .append(line("confluxmap.survey.chat.body"))
+            .append(line("confluxmap.survey.chat.community.qq_head"))
+            .append(link("confluxmap.survey.chat.community.qq_group", QQ_GROUP_URL))
+            .append(line("confluxmap.survey.chat.community.discord_head"))
+            .append(link("confluxmap.survey.chat.community.discord", DISCORD_URL))
+            .append(line("confluxmap.survey.chat.community.end"))
+            .append(optOut());
+    }
+
+    private static MutableText line(final String key) {
+        return Texts.translatable(key).formatted(Formatting.YELLOW);
+    }
+
+    private static MutableText link(final String labelKey, final String url) {
+        return Texts.translatable(labelKey)
             .formatted(Formatting.AQUA, Formatting.UNDERLINE)
             .styled(style -> style
-                .withClickEvent(Texts.openUrl(SURVEY_URL))
-                .withHoverEvent(Texts.showText(Texts.literal(SURVEY_URL))));
-        final MutableText dismiss = Texts.translatable("confluxmap.survey.chat.dismiss")
+                .withClickEvent(Texts.openUrl(url))
+                .withHoverEvent(Texts.showText(Texts.literal(url))));
+    }
+
+    private static MutableText optOut() {
+        return Texts.translatable("confluxmap.survey.chat.dismiss")
             .formatted(Formatting.GRAY, Formatting.UNDERLINE)
             .styled(style -> style
                 .withClickEvent(Texts.copyToClipboard(SurveyReminderClickPayload.dismiss()))
                 .withHoverEvent(Texts.showText(
                     Texts.translatable("confluxmap.survey.chat.dismiss.hover")
                 )));
-        return Texts.translatable("confluxmap.survey.chat.intro")
-            .formatted(Formatting.YELLOW)
-            .append(open)
-            .append(Texts.translatable("confluxmap.survey.chat.body").formatted(Formatting.YELLOW))
-            .append(dismiss);
     }
 }

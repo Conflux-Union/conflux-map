@@ -21,11 +21,15 @@ final class ConfluxMapCompanionLifecycleTest {
         final String activation = between(source, "private void activateIfNeeded(", "\n    }\n}");
 
         assertTrue(
-            starting.contains("chunkLoadStates = config.enabled && config.shareChunkLoadState"),
-            "chunk load states must start collecting before spawn chunks load"
+            starting.contains("chunkLoadStates = !server.isDedicated() || config.enabled"),
+            "the integrated server and enabled companions need a tracker before spawn chunks load"
+        );
+        assertTrue(
+            starting.contains("new ChunkLoadStateService(!server.isDedicated() || config.shareChunkLoadState)"),
+            "local sampling starts immediately; dedicated sampling starts according to the sharing setting"
         );
         assertFalse(
-            activation.contains("chunkLoadStates = config.shareChunkLoadState ? new ChunkLoadStateService()"),
+            activation.contains("chunkLoadStates ="),
             "runtime activation must preserve chunk states collected during world startup"
         );
     }

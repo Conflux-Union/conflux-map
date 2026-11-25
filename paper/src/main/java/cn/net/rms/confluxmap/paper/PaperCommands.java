@@ -48,6 +48,11 @@ final class PaperCommands implements CommandExecutor, TabCompleter {
             && ("hide".equalsIgnoreCase(args[1]) || "show".equalsIgnoreCase(args[1]))) {
             return webMapPrivacy(sender, "hide".equalsIgnoreCase(args[1]));
         }
+        if(args.length>=2&&"webmap".equalsIgnoreCase(args[0])&&sender.hasPermission("confluxmap.admin")){
+            var f=companion.webFeatures();if(f==null){sender.sendMessage("Web map disabled");return true;}
+            if(args[1].equals("pending-images")){for(String item:f.pending())sender.sendMessage(item);return true;}
+            if(args.length==3){String action=switch(args[1]){case "approve"->"image-approve";case "reject"->"image-reject";case "delete-image"->"image-delete";default->"";};try{sender.sendMessage(f.moderate(UUID.fromString(args[2]),action)?"Image updated":"Image unavailable");}catch(IllegalArgumentException e){sender.sendMessage("Invalid image ID");}return true;}
+        }
         sender.sendMessage("Usage: /confluxmap <performance|webmap hide|show|waypoints list|add|edit|move|delete|group ...>");
         return true;
     }

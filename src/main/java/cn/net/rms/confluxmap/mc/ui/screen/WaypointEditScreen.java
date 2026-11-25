@@ -1,8 +1,11 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
+import cn.net.rms.confluxmap.compat.MouseButtons;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import cn.net.rms.confluxmap.core.waypoint.library.WaypointMetadata;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
@@ -15,15 +18,20 @@ import cn.net.rms.confluxmap.core.waypoint.list.LocalWaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.SharedWaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointRow;
+import cn.net.rms.confluxmap.mc.net.WebMapClient;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
+import cn.net.rms.confluxmap.mc.ui.widget.ConfluxTextButton;
+import cn.net.rms.confluxmap.core.waypoint.library.WaypointGridLayout.Cell;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.UUID;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
@@ -34,10 +42,14 @@ import net.minecraft.client.MinecraftClient;
 //#endif
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
+//#if MC>=12109
+//$$ import net.minecraft.client.gui.Click;
+//#endif
 
 /**
  * Create/edit form for one waypoint: name, X/Y/Z (raw local coordinates in
@@ -59,6 +71,11 @@ public final class WaypointEditScreen extends ConfluxScreen {
     };
     // Geometry constants live in WaypointEditLayout so the spacing invariants are unit-testable.
     private static final int FIELD_HEIGHT = WaypointEditLayout.FIELD_HEIGHT;
+    private static final int PRODUCT_CELL_WIDTH = 26;
+    private static final int PRODUCT_PAGER_WIDTH = 14;
+    private static final int PRODUCT_PANEL_HEIGHT = 51;
+
+    private record ProductSlot(String item, Cell cell) {}
     // Must stay a same-file literal: ButtonWidgetTextureHeightTest resolves ButtonWidget
     // heights through same-file constant chains only, so this cannot alias the helper.
     private static final int SWATCH_SIZE = 20;
@@ -70,6 +87,10 @@ public final class WaypointEditScreen extends ConfluxScreen {
 
     private final Screen parent;
     private final UUID editingId;
+    private final UUID metadataId;
+    private final WorldIdentity metadataWorld;
+    private WaypointMetadata metadataDraft = WaypointMetadata.EMPTY;
+    private boolean metadataDirty;
     private final DimensionId dimensionId;
     private final Waypoint.Type type;
     private final long createdAtEpochMs;
@@ -100,6 +121,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private ButtonWidget clearIconButton;
     private ButtonWidget deleteButton;
     private ButtonWidget doneButton;
+    private ButtonWidget detailsButton;
+    private ButtonWidget imagePreviewButton;
+    private final WaypointPhotoPreview imagePreview = new WaypointPhotoPreview();
     private List<String> setNames = List.of(WaypointSet.DEFAULT_NAME);
     private List<GroupRef> sharedGroups = List.of();
     private int selectedSetIndex;
@@ -120,6 +144,14 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private String errorKey;
     /** Row geometry for the current GUI height; rebuilt by every init(). */
     private WaypointEditLayout.Rows rowLayout;
+    private WaypointEditLayout.DetailsRows detailsLayout;
+    private int formScroll, productPage;
+    private boolean productsExpanded = true;
+    private final List<ProductSlot> productSlots = new ArrayList<>();
+    private ProductSlot hoveredProduct;
+    private CompactWaypointPanelLayout productPanel;
+    private int productHoverX, productHoverY;
+    private long productHoverUntil;
 
     private WaypointEditScreen(
         final Screen parent,
@@ -143,6 +175,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         super(Texts.translatable(titleKey(editingId, createTarget)));
         this.parent = parent;
         this.editingId = editingId;
+        this.metadataId = editingId == null ? UUID.randomUUID() : editingId;
         this.dimensionId = dimensionId;
         this.type = type;
         this.createdAtEpochMs = createdAtEpochMs;
@@ -154,6 +187,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         this.openedFromHotkey = openedFromHotkey;
         this.editingRow = editingRow;
         final ConfluxMapClient app = ConfluxMapClient.get();
+        this.metadataWorld = app.waypointLibraryService().world();
         this.sharedWaypoints = app.sharedWaypoints();
         this.localModel = app.localWaypointListModel();
         this.sharedModel = app.sharedWaypointListModel();
@@ -164,6 +198,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
                 : localStoreSupplier
             : () -> null;
         this.boundLocalStore = this.localStoreSupplier.get();
+        if (!explicitLocalStore && metadataWorld != null) {
+            metadataDraft = app.waypointLibraryService().library().get(metadataId, createTarget == CreateTarget.PUBLIC);
+        }
         this.colorSelection = new WaypointColorSelection(color);
         this.draftName = name;
         this.draftX = formatCoord(x);
@@ -374,8 +411,14 @@ public final class WaypointEditScreen extends ConfluxScreen {
         // The chat target drops the set/group cycler, the cross-dimension controls,
         // and the marker row; every other mode shares the same full stack.
         final boolean fullForm = createTarget != CreateTarget.CHAT;
-        rowLayout = WaypointEditLayout.rows(height, fullForm);
+        final boolean showImages = ConfluxMapClient.get().waypointListMemory().options().images && supportsPrivateAttachments();
+        detailsLayout = detailsSupported() ? WaypointEditLayout.detailsRows(height, showImages) : null;
+        formScroll = detailsLayout == null ? 0 : Math.min(formScroll, detailsLayout.maxScroll());
+        rowLayout = detailsLayout == null ? WaypointEditLayout.rows(height, fullForm, showImages) : detailsLayout.form(formScroll);
         final WaypointEditLayout.Rows rows = rowLayout;
+        productSlots.clear();
+        hoveredProduct = null;
+        productPanel = null;
 
         nameField = new TextFieldWidget(
             this.textRenderer,
@@ -582,15 +625,50 @@ public final class WaypointEditScreen extends ConfluxScreen {
             setDisabledTooltip(clearIconButton, "confluxmap.screen.waypoint.marker_style_unsupported");
         }
 
+        imagePreviewButton = null;
+        if (showImages) {
+            final int left = centerX - WaypointEditLayout.FORM_WIDTH / 2;
+            final var insert = addDrawableChild(Widgets.button(left, rows.imageY(), WaypointEditLayout.MARKER_MODE_WIDTH, FIELD_HEIGHT,
+                WaypointImagesScreen.label("insert"), button -> openImages()));
+            insert.active = editingId != null && metadataAvailable();
+            if (editingId == null) setDisabledTooltip(insert, "confluxmap.photos.save_first");
+            if (insert.active) {
+                imagePreview.show(new cn.net.rms.confluxmap.core.waypoint.library.WaypointMediaService.Key(
+                    metadataWorld, createTarget == CreateTarget.PUBLIC, metadataId));
+                imagePreviewButton = addDrawableChild(Widgets.button(
+                    left + WaypointEditLayout.MARKER_MODE_WIDTH + WaypointEditLayout.MARKER_GAP, rows.imageY(),
+                    36, FIELD_HEIGHT, Texts.literal(""), button -> openImages()));
+                imagePreviewButton.visible = false;
+            }
+        }
+
+        final int footerLeft = centerX - WaypointEditLayout.FORM_WIDTH / 2;
+        detailsButton = null;
+        if (detailsLayout != null) {
+            detailsButton = addDrawableChild(Widgets.button(
+                footerLeft, detailsLayout.noteY() - formScroll, WaypointEditLayout.MARKER_MODE_WIDTH, FIELD_HEIGHT,
+                Texts.translatable("confluxmap.waypoint_details.open"), button -> openDetails()
+            ));
+            detailsButton.active = metadataAvailable();
+            setDisabledTooltip(detailsButton, "confluxmap.screen.waypoints.star_read_only");
+            addProductRow(footerLeft, detailsLayout.productY() - formScroll);
+            for (var child : children()) {
+                if (child instanceof ClickableWidget widget) widget.visible &= inForm(widget);
+            }
+            if (!nameField.visible) setFocused(null);
+        }
+        if (createTarget == CreateTarget.PUBLIC && editingId != null && metadataWorld != null
+            && WebMapClient.flag("albumUpload")) {
+            addDrawableChild(Widgets.button(
+                Math.max(4, width - 112), 4, 108, FIELD_HEIGHT,
+                Texts.translatable("confluxmap.webmap.image_upload"), button ->
+                    openWebPhotoSelection()
+            ));
+        }
         final int footerY = WaypointEditLayout.footerY(height);
         final boolean editing = editingId != null;
-        final int footerLeft = centerX - WaypointEditLayout.FORM_WIDTH / 2;
-        final int footerButtonWidth = editing
-            ? WaypointEditLayout.FOOTER_EDIT_WIDTH
-            : WaypointEditLayout.FOOTER_CREATE_WIDTH;
-        final int footerGap = editing
-            ? WaypointEditLayout.FOOTER_GAP
-            : WaypointEditLayout.FOOTER_CREATE_GAP;
+        final int footerButtonWidth = editing ? WaypointEditLayout.FOOTER_EDIT_WIDTH : WaypointEditLayout.FOOTER_CREATE_WIDTH;
+        final int footerGap = editing ? WaypointEditLayout.FOOTER_GAP : WaypointEditLayout.FOOTER_CREATE_GAP;
         if (editing) {
             deleteButton = addDrawableChild(Widgets.button(
                 footerLeft,
@@ -622,6 +700,62 @@ public final class WaypointEditScreen extends ConfluxScreen {
             Texts.translatable("confluxmap.screen.waypoint.cancel"), b -> onCancel()
         ));
         setEnterAction(() -> doneButton != null && doneButton.active, this::onDone);
+    }
+
+    private void addProductRow(int left, int y) {
+        int labelWidth = WaypointEditLayout.MARKER_MODE_WIDTH - FIELD_HEIGHT - WaypointEditLayout.MARKER_GAP;
+        addDrawableChild(Widgets.button(left, y, labelWidth, FIELD_HEIGHT,
+            Texts.translatable(productsExpanded ? "confluxmap.waypoint_details.products_expanded"
+                : "confluxmap.waypoint_details.products_collapsed"), button -> {
+                productsExpanded = !productsExpanded;
+                rebuildForm();
+            }));
+        var plus = addDrawableChild(Widgets.button(left + labelWidth + WaypointEditLayout.MARKER_GAP, y,
+            FIELD_HEIGHT, FIELD_HEIGHT, Texts.literal("+"), b -> openProductPicker()));
+        plus.active = metadataAvailable();
+        setHoverTooltip(plus, "confluxmap.waypoint_details.add_product");
+
+        if (!productsExpanded || !detailsLayout.contains(y, FIELD_HEIGHT)) return;
+        List<String> items = new ArrayList<>(metadataDraft.resourceItems());
+        int x = left + WaypointEditLayout.MARKER_MODE_WIDTH + WaypointEditLayout.MARKER_GAP;
+        int capacity = productCapacity(items.size());
+        int pages = Math.max(1, (items.size() + capacity - 1) / capacity);
+        productPage = Math.min(productPage, pages - 1);
+        int start = productPage * capacity;
+        for (int i = start; i < Math.min(items.size(), start + capacity); i++) {
+            String id = items.get(i);
+            int cellX = x + (i - start) * PRODUCT_CELL_WIDTH;
+            productSlots.add(new ProductSlot(id, new Cell(i, cellX, y, PRODUCT_CELL_WIDTH - 2, FIELD_HEIGHT)));
+            var slot = new ConfluxTextButton(cellX, y, PRODUCT_CELL_WIDTH - 2, FIELD_HEIGHT,
+                Texts.literal(WaypointDetailsText.itemName(id)), b -> openProductAmount(id)) {
+                @Override protected void drawForeground(GuiDraw draw) { }
+            };
+            addDrawableChild(slot).active = metadataAvailable();
+        }
+        if (pages > 1) {
+            int arrows = left + WaypointEditLayout.FORM_WIDTH - 2 * PRODUCT_PAGER_WIDTH - 2;
+            addDrawableChild(Widgets.button(arrows, y, PRODUCT_PAGER_WIDTH, FIELD_HEIGHT, Texts.literal("<"),
+                b -> { productPage--; rebuildForm(); })).active = productPage > 0;
+            addDrawableChild(Widgets.button(arrows + PRODUCT_PAGER_WIDTH + 2, y, PRODUCT_PAGER_WIDTH, FIELD_HEIGHT, Texts.literal(">"),
+                b -> { productPage++; rebuildForm(); })).active = productPage + 1 < pages;
+        }
+    }
+
+    private static int productCapacity(int items) {
+        int available = WaypointEditLayout.FORM_WIDTH - WaypointEditLayout.MARKER_MODE_WIDTH - WaypointEditLayout.MARKER_GAP;
+        int full = available / PRODUCT_CELL_WIDTH;
+        return items <= full ? full : (available - 2 * PRODUCT_PAGER_WIDTH - 2) / PRODUCT_CELL_WIDTH;
+    }
+
+    private boolean inForm(ClickableWidget widget) {
+        return detailsLayout == null || detailsLayout.contains(Widgets.y(widget), widget.getHeight());
+    }
+
+    private void rebuildForm() {
+        captureDraft();
+        setFocused(null);
+        clearChildren();
+        init();
     }
 
     private TextFieldWidget numericField(final int x, final int y, final int w, final String initial) {
@@ -880,11 +1014,11 @@ public final class WaypointEditScreen extends ConfluxScreen {
     ) {
         final boolean textMode = markerMode == WaypointMarkerMode.TEXT;
         markerLabelField.active = markerStyleSupported;
-        markerLabelField.visible = showMarkerStyle && textMode;
+        markerLabelField.visible = showMarkerStyle && textMode && inForm(markerLabelField);
         iconButton.active = markerStyleSupported;
-        iconButton.visible = showMarkerStyle && !textMode;
+        iconButton.visible = showMarkerStyle && !textMode && inForm(iconButton);
         clearIconButton.active = markerStyleSupported && !selectedIconItemId.isEmpty();
-        clearIconButton.visible = showMarkerStyle && !textMode;
+        clearIconButton.visible = showMarkerStyle && !textMode && inForm(clearIconButton);
     }
 
     private void openIconPicker() {
@@ -915,6 +1049,101 @@ public final class WaypointEditScreen extends ConfluxScreen {
         if (crossDimensionYField != null) {
             draftCrossDimensionY = crossDimensionYField.getText();
         }
+    }
+
+    private boolean supportsPrivateAttachments() {
+        return !explicitLocalStore && createTarget != CreateTarget.CHAT
+            && (createTarget == CreateTarget.LOCAL || editingId != null);
+    }
+
+    private boolean detailsSupported() {
+        return ConfluxMapClient.get().waypointListMemory().options().details && supportsPrivateAttachments();
+    }
+
+    private boolean metadataAvailable() {
+        final var library = ConfluxMapClient.get().waypointLibraryService();
+        return supportsPrivateAttachments() && metadataWorld != null && metadataWorld.equals(library.world())
+            && library.writable() && (createTarget != CreateTarget.LOCAL || boundLocalStore == localStoreSupplier.get());
+    }
+
+    private void openWebPhotoSelection() {
+        var album = new cn.net.rms.confluxmap.core.waypoint.library.WaypointMediaService.Key(
+            metadataWorld, true, metadataId
+        );
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WebMapImageScreen(this, album, List.of(),
+            selected -> WebMapClient.upload(editingId, album, selected), true
+        ));
+    }
+
+    private void openImages() {
+        if (editingId == null || !metadataAvailable() || !ConfluxMapClient.get().waypointListMemory().options().images) return;
+        captureDraft();
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointImagesScreen(this,
+            new cn.net.rms.confluxmap.core.waypoint.library.WaypointMediaService.Key(
+                metadataWorld, createTarget == CreateTarget.PUBLIC, metadataId), this::metadataAvailable));
+    }
+
+    private void openDetails() {
+        if (!detailsSupported() || !metadataAvailable()) return;
+        captureDraft();
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointDetailsEditorScreen(
+            this, metadataDraft, this::metadataAvailable, next -> {
+                metadataDraft = next;
+                metadataDirty = true;
+            }
+        ).withImages(editingId == null ? null : new cn.net.rms.confluxmap.core.waypoint.library.WaypointMediaService.Key(
+            metadataWorld, createTarget == CreateTarget.PUBLIC, metadataId)));
+    }
+
+    private void openProductPicker() {
+        if (!detailsSupported() || !metadataAvailable()) return;
+        captureDraft();
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), WaypointIconPickerScreen.forResources(this, item -> {
+            if (!metadataAvailable()) return;
+            var items = new LinkedHashSet<>(metadataDraft.resourceItems());
+            if (items.add(item)) setProducts(items, metadataDraft.resourceAmounts());
+            productsExpanded = true;
+            productPage = new ArrayList<>(items).indexOf(item) / productCapacity(items.size());
+        }));
+    }
+
+    private void openProductAmount(String item) {
+        if (!detailsSupported() || !metadataAvailable() || !metadataDraft.resourceItems().contains(item)) return;
+        captureDraft();
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointProductAmountScreen(this, item,
+            metadataDraft.resourceAmounts().get(item), amount -> {
+                if (!metadataAvailable() || !metadataDraft.resourceItems().contains(item)) return;
+                var amounts = new LinkedHashMap<>(metadataDraft.resourceAmounts());
+                if (amount == null) amounts.remove(item);
+                else amounts.put(item, amount);
+                setProducts(metadataDraft.resourceItems(), amounts);
+            }));
+    }
+
+    private void removeProduct(String item) {
+        if (!detailsSupported() || !metadataAvailable()) return;
+        var items = new LinkedHashSet<>(metadataDraft.resourceItems());
+        if (!items.remove(item)) return;
+        setProducts(items, metadataDraft.resourceAmounts());
+        rebuildForm();
+    }
+
+    private void setProducts(java.util.Set<String> items, java.util.Map<String, Integer> amounts) {
+        metadataDraft = new WaypointMetadata(metadataDraft.note(), metadataDraft.tags(), metadataDraft.starred(),
+            metadataDraft.collections(), items, amounts);
+        metadataDirty = true;
+    }
+
+    private void saveMetadataDraft() {
+        if (!metadataDirty || !metadataAvailable()) {
+            return;
+        }
+        final var library = ConfluxMapClient.get().waypointLibraryService();
+        final boolean shared = createTarget == CreateTarget.PUBLIC;
+        final WaypointMetadata current = library.library().get(metadataId, shared);
+        library.library().put(metadataId, shared, new WaypointMetadata(metadataDraft.note(), metadataDraft.tags(),
+            current.starred(), current.collections(), metadataDraft.resourceItems(), metadataDraft.resourceAmounts()));
+        library.save();
     }
 
     @Override
@@ -987,7 +1216,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         final Double crossDimensionY
     ) {
         final Waypoint waypoint = new Waypoint(
-            editingId == null ? UUID.randomUUID() : editingId,
+            metadataId,
             values.name(), dimensionId, values.x(), values.y(), values.z(),
             colorSelection.selected(), groupKey,
             initialVisible, crossDimensionVisible, draftType(), createdAtEpochMs
@@ -999,6 +1228,10 @@ public final class WaypointEditScreen extends ConfluxScreen {
     }
 
     private void onDone() {
+        if (metadataDirty && !metadataAvailable()) {
+            errorKey = "confluxmap.screen.waypoints.star_read_only";
+            return;
+        }
         if (createTarget == CreateTarget.LOCAL) {
             if (!localWritePermission().granted()) {
                 return;
@@ -1069,6 +1302,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
                     : permission.reasonKey();
                 return;
             }
+            saveMetadataDraft();
             requestClose(parent);
             return;
         }
@@ -1088,8 +1322,11 @@ public final class WaypointEditScreen extends ConfluxScreen {
             return;
         }
         final boolean applied = editingId == null
-            ? localModel.createWaypoint(draft)
+            ? localModel.createWaypoint(metadataId, draft)
             : localModel.updateWaypoint(editingRow, draft);
+        if (applied) {
+            saveMetadataDraft();
+        }
         if (!applied && !localWritePermission().granted()) {
             errorKey = localWritePermission().reasonKey();
             return;
@@ -1159,6 +1396,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
         }
         refreshDeleteButton();
         refreshDoneButton();
+        if (detailsButton != null) {
+            detailsButton.active = metadataAvailable();
+        }
     }
 
     private void refreshDeleteButton() {
@@ -1209,37 +1449,44 @@ public final class WaypointEditScreen extends ConfluxScreen {
     @Override
     protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
         draw.renderBackground(this, mouseX, mouseY, tickDelta);
-        drawCenteredLabel(draw, getTitle().getString(), WaypointEditLayout.TITLE_Y);
-        drawCenteredLabel(
+        if (errorKey == null || rowLayout.titleY() != rowLayout.statusY()) {
+            drawCenteredLabel(draw, getTitle().getString(), rowLayout.titleY());
+        }
+        if (imagePreviewButton != null) {
+            imagePreview.show(new cn.net.rms.confluxmap.core.waypoint.library.WaypointMediaService.Key(
+                metadataWorld, createTarget == CreateTarget.PUBLIC, metadataId));
+            imagePreviewButton.visible = inForm(imagePreviewButton) && imagePreview.ready();
+        }
+        drawFormLabel(
             draw,
             Texts.translatable("confluxmap.screen.waypoint.name").getString(),
             WaypointEditLayout.labelY(rowLayout.nameFieldY())
         );
-        drawCenteredLabel(
+        drawFormLabel(
             draw,
             Texts.translatable("confluxmap.screen.waypoint.coords").getString(),
             WaypointEditLayout.labelY(rowLayout.coordsY())
         );
         if (createTarget == CreateTarget.LOCAL) {
-            drawCenteredLabel(
+            drawFormLabel(
                 draw,
                 Texts.translatable("confluxmap.screen.waypoint.set").getString(),
                 WaypointEditLayout.labelY(rowLayout.groupY())
             );
         } else if (createTarget == CreateTarget.PUBLIC) {
-            drawCenteredLabel(
+            drawFormLabel(
                 draw,
                 Texts.translatable("confluxmap.screen.waypoint.group").getString(),
                 WaypointEditLayout.labelY(rowLayout.groupY())
             );
         }
-        drawCenteredLabel(
+        drawFormLabel(
             draw,
             Texts.translatable("confluxmap.screen.waypoint.color").getString(),
             WaypointEditLayout.labelY(rowLayout.swatchesY())
         );
         if (createTarget != CreateTarget.CHAT) {
-            drawCenteredLabel(
+            drawFormLabel(
                 draw,
                 Texts.translatable("confluxmap.screen.waypoint.marker_style").getString(),
                 WaypointEditLayout.labelY(rowLayout.markerY())
@@ -1262,6 +1509,151 @@ public final class WaypointEditScreen extends ConfluxScreen {
             drawCenteredLabel(draw, Texts.translatable(errorKey).getString(), rowLayout.statusY());
         }
         drawSelectedItemIcon(draw);
+        if (imagePreviewButton != null && imagePreviewButton.visible) {
+            imagePreview.draw(draw, Widgets.x(imagePreviewButton) + 2, Widgets.y(imagePreviewButton) + 2, 32, FIELD_HEIGHT - 4);
+        }
+        drawFormScrollbar(draw);
+        drawProducts(draw, mouseX, mouseY);
+    }
+
+    private void drawFormLabel(GuiDraw draw, String text, int y) {
+        if (detailsLayout == null || detailsLayout.contains(y, WaypointEditLayout.LABEL_HEIGHT)) {
+            drawCenteredLabel(draw, text, y);
+        }
+    }
+
+    private void drawFormScrollbar(GuiDraw draw) {
+        if (detailsLayout == null || detailsLayout.maxScroll() == 0) return;
+        int w = 3;
+        int x = width / 2 + WaypointEditLayout.FORM_WIDTH / 2 + 4;
+        int top = detailsLayout.top(), bottom = detailsLayout.bottom(), track = bottom - top;
+        if (track <= 0 || x + w > width) return;
+        int thumb = Math.max(8, track * track / (track + detailsLayout.maxScroll()));
+        int y = top + (track - thumb) * formScroll / detailsLayout.maxScroll();
+        draw.fill(x, top, x + w, bottom, 0x88404040);
+        draw.fill(x, y, x + w, y + thumb, 0xFFAAAAAA);
+    }
+
+    private void drawProducts(GuiDraw draw, int mx, int my) {
+        for (ProductSlot slot : productSlots) {
+            Cell cell = slot.cell();
+            ItemStack stack = WaypointMarkerRenderer.itemIcon(slot.item());
+            if (stack.isEmpty()) {
+                draw.drawTextWithShadow(this.textRenderer, "?", cell.x() + 9, cell.y() + 6, 0xFFFFFFFF);
+            } else {
+                draw.drawItemIcon(MinecraftClient.getInstance(), stack, cell.x() + cell.width() / 2f, cell.y() + 9, 14);
+            }
+            Integer amount = metadataDraft.resourceAmounts().get(slot.item());
+            if (amount != null) {
+                String count = WaypointDetailsText.compactAmount(amount);
+                int textWidth = this.textRenderer.getWidth(count);
+                float scale = Math.min(1f, (cell.width() - 2f) / textWidth);
+                draw.pushTransform();
+                draw.translate(cell.x() + cell.width() - 1 - textWidth * scale,
+                    cell.y() + FIELD_HEIGHT - 1 - this.textRenderer.fontHeight * scale);
+                draw.scale(scale, scale);
+                draw.drawTextWithShadow(this.textRenderer, count, 0, 0, 0xFFFFFFFF);
+                draw.popTransform();
+            }
+        }
+
+        if (!metadataAvailable() || isClosing()) {
+            hoveredProduct = null;
+            productPanel = null;
+            return;
+        }
+        long now = System.nanoTime();
+        if (productPanel != null && productPanel.contains(mx, my)) {
+            productHoverUntil = now + 250_000_000L;
+        } else if (hoveredProduct != null && hoveredProduct.cell().contains(mx, my)
+            || productPanel == null || now > productHoverUntil
+            || !productPanel.onApproach(hoveredProduct.cell(), productHoverX, productHoverY, mx, my)) {
+            hoveredProduct = productSlots.stream().filter(slot -> slot.cell().contains(mx, my)).findFirst().orElse(null);
+            if (hoveredProduct != null) {
+                productHoverX = mx;
+                productHoverY = my;
+                productHoverUntil = now + 250_000_000L;
+            }
+        }
+        productPanel = hoveredProduct == null ? null : CompactWaypointPanelLayout.place(
+            hoveredProduct.cell(), width, height - (WaypointEditLayout.FOOTER_MARGIN - 28), PRODUCT_PANEL_HEIGHT);
+        if (productPanel == null) return;
+
+        int x = productPanel.x(), y = productPanel.y(), w = productPanel.width();
+        String item = hoveredProduct.item();
+        draw.fill(x, y, x + w, y + productPanel.height(), 0xF0202020);
+        draw.drawTextWithShadow(this.textRenderer, this.textRenderer.trimToWidth(WaypointDetailsText.itemName(item), w - 8),
+            x + 4, y + 4, 0xFFFFFFFF);
+        Integer amount = metadataDraft.resourceAmounts().get(item);
+        Text quantity = amount == null ? Texts.translatable("confluxmap.waypoint_details.amount_unset")
+            : Texts.translatable("confluxmap.waypoint_details.amount_value", amount);
+        draw.drawTextWithShadow(this.textRenderer, this.textRenderer.trimToWidth(quantity.getString(), w - 8),
+            x + 4, y + 15, 0xFFDDDDDD);
+        drawProductAction(draw, true, mx, my);
+        drawProductAction(draw, false, mx, my);
+    }
+
+    private void drawProductAction(GuiDraw draw, boolean editAmount, int mx, int my) {
+        Cell bounds = productAction(editAmount);
+        Text label = Texts.translatable(editAmount ? "confluxmap.waypoint_details.set_amount"
+            : "confluxmap.screen.waypoints.delete");
+        new ConfluxTextButton(bounds.x(), bounds.y(), bounds.width(), bounds.height(), label, ignored -> {})
+            .drawStandalone(draw, bounds.contains(mx, my));
+    }
+
+    private Cell productAction(boolean editAmount) {
+        int buttonWidth = (productPanel.width() - 12) / 2;
+        int x = productPanel.x() + (editAmount ? 4 : buttonWidth + 8);
+        return new Cell(0, x, productPanel.y() + 27, buttonWidth, FIELD_HEIGHT);
+    }
+
+    private boolean clickProductPanel(double x, double y, int button) {
+        if (productPanel == null || !productPanel.contains(x, y)) return false;
+        if (!isClosing() && button == MouseButtons.LEFT && hoveredProduct != null) {
+            String item = hoveredProduct.item();
+            if (productAction(true).contains(x, y)) openProductAmount(item);
+            else if (productAction(false).contains(x, y)) removeProduct(item);
+        }
+        return true;
+    }
+
+    @Override
+    //#if MC>=12109
+    //$$ public boolean mouseClicked(Click click, boolean doubleClick) {
+    //$$     return clickProductPanel(click.x(), click.y(), click.button()) || super.mouseClicked(click, doubleClick);
+    //#else
+    public boolean mouseClicked(double x, double y, int button) {
+        return clickProductPanel(x, y, button) || super.mouseClicked(x, y, button);
+    //#endif
+    }
+
+    @Override
+    //#if MC>=12002
+    //$$ public boolean mouseScrolled(double mx, double my, double horizontal, double amount) {
+    //#else
+    public boolean mouseScrolled(double mx, double my, double amount) {
+    //#endif
+        if (!isClosing() && amount != 0 && detailsLayout != null && detailsLayout.maxScroll() > 0
+            && mx >= width / 2.0 - WaypointEditLayout.FORM_WIDTH / 2.0
+            && mx <= width / 2.0 + WaypointEditLayout.FORM_WIDTH / 2.0 + 8
+            && my >= detailsLayout.top() && my < detailsLayout.bottom()) {
+            int next = Math.max(0, Math.min(detailsLayout.maxScroll(), formScroll - (amount > 0 ? 23 : -23)));
+            if (next != formScroll) {
+                formScroll = next;
+                rebuildForm();
+            }
+            return true;
+        }
+        //#if MC>=12002
+        //$$ return super.mouseScrolled(mx, my, horizontal, amount);
+        //#else
+        return super.mouseScrolled(mx, my, amount);
+        //#endif
+    }
+
+    @Override public void removed() {
+        imagePreview.close();
+        super.removed();
     }
 
     private void drawSelectedItemIcon(final GuiDraw draw) {

@@ -11,9 +11,15 @@ public final class UiResourceReloadListener implements SimpleSynchronousResource
     private static final Identifier ID = Ids.of(ConfluxMapMod.ID, "ui_theme");
 
     private final UiResourceTheme theme;
+    private final Runnable afterReload;
 
     public UiResourceReloadListener(final UiResourceTheme theme) {
+        this(theme, () -> {});
+    }
+
+    public UiResourceReloadListener(final UiResourceTheme theme, final Runnable afterReload) {
         this.theme = theme;
+        this.afterReload = afterReload;
     }
 
     @Override
@@ -24,5 +30,6 @@ public final class UiResourceReloadListener implements SimpleSynchronousResource
     @Override
     public void reload(final ResourceManager manager) {
         theme.reload(manager);
+        afterReload.run();
     }
 }

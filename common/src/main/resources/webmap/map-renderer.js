@@ -1,3 +1,4 @@
+import {shadePrediction,authoritativePixel} from './prediction-shade.js';
 const MAP_COLORS = [
   0x000000,0x7fb238,0xf7e9a3,0xc7c7c7,0xff0000,0xa0a0ff,0xa7a7a7,0x007c00,
   0xffffff,0xa4a8b8,0x976d4d,0x707070,0x4040ff,0x8f7748,0xfffcf5,0xd87f33,
@@ -11,6 +12,9 @@ const MAP_COLORS = [
 const NETHER_ROOF_MAP_COLOR_ID = 11;
 
 export function createMapRenderer(manifest) {
+  let dark=false;
+  const tint=manifest.predictionDarkTint??0xffffffff;
+  function setPredictionDark(value){dark=!!value;}
   const predictionBiomes = new Map(
     (manifest.predictionBiomes ?? []).map(entry => [entry.id, entry])
   );
@@ -29,7 +33,8 @@ export function createMapRenderer(manifest) {
         predicted, gridIndex, lod, netherRoof,
         blockX + (x << lod), blockZ + (z << lod)
       );
-      output[z * 256 + x] = color < 0 ? 0 : (0xff000000 | color) >>> 0;
+      const argb=color < 0 ? 0 : (0xff000000 | color) >>> 0;
+      output[z * 256 + x]=dark ? shadePrediction(argb,tint):argb;
     }
     return output;
   }
@@ -173,7 +178,8 @@ export function createMapRenderer(manifest) {
         color, planeRelief(surface, kinds, fluids, grid, lod, false)
       );
       if (netherRoof) color = applyNetherLight(color, patch.lights?.[pixel] ?? 0);
-      output[pixel] = (0xff000000 | color) >>> 0;
+      const argb=(0xff000000 | color) >>> 0;
+      output[pixel]=dark&&!corrected[pixel]&&!authoritativePixel(patch,pixel)?shadePrediction(argb,tint):argb;
     }
     return output;
   }
@@ -277,13 +283,13 @@ export function createMapRenderer(manifest) {
     }
     return {
       width: 256, height: 256, indexes, biomes, heights, kinds, colors, fluids,
-      floorColors, materialIds, floorMaterialIds, overlayMaterialIds, lights
+      floorColors, materialIds, floorMaterialIds, overlayMaterialIds, lights, evaluated
     };
   }
 
   return {
     decodeTilePatch, drawCorrectedTile, drawPredictedTile,
-    renderCorrectedArgb, renderPredictedArgb
+    renderCorrectedArgb, renderPredictedArgb, setPredictionDark
   };
 }
 

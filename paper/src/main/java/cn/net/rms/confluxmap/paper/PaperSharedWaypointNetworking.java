@@ -138,6 +138,10 @@ final class PaperSharedWaypointNetworking implements PluginMessageListener {
         for (final SharedWaypointMessage delta : dispatch.broadcasts()) {
             broadcastSubscribed(delta);
         }
+        byte[] target = cn.net.rms.confluxmap.server.web.WebMapFeatures.publicationTarget(
+            message, dispatch.broadcasts()
+        );
+        if (target != null) companion.sendWebMapPacket(player, target);
     }
 
     private SharedWaypointSessionHandler.Environment environment() {

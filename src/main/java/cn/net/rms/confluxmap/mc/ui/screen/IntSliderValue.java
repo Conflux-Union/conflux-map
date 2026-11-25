@@ -52,6 +52,14 @@ final class IntSliderValue implements SliderValue<Integer> {
     }
 
     @Override
+    public boolean step(final int delta) {
+        final int next = clamp((long) value + delta);
+        if (next == value) return false;
+        value = next;
+        return true;
+    }
+
+    @Override
     public String text() {
         return Integer.toString(value);
     }

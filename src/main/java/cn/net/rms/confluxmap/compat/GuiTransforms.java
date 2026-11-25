@@ -6,8 +6,10 @@ import com.mojang.blaze3d.systems.RenderSystem;
 //#endif
 //#if MC>=260100
 //$$ import net.minecraft.client.gui.GuiGraphicsExtractor;
+//$$ import com.mojang.blaze3d.vertex.PoseStack;
 //#elseif MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
+//$$ import net.minecraft.client.util.math.MatrixStack;
 //#else
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.Vector4f;
@@ -26,6 +28,22 @@ public final class GuiTransforms {
     }
 
     //#if MC>=260100
+    //$$ public static HudAmbient matrixAmbient(final PoseStack matrices) {
+    //$$     final var model = matrices.last().pose();
+    //$$     return new HudAmbient(model.m30(), model.m31(), model.m00(), model.m11());
+    //$$ }
+    //#elseif MC>=12000
+    //$$ public static HudAmbient matrixAmbient(final MatrixStack matrices) {
+    //$$     final var model = matrices.peek().getPositionMatrix();
+    //$$     return new HudAmbient(model.m30(), model.m31(), model.m00(), model.m11());
+    //$$ }
+    //#else
+    public static HudAmbient matrixAmbient(final MatrixStack matrices) {
+        return ambient(matrices.peek().getModel());
+    }
+    //#endif
+
+    //#if MC>=260100
     //$$ public static HudAmbient ambient(final GuiGraphicsExtractor context) {
     //$$     final var pose = context.pose();
     //$$     return new HudAmbient(pose.m20(), pose.m21(), pose.m00(), pose.m11());
@@ -42,7 +60,7 @@ public final class GuiTransforms {
     //$$ }
     //#else
     public static HudAmbient ambient(final MatrixStack matrices) {
-        return ambient(matrices.peek().getModel());
+        return matrixAmbient(matrices);
     }
 
     /**

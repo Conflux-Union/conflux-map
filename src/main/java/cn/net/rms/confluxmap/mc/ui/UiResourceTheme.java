@@ -297,6 +297,13 @@ public final class UiResourceTheme {
         mapNativeIcon(icons, "map_terrain.png");
         mapNativeIcon(icons, "map_import.png");
         mapNativeIcon(icons, "measure.png");
+        mapNativeIcon(icons, "end_gateway_visibility.png");
+        mapNativeIcon(icons, "map_coordinate_jump.png");
+        mapNativeIcon(icons, "map_loaded_range.png");
+        mapNativeIcon(icons, "map_chunk_grid.png");
+        mapNativeIcon(icons, "nether_portal_visibility.png");
+        mapNativeIcon(icons, "screenshot_visibility.png");
+        mapNativeIcon(icons, "structure_visibility.png");
         mapNativeIcon(icons, "structure_search.png");
         mapNativeIcon(icons, "structure_search_off.png");
         mapNativeIcon(icons, "waypoint_local.png");

@@ -25,6 +25,11 @@ public final class ConfluxConfig {
     public static final String DEFAULT_TELEPORT_COMMAND = "execute in {dimension} run tp @s {x} {y} {z}";
     public static final int DEFAULT_MINIMAP_SIZE = 90;
     public static final int MINIMAP_ZOOM_LEVEL_COUNT = 4;
+    public static final int MIN_FULLSCREEN_ZOOM_LIMIT_PERCENT = 20;
+    public static final int MAX_FULLSCREEN_ZOOM_LIMIT_PERCENT = 200;
+    public static final int DEFAULT_FULLSCREEN_ZOOM_LIMIT_PERCENT = 100;
+    public static final double ORIGINAL_FULLSCREEN_MIN_ZOOM = 0.0625;
+    public static final double ORIGINAL_FULLSCREEN_MAX_ZOOM = 8.0;
     public static final int MIN_MINIMAP_BACKGROUND_OPACITY = 0;
     public static final int MAX_MINIMAP_BACKGROUND_OPACITY = 100;
     /** Matches the historical hard-coded 0x80 backing plate alpha. */
@@ -134,6 +139,8 @@ public final class ConfluxConfig {
     }
 
     public enum RadarDisplayMode { DOTS, PORTRAITS }
+
+    public enum LoadedRangeStyle { DIM, DASHED }
 
     /** Preset portal chunk-highlight fills; the alpha is baked in so a fill stays translucent. */
     public enum PortalHighlightColor {
@@ -266,6 +273,11 @@ public final class ConfluxConfig {
     public VoidColumnColor voidColumnColor = VoidColumnColor.DARK_INDIGO;
     /** Map quality level controlling LOD scale transition points. */
     public MapQuality mapQuality = MapQuality.BALANCED;
+    public int fullscreenMinZoomPercent = DEFAULT_FULLSCREEN_ZOOM_LIMIT_PERCENT;
+    public int fullscreenMaxZoomPercent = DEFAULT_FULLSCREEN_ZOOM_LIMIT_PERCENT;
+    public boolean fullscreenLoadedRangeVisible = false;
+    public LoadedRangeStyle fullscreenLoadedRangeStyle = LoadedRangeStyle.DIM;
+    public int fullscreenUnloadedBrightnessPercent = 50;
 
     /** Visible-capture target per tick; scales the synchronous sampling window (CaptureTickBudget). */
     public int snapshotBudgetPerTick = 8;
@@ -376,6 +388,8 @@ public final class ConfluxConfig {
 
     /** Master toggle for activated-portal markers (nether/end portals, end gateways) on both map surfaces. */
     public boolean portalMarkersEnabled = true;
+    public boolean fullscreenNetherPortalsVisible = true;
+    public boolean fullscreenEndGatewaysVisible = true;
     /** Draw the portal icon plate at each marker's anchor; the chunk highlight is a separate option. */
     public boolean portalIconsEnabled = true;
     /** Custom nether-portal icon texture (resource location); empty keeps the built-in vanilla stand-in. */
@@ -438,7 +452,7 @@ public final class ConfluxConfig {
     /** Reveal duration tier for {@link #uiTransitionsEnabled}. */
     public UiTransitionSpeed uiTransitionSpeed = UiTransitionSpeed.STANDARD;
     /** Visual skin for screen buttons and toolbar controls. */
-    public ControlStyle controlStyle = ControlStyle.AUTO;
+    public ControlStyle controlStyle = ControlStyle.CONFLUX;
 
     /** Permanent local opt-out for the unsupported-platform startup warning. */
     public boolean unsupportedPlatformWarningDismissed;
@@ -449,8 +463,6 @@ public final class ConfluxConfig {
     public long surveyReminderNextPromptAtMillis = SurveyReminderSchedule.FIRST_DELAY_MILLIS;
     /** Permanent local opt-out selected through the survey reminder's chat action. */
     public boolean surveyReminderDismissed;
-    /** Permanent local opt-out selected through the community invitation's chat action. */
-    public boolean communityInviteDismissed;
 
     public ConfluxConfig copy() {
         final ConfluxConfig c = new ConfluxConfig();
@@ -486,12 +498,19 @@ public final class ConfluxConfig {
         c.mapColorStyle = mapColorStyle;
         c.voidColumnColor = voidColumnColor;
         c.mapQuality = mapQuality;
+        c.fullscreenMinZoomPercent = fullscreenMinZoomPercent;
+        c.fullscreenMaxZoomPercent = fullscreenMaxZoomPercent;
+        c.fullscreenLoadedRangeVisible = fullscreenLoadedRangeVisible;
+        c.fullscreenLoadedRangeStyle = fullscreenLoadedRangeStyle;
+        c.fullscreenUnloadedBrightnessPercent = fullscreenUnloadedBrightnessPercent;
         c.snapshotBudgetPerTick = snapshotBudgetPerTick;
         c.recaptureHoldoffTicks = recaptureHoldoffTicks;
         c.gpuTileCacheLimit = gpuTileCacheLimit;
         c.workerThreadMode = workerThreadMode;
         c.workerThreadCount = workerThreadCount;
         c.portalMarkersEnabled = portalMarkersEnabled;
+        c.fullscreenNetherPortalsVisible = fullscreenNetherPortalsVisible;
+        c.fullscreenEndGatewaysVisible = fullscreenEndGatewaysVisible;
         c.portalIconsEnabled = portalIconsEnabled;
         c.portalIconTextureNether = portalIconTextureNether;
         c.portalIconTextureEnd = portalIconTextureEnd;
@@ -572,7 +591,6 @@ public final class ConfluxConfig {
         c.surveyReminderGameOpenMillis = surveyReminderGameOpenMillis;
         c.surveyReminderNextPromptAtMillis = surveyReminderNextPromptAtMillis;
         c.surveyReminderDismissed = surveyReminderDismissed;
-        c.communityInviteDismissed = communityInviteDismissed;
         return c;
     }
 
@@ -653,6 +671,14 @@ public final class ConfluxConfig {
     }
 
     /** Custom icon texture resource location for the portal kind; empty keeps the built-in default. */
+    public boolean fullscreenPortalIconVisible(PortalKind kind) {
+        return switch (kind) {
+            case NETHER_PORTAL -> fullscreenNetherPortalsVisible;
+            case END_GATEWAY -> fullscreenEndGatewaysVisible;
+            case END_PORTAL -> true;
+        };
+    }
+
     public String portalIconTexture(final PortalKind kind) {
         return switch (kind) {
             case NETHER_PORTAL -> portalIconTextureNether;
@@ -671,8 +697,31 @@ public final class ConfluxConfig {
         }
     }
 
+    public static double fullscreenZoomLimit(final double originalMultiplier, final int percent) {
+        return originalMultiplier * normalizedFullscreenZoomPercent(percent) / 100.0;
+    }
+
+    /** The renderer uses blocks per pixel, the reciprocal of the displayed zoom multiplier. */
+    public double clampFullscreenMapScale(final double blocksPerPixel) {
+        return clamp(
+            blocksPerPixel,
+            1.0 / fullscreenZoomLimit(ORIGINAL_FULLSCREEN_MAX_ZOOM, fullscreenMaxZoomPercent),
+            1.0 / fullscreenZoomLimit(ORIGINAL_FULLSCREEN_MIN_ZOOM, fullscreenMinZoomPercent)
+        );
+    }
+
+    private static int normalizedFullscreenZoomPercent(final int percent) {
+        return clamp(percent, MIN_FULLSCREEN_ZOOM_LIMIT_PERCENT, MAX_FULLSCREEN_ZOOM_LIMIT_PERCENT);
+    }
+
     /** Clamp out-of-range values loaded from a hand-edited file. */
     public void normalize() {
+        fullscreenMinZoomPercent = normalizedFullscreenZoomPercent(fullscreenMinZoomPercent);
+        fullscreenMaxZoomPercent = normalizedFullscreenZoomPercent(fullscreenMaxZoomPercent);
+        if (fullscreenLoadedRangeStyle == null) {
+            fullscreenLoadedRangeStyle = LoadedRangeStyle.DIM;
+        }
+        fullscreenUnloadedBrightnessPercent = clamp(fullscreenUnloadedBrightnessPercent, 0, 100);
         if (schemaVersion < 2) {
             final MinimapPlacement.Position migrated = MinimapPlacement.fromLegacyCorner(minimapCorner);
             minimapPositionX = migrated.x();
@@ -689,7 +738,7 @@ public final class ConfluxConfig {
             playerMarkerStyle = PlayerMarkerStyle.MODERN;
         }
         if (controlStyle == null) {
-            controlStyle = ControlStyle.AUTO;
+            controlStyle = ControlStyle.CONFLUX;
         }
         if (layerOverride == null) {
             layerOverride = LayerOverride.AUTO;

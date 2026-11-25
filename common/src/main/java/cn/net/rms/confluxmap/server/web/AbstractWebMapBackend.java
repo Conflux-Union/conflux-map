@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
-/** Published snapshot, player and avatar state shared by the platform web-map backends. */
+/** Published snapshot, player and avatar state shared by the platform web-map backends, and the server-name helper. */
 public abstract class AbstractWebMapBackend implements WebMapBackend {
     private volatile WebMapSnapshot snapshot = WebMapSnapshot.EMPTY;
     private volatile Map<UUID, URI> skinUrls = Map.of();
@@ -32,7 +32,11 @@ public abstract class AbstractWebMapBackend implements WebMapBackend {
 
     @Override
     public final CompletableFuture<byte[]> avatar(final UUID playerId) {
-        return avatars.face(skinUrls.get(playerId));
+        final URI skin = skinUrls.get(playerId);
+        final WebMapFeatures features = features();
+        return features == null ? avatars.face(skin)
+            : avatars.face(skin == null ? features.chatSkin(playerId) : skin,
+                snapshot.publicPlayerName(playerId));
     }
 
     protected final void publish(
@@ -42,5 +46,15 @@ public abstract class AbstractWebMapBackend implements WebMapBackend {
     ) {
         snapshot = snapshot.next(players, waypoints);
         skinUrls = Map.copyOf(currentSkins);
+    }
+
+    protected static String serverName(final String motd, final String fallback) {
+        final String name = motd == null ? ""
+            : motd.replaceAll("§.", "").replaceAll("[\\p{Cc}\\p{Cf}]", " ").strip();
+        if (name.isBlank()) {
+            return fallback;
+        }
+        return name.codePointCount(0, name.length()) > 80
+            ? name.substring(0, name.offsetByCodePoints(0, 80)) : name;
     }
 }

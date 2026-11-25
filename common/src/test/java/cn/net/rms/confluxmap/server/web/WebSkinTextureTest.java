@@ -45,8 +45,27 @@ class WebSkinTextureTest {
             "http://textures.minecraft.net/texture/abc123?redirect=evil",
             "ftp://textures.minecraft.net/texture/abc123"
         }) {
-            assertNull(WebSkinTexture.fromProperty(encoded("{\"url\":\"" + url + "\"}")), url);
+            assertNull(WebSkinTexture.fromProperty(encoded(
+                "{\"textures\":{\"SKIN\":{\"url\":\"" + url + "\"}}}"
+            )), url);
         }
+    }
+
+    @Test
+    void avatarUsesSkinEvenIfTheCapeAppearsFirstInTheOfficialProfile() {
+        final String encoded = encoded("""
+            {"textures":{
+                "CAPE":{"url":"https://textures.minecraft.net/texture/cape"},
+                "SKIN":{"url":"https://textures.minecraft.net/texture/face"}
+            }}
+            """);
+        final var profile = com.google.gson.JsonParser.parseString(
+            "{\"properties\":[{\"name\":\"textures\",\"value\":\"" + encoded + "\"}]}"
+        ).getAsJsonObject();
+        assertEquals(URI.create("https://textures.minecraft.net/texture/face"), WebAvatarCache.skinFromProfile(profile));
+        assertNull(WebSkinTexture.fromProperty(encoded("""
+            {"textures":{"CAPE":{"url":"https://textures.minecraft.net/texture/cape"}}}
+            """)));
     }
 
     private static String encoded(final String value) {

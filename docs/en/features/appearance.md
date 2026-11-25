@@ -17,7 +17,7 @@ title: Appearance
 ## Update Notices & Survey
 
 - An optional update check announces new versions in chat.
-- After several hours of play, a one-time survey invitation may appear, with an option to disable further notices.
+- After several hours of play, a survey invitation may appear in chat, along with links to the QQ group and the Discord server; "Don't remind me again" disables further notices.
 
 ---
 

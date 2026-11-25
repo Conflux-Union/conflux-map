@@ -26,6 +26,17 @@ class ConfigIoTest {
     private static final Logger LOGGER = LogManager.getLogger("ConfigIoTest");
 
     @Test
+    void oldConfigRetainsOriginalFullscreenZoomLimits(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("config.json");
+        Files.writeString(file, "{}", StandardCharsets.UTF_8);
+
+        final ConfluxConfig config = new ConfigIo(file, LOGGER).load();
+        assertEquals(100, config.fullscreenMinZoomPercent);
+        assertEquals(100, config.fullscreenMaxZoomPercent);
+        assertTrue(Files.readString(file).contains("\"fullscreenMinZoomPercent\": 100"));
+    }
+
+    @Test
     void predictionBackendDefaultsToAutoAndRoundTrips(@TempDir final Path tmp)
         throws IOException {
         final Path file = tmp.resolve("config.json");
@@ -535,17 +546,6 @@ class ConfigIoTest {
         assertEquals(12_345L, loaded.surveyReminderGameOpenMillis);
         assertEquals(67_890L, loaded.surveyReminderNextPromptAtMillis);
         assertTrue(loaded.surveyReminderDismissed);
-    }
-
-    @Test
-    void communityInviteDismissalRoundTrips(@TempDir final Path tmp) {
-        final ConfigIo io = new ConfigIo(tmp.resolve("config.json"), LOGGER);
-        final ConfluxConfig config = new ConfluxConfig();
-        config.communityInviteDismissed = true;
-
-        io.save(config);
-
-        assertTrue(io.load().communityInviteDismissed);
     }
 
     @Test

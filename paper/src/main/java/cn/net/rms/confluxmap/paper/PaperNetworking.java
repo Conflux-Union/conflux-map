@@ -19,6 +19,7 @@ import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.NegotiatedMapSync;
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.net.PolicyUpdateS2C;
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.net.PlayerPositionsS2C;
 import cn.net.rms.confluxmap.core.net.ServerInstanceS2C;
@@ -319,18 +320,26 @@ final class PaperNetworking implements PluginMessageListener {
         }
     }
 
+    void broadcastSettings() {
+        final ServerConfig config = companion.config();
+        final HelloPolicyS2C.Flags flags = CompanionPolicy.configuredFlags(config);
+        final HelloPolicyS2C.Budgets budgets = CompanionPolicy.budgets(config);
+        for (final Player player : Bukkit.getOnlinePlayers()) {
+            final NegotiatedMapSync session = session(player);
+            if (session != null) {
+                sendNegotiated(player, session,
+                    new PolicyUpdateS2C(CompanionPolicy.compatibleFlags(flags, session), budgets));
+            }
+        }
+    }
+
     private HelloPolicyS2C policy(final NegotiatedMapSync session) {
         final ServerConfig config = companion.config();
         final HelloPolicyS2C.Flags flags = CompanionPolicy.compatibleFlags(
             CompanionPolicy.configuredFlags(config), session
         );
         final boolean seed = flags.seedGranted();
-        final HelloPolicyS2C.Budgets budgets = new HelloPolicyS2C.Budgets(
-            config.maxBytesPerSecondPerPlayer,
-            config.maxTilesPerRequest,
-            config.minRequestIntervalMs,
-            Proto.DEFAULT_MAX_PATCH_LOD
-        );
+        final HelloPolicyS2C.Budgets budgets = CompanionPolicy.budgets(config);
         final List<HelloPolicyS2C.DimDescriptor> dimensions = new ArrayList<>();
         for (final PaperWorldDirectory.Entry entry : companion.worlds().entries()) {
             dimensions.add(new HelloPolicyS2C.DimDescriptor(

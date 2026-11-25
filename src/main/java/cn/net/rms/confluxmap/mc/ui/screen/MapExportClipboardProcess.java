@@ -59,6 +59,37 @@ final class MapExportClipboardProcess {
         }
     }
 
+    /** Reads outside the headless game JVM. The caller owns the temporary output. */
+    static void paste(final Path output) throws IOException, InterruptedException {
+        final List<String> command = helperCommand(output);
+        command.add("--paste");
+        final Process process = new ProcessBuilder(command)
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .redirectError(ProcessBuilder.Redirect.DISCARD).start();
+        try {
+            if (!process.waitFor(10, TimeUnit.SECONDS)) throw new IOException("Clipboard read timed out");
+            if (process.exitValue() != 0) throw new IOException("Clipboard does not contain a supported image");
+        } finally {
+            if (process.isAlive()) process.destroyForcibly();
+        }
+    }
+
+    private static void readClipboard(final Path path) throws Exception {
+        final var contents = Toolkit.getDefaultToolkit().getSystemClipboard().getContents(null);
+        final var flavor = java.awt.datatransfer.DataFlavor.imageFlavor;
+        if (contents == null || !contents.isDataFlavorSupported(flavor)) throw new IOException("No clipboard image");
+        final java.awt.Image image = (java.awt.Image) contents.getTransferData(flavor);
+        final var loaded = new javax.swing.ImageIcon(image);
+        final int width = loaded.getIconWidth();
+        final int height = loaded.getIconHeight();
+        if (width <= 0 || height <= 0 || (long) width * height > 40_000_000) throw new IOException("Invalid clipboard image dimensions");
+        final var pixels = new java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        final var graphics = pixels.createGraphics();
+        try { graphics.drawImage(image, 0, 0, null); }
+        finally { graphics.dispose(); }
+        if (!javax.imageio.ImageIO.write(pixels, "png", path.toFile())) throw new IOException("PNG encoder unavailable");
+    }
+
     private static List<String> helperCommand(final Path image) throws IOException {
         final String executable = Path.of(
             System.getProperty("java.home"), "bin", isWindows() ? "java.exe" : "java"
@@ -94,12 +125,17 @@ final class MapExportClipboardProcess {
     }
 
     public static void main(final String[] args) {
-        if (args.length != 1) {
+        if (args.length != 1 && (args.length != 2 || !"--paste".equals(args[1]))) {
             System.err.println("missing exported image path");
             System.exit(2);
         }
         try {
-            ownClipboard(Path.of(args[0]));
+            if (args.length == 2) {
+                readClipboard(Path.of(args[0]));
+                System.exit(0);
+            } else {
+                ownClipboard(Path.of(args[0]));
+            }
         } catch (final Throwable e) {
             System.err.println(e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
             System.exit(1);

@@ -14,6 +14,7 @@ public final class ConfluxMapMod implements ModInitializer {
 
     private static String name;
     private static String version;
+    private static ConfluxMapCompanion companion;
 
     public static String getName() {
         return name;
@@ -21,6 +22,10 @@ public final class ConfluxMapMod implements ModInitializer {
 
     public static String getVersion() {
         return version;
+    }
+
+    public static ConfluxMapCompanion companion() {
+        return companion;
     }
 
     @Override
@@ -34,7 +39,7 @@ public final class ConfluxMapMod implements ModInitializer {
 
         // Global callbacks must exist before an integrated world can be published to LAN. The
         // companion itself stays inactive in local singleplayer and starts on demand after publish.
-        final ConfluxMapCompanion companion = new ConfluxMapCompanion(
+        companion = new ConfluxMapCompanion(
             new ServerConfigIo(
                 FabricLoader.getInstance().getConfigDir().resolve(ID).resolve("server.json"),
                 LOGGER

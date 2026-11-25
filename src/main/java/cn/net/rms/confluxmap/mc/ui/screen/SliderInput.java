@@ -22,6 +22,7 @@ final class SliderInput<T> {
     private final TextFieldWidget input;
     private String lastAcceptedText;
     private boolean synchronizingInput;
+    private boolean wheelEnabled;
 
     SliderInput(
         final TextRenderer textRenderer,
@@ -81,6 +82,20 @@ final class SliderInput<T> {
         input.active = active;
         // Older TextFieldWidget mouse/key handlers do not consult ClickableWidget.active.
         input.setEditable(active);
+    }
+
+    void enableWheel() { wheelEnabled = true; }
+
+    boolean scrollAt(double x, double y, double amount) {
+        if (!wheelEnabled || amount == 0 || !slider.active
+            || !(slider.isMouseOver(x, y) || input.isMouseOver(x, y))) return false;
+        int steps = (int) Math.min(Integer.MAX_VALUE, Math.max(1, Math.round(Math.abs(amount))));
+        if (value.step(amount > 0 ? steps : -steps)) {
+            setter.accept(value.value());
+            slider.syncFromValue();
+        }
+        replaceInputText(value.text());
+        return true;
     }
 
     void tick() {

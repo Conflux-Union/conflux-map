@@ -1,5 +1,7 @@
 package cn.net.rms.confluxmap.mc.net;
 
+import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.core.export.MapExportLoadState;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.TileKey;
@@ -13,7 +15,10 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
+import java.util.UUID;
+import java.util.function.Supplier;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.server.MinecraftServer;
 
 /** Client subscription lifecycle for the fullscreen server chunk-load-state plane. */
 public final class ChunkLoadStateClient {
@@ -25,6 +30,8 @@ public final class ChunkLoadStateClient {
     private final CompanionSession companion;
     private final Sender sender;
     private final Executor clientThread;
+    private final Supplier<MinecraftServer> localServer;
+    private final UUID localViewer = UUID.randomUUID();
     private final ChunkLoadStateSnapshot snapshot = new ChunkLoadStateSnapshot();
     private int nextSubscriptionId;
     private int requestedDimIndex = -1;
@@ -38,7 +45,8 @@ public final class ChunkLoadStateClient {
         this(
             companion,
             networking::sendMessage,
-            runnable -> MinecraftClient.getInstance().execute(runnable)
+            runnable -> MinecraftClient.getInstance().execute(runnable),
+            () -> (MinecraftServer) MinecraftAccess.singleplayerServerRef(MinecraftClient.getInstance())
         );
     }
 
@@ -51,12 +59,22 @@ public final class ChunkLoadStateClient {
         final Sender sender,
         final Executor clientThread
     ) {
+        this(companion, sender, clientThread, () -> null);
+    }
+
+    private ChunkLoadStateClient(final CompanionSession companion, final Sender sender,
+        final Executor clientThread, final Supplier<MinecraftServer> localServer) {
         this.companion = companion;
         this.sender = sender;
         this.clientThread = clientThread;
+        this.localServer = localServer;
     }
 
     public boolean available() {
+        final MinecraftServer server = localServer.get();
+        if (server != null) {
+            return ConfluxMapMod.companion() != null && ConfluxMapMod.companion().hasLocalLoadStates(server);
+        }
         return companion.isActive()
             && companion.policy() != null
             && companion.policy().flags().chunkLoadStateEnabled();
@@ -105,7 +123,7 @@ public final class ChunkLoadStateClient {
             xBounds[1],
             zBounds[1]
         );
-        if (sender.send(request) < 0) {
+        if (send(request) < 0) {
             return false;
         }
         requestedDimIndex = dimIndex;
@@ -125,7 +143,7 @@ public final class ChunkLoadStateClient {
         if (completion != null && delta.complete()) {
             exportCompletion = null;
             final MapExportLoadState page = new MapExportLoadState(snapshot.entries());
-            sender.send(LoadStateSubscribeC2S.cancel(snapshot.subscriptionId()));
+            send(LoadStateSubscribeC2S.cancel(snapshot.subscriptionId()));
             snapshot.reset();
             requestedDimIndex = -1;
             completion.complete(page);
@@ -188,7 +206,7 @@ public final class ChunkLoadStateClient {
             maxChunkX,
             maxChunkZ
         );
-        if (sender.send(request) < 0) {
+        if (send(request) < 0) {
             completion.completeExceptionally(new IllegalStateException("Unable to request chunk load state"));
             return;
         }
@@ -203,7 +221,7 @@ public final class ChunkLoadStateClient {
 
     public void deactivate() {
         if (snapshot.active()) {
-            sender.send(LoadStateSubscribeC2S.cancel(snapshot.subscriptionId()));
+            send(LoadStateSubscribeC2S.cancel(snapshot.subscriptionId()));
         }
         final CompletableFuture<MapExportLoadState> completion = exportCompletion;
         exportCompletion = null;
@@ -228,7 +246,7 @@ public final class ChunkLoadStateClient {
             return;
         }
         if (snapshot.active()) {
-            sender.send(LoadStateSubscribeC2S.cancel(snapshot.subscriptionId()));
+            send(LoadStateSubscribeC2S.cancel(snapshot.subscriptionId()));
         }
         exportCompletion = null;
         snapshot.reset();
@@ -240,12 +258,28 @@ public final class ChunkLoadStateClient {
     }
 
     private int dimensionIndex(final DimensionId dimension) {
+        final MinecraftServer server = localServer.get();
+        if (server != null) {
+            return ConfluxMapMod.companion().localLoadStateDimension(server, dimension);
+        }
         for (int i = 0; i < companion.policy().dims().size(); i++) {
             if (dimension.toString().equals(companion.policy().dims().get(i).dimId())) {
                 return i;
             }
         }
         return -1;
+    }
+
+    private int send(final LoadStateSubscribeC2S request) {
+        final MinecraftServer server = localServer.get();
+        if (server == null) return sender.send(request);
+        final var local = ConfluxMapMod.companion();
+        if (local == null || !local.hasLocalLoadStates(server)) return -1;
+        server.execute(() -> local.subscribeLocalLoadStates(server, localViewer, request,
+            delta -> clientThread.execute(() -> {
+                if (localServer.get() == server) onDelta(delta);
+            })));
+        return 0;
     }
 
     private static int[] expandedBounds(final int min, final int max) {

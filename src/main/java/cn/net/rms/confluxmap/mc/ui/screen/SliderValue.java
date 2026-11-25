@@ -11,4 +11,9 @@ interface SliderValue<T> {
     boolean updateFromText(String text);
 
     String text();
+
+    /** Moves by whole {@code delta} units; false unless this value has a whole-unit step and can move. */
+    default boolean step(int delta) {
+        return false;
+    }
 }
