@@ -55,6 +55,16 @@ public final class CorrectionStore {
         return get(new Key(dimension.toString(), lod, tileX, tileZ));
     }
 
+    /** Reads resident synchronized coverage without opening a file or creating an empty tile. */
+    synchronized byte[] loadedCoverage(final WorldIdentity identity, final DimensionId dimension,
+                                       final int lod, final int x, final int z) {
+        if (!world.equals(identity)) {
+            return null;
+        }
+        final CorrectionTile tile = tiles.get(new Key(dimension.toString(), lod, x, z));
+        return tile == null ? null : tile.copyEvaluated();
+    }
+
     public synchronized CorrectionTile get(final Key key) {
         CorrectionTile tile = tiles.get(key);
         if (tile != null) {

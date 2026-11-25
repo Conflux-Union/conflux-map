@@ -64,6 +64,8 @@ public final class ConfigScreen extends ConfluxScreen {
 
         private final String labelKey;
 
+        String labelKey() { return labelKey; }
+
         Category(final String labelKey) {
             this.labelKey = labelKey;
         }
@@ -100,6 +102,11 @@ public final class ConfigScreen extends ConfluxScreen {
     /** Rows scroll in ROW_HEIGHT steps; widgets outside the viewport are simply not built. */
     int scrollOffset;
     private int contentHeight;
+    private String searchQuery = "";
+    private TextFieldWidget searchField;
+
+    String searchQuery() { return searchQuery; }
+    private boolean searching() { return !searchQuery.isBlank(); }
     SharedWaypointAvailability sharedAvailability;
     RadarSettingsAccess radarAccess = RadarSettingsAccess.ALLOWED;
     PredictionSettingsAccess predictionAccess;
@@ -139,6 +146,12 @@ public final class ConfigScreen extends ConfluxScreen {
         this.rows = new ConfigRows(this, config, configIo);
     }
 
+    public static ConfigScreen waypointEnhancements(final Screen parent) {
+        final ConfigScreen screen = new ConfigScreen(parent);
+        screen.category = Category.WAYPOINTS;
+        return screen;
+    }
+
     /** Keep the world (and this session's capture pipeline) running while the screen is open. */
     @Override
     public boolean isPauseScreen() {
@@ -161,10 +174,19 @@ public final class ConfigScreen extends ConfluxScreen {
     public void tick() {
         super.tick();
         rows.tickInputs();
+        if (searchField != null) {
+            Widgets.tick(searchField);
+            String next = Widgets.text(searchField);
+            if (!next.equals(searchQuery) && tabSwitch.phase() != TabSwitchFlow.Phase.RETIRING) {
+                searchQuery = next;
+                scrollOffset = 0;
+                rebuild();
+            }
+        }
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
         if (!availability.equals(sharedAvailability)) {
             sharedAvailability = availability;
-            if (category == Category.WAYPOINTS) {
+            if (category == Category.WAYPOINTS || searching()) {
                 rebuild();
             }
         }
@@ -173,7 +195,7 @@ public final class ConfigScreen extends ConfluxScreen {
         );
         if (currentRadarAccess != radarAccess) {
             radarAccess = currentRadarAccess;
-            if (category == Category.RADAR) {
+            if (category == Category.RADAR || searching()) {
                 rebuild();
             }
         }
@@ -183,7 +205,7 @@ public final class ConfigScreen extends ConfluxScreen {
             || currentManualSeedAvailable != manualSeedAvailable) {
             predictionAccess = currentPredictionAccess;
             manualSeedAvailable = currentManualSeedAvailable;
-            if (category == Category.PREDICTION) {
+            if (category == Category.PREDICTION || searching()) {
                 rebuild();
             }
         }
@@ -199,21 +221,21 @@ public final class ConfigScreen extends ConfluxScreen {
         final PlayerMarkerSettingsAccess currentPlayerMarkerAccess = playerMarkerSettingsAccess();
         if (!currentPlayerMarkerAccess.equals(playerMarkerAccess)) {
             playerMarkerAccess = currentPlayerMarkerAccess;
-            if (category == Category.MINIMAP) {
+            if (category == Category.MINIMAP || searching()) {
                 rebuild();
             }
         }
         final boolean currentMinimapRestricted = !companionSession.minimapAllowed();
         if (currentMinimapRestricted != minimapRestrictedByServer) {
             minimapRestrictedByServer = currentMinimapRestricted;
-            if (category == Category.MINIMAP) {
+            if (category == Category.MINIMAP || searching()) {
                 rebuild();
             }
         }
         final boolean currentWaypointsRestricted = !companionSession.waypointsAllowed();
         if (currentWaypointsRestricted != waypointsRestrictedByServer) {
             waypointsRestrictedByServer = currentWaypointsRestricted;
-            if (category == Category.WAYPOINTS) {
+            if (category == Category.WAYPOINTS || searching()) {
                 rebuild();
             }
         }
@@ -228,8 +250,8 @@ public final class ConfigScreen extends ConfluxScreen {
     }
 
     int rowsTop() {
-        final int baseRowsTop = tabLayout().contentTop();
-        return category == Category.RADAR && radarAccess.noticeKey() != null
+        final int baseRowsTop = tabLayout().contentTop() + ROW_HEIGHT;
+        return !searching() && category == Category.RADAR && radarAccess.noticeKey() != null
             ? baseRowsTop + radarNoticeHeight()
             : baseRowsTop;
     }
@@ -258,8 +280,9 @@ public final class ConfigScreen extends ConfluxScreen {
             // old-category rows under the fading snapshot.
             return true;
         }
+        if (rows.scrollSizeInput(mouseX, mouseY, amount)) return true;
         // Scrolling rebuilds the rows and would destroy a text field mid-edit.
-        if (getFocused() instanceof TextFieldWidget) {
+        if (getFocused() instanceof TextFieldWidget && getFocused() != searchField) {
             return false;
         }
         final boolean overRows = mouseX >= rowX() && mouseX <= rowX() + rowWidth + 8
@@ -287,7 +310,9 @@ public final class ConfigScreen extends ConfluxScreen {
     @Override
     public void onClose() {
         configIo.save(config);
-        requestClose(parent);
+        final Screen target = parent instanceof WaypointListScreen list ? list.layoutAfterSettings()
+            : parent instanceof CompactWaypointScreen compact ? compact.layoutAfterSettings() : parent;
+        requestClose(target);
     }
 
     /** Rebuilds every row; also callable from a row's own click handler (e.g. to reveal a follow-up row). */
@@ -297,9 +322,11 @@ public final class ConfigScreen extends ConfluxScreen {
         predictionAccess = predictionSettingsAccess();
         playerMarkerAccess = playerMarkerSettingsAccess();
         manualSeedAvailable = manualSeedService.available();
+        final boolean searchFocused = searchField != null && getFocused() == searchField;
         rows.clearInputs();
         clearChildren();
         addTabs();
+        addSearchField(searchFocused);
         if (tabSwitch.phase() == TabSwitchFlow.Phase.RETIRING) {
             // Act 1 owns the rows: the old ones are fading from the snapshot, so no new
             // rows may surface under them and the scrollbar stays with the retiring tab.
@@ -308,7 +335,27 @@ public final class ConfigScreen extends ConfluxScreen {
             return;
         }
         contentHeight = rows.addRows() + scrollOffset - rowsTop();
+        int limit = Math.max(0, contentHeight - viewportHeight());
+        if (scrollOffset > limit) {
+            scrollOffset = limit;
+            rebuild();
+            return;
+        }
         addBottomButtons();
+    }
+
+    private void addSearchField(boolean refocus) {
+        Text prompt = Texts.translatable("confluxmap.screen.config.search");
+        if (searchField == null || Widgets.x(searchField) != rowX()
+            || Widgets.y(searchField) != tabLayout().contentTop() || searchField.getWidth() != rowWidth) {
+            searchField = new TextFieldWidget(this.textRenderer, rowX(), tabLayout().contentTop(), rowWidth,
+                ROW_HEIGHT - 2, prompt);
+            searchField.setMaxLength(64);
+            Widgets.setText(searchField, searchQuery);
+        }
+        searchField.setSuggestion(searchQuery.isEmpty() ? prompt.getString() : null);
+        addDrawableChild(searchField);
+        if (refocus) setFocused(searchField);
     }
 
     private void addBottomButtons() {
@@ -375,6 +422,12 @@ public final class ConfigScreen extends ConfluxScreen {
     }
 
     private void selectCategory(final Category c) {
+        if (searching()) {
+            searchQuery = "";
+            Widgets.setText(searchField, "");
+            switchTo(c);
+            return;
+        }
         switch (tabSwitch.click(c, category, config.uiTransitionsEnabled)) {
             case NONE -> {
             }
@@ -712,8 +765,12 @@ public final class ConfigScreen extends ConfluxScreen {
         } else {
             rows.drawRetiringLabels(draw, retiring, this::retiringLabelAlpha);
         }
-        if (category == Category.RADAR && radarAccess.noticeKey() != null) {
+        if (!searching() && category == Category.RADAR && radarAccess.noticeKey() != null) {
             drawRadarPolicyNotice(draw);
+        }
+        if (searching() && contentHeight == 0) {
+            draw.drawTextWithShadow(this.textRenderer, Texts.translatable("confluxmap.screen.config.no_matches").getString(),
+                rowX() + 4, rowsTop() + 6, 0xFFBBBBBB);
         }
         drawScrollbar(draw);
     }
@@ -736,7 +793,7 @@ public final class ConfigScreen extends ConfluxScreen {
 
     private void drawRadarPolicyNotice(final GuiDraw draw) {
         final String notice = Texts.translatable(radarAccess.noticeKey()).getString();
-        int y = tabLayout().contentTop() + 2;
+        int y = tabLayout().contentTop() + ROW_HEIGHT + 2;
         for (final OrderedText line : this.textRenderer.wrapLines(
             StringVisitable.plain(notice), Math.max(40, rowWidth)
         )) {

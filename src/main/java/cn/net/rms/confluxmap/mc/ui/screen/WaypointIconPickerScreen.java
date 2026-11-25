@@ -33,6 +33,7 @@ final class WaypointIconPickerScreen extends ConfluxScreen {
     private final Screen parent;
     private final Consumer<String> onSelect;
     private final List<Choice> choices;
+    private final boolean resources;
     private final Map<ButtonWidget, Choice> buttons = new LinkedHashMap<>();
 
     private TextFieldWidget searchField;
@@ -43,10 +44,20 @@ final class WaypointIconPickerScreen extends ConfluxScreen {
     private int columns;
 
     WaypointIconPickerScreen(final Screen parent, final Consumer<String> onSelect) {
-        super(Texts.translatable("confluxmap.screen.waypoint.icon_picker.title"));
+        this(parent, onSelect, false);
+    }
+
+    static WaypointIconPickerScreen forResources(final Screen parent, final Consumer<String> onSelect) {
+        return new WaypointIconPickerScreen(parent, onSelect, true);
+    }
+
+    private WaypointIconPickerScreen(final Screen parent, final Consumer<String> onSelect, final boolean resources) {
+        super(Texts.translatable(resources ? "confluxmap.waypoint_details.choose_product"
+            : "confluxmap.screen.waypoint.icon_picker.title"));
         this.parent = parent;
         this.onSelect = onSelect;
-        this.choices = loadChoices();
+        this.resources = resources;
+        this.choices = loadChoices(resources);
     }
 
     @Override
@@ -65,7 +76,8 @@ final class WaypointIconPickerScreen extends ConfluxScreen {
             38,
             Math.min(240, width - 24),
             FIELD_HEIGHT,
-            Texts.translatable("confluxmap.screen.waypoint.icon_picker.search")
+            Texts.translatable(resources ? "confluxmap.waypoint_details.product_search"
+                : "confluxmap.screen.waypoint.icon_picker.search")
         );
         searchField.setMaxLength(64);
         searchField.setText(query);
@@ -124,7 +136,7 @@ final class WaypointIconPickerScreen extends ConfluxScreen {
             entries.add(choice.entry());
             byId.put(choice.entry().itemId(), choice);
         }
-        filtered = WaypointIconSearch.filter(entries, query).stream()
+        filtered = (resources ? WaypointIconSearch.filterResources(entries, query) : WaypointIconSearch.filter(entries, query)).stream()
             .map(entry -> byId.get(entry.itemId()))
             .toList();
         final int visibleRows = visibleRows();
@@ -195,7 +207,8 @@ final class WaypointIconPickerScreen extends ConfluxScreen {
         drawCentered(draw, getTitle().getString(), 16, 0xFFFFFFFF);
         drawCentered(
             draw,
-            Texts.translatable("confluxmap.screen.waypoint.icon_picker.prompt").getString(),
+            Texts.translatable(resources ? "confluxmap.waypoint_details.product_search"
+                : "confluxmap.screen.waypoint.icon_picker.prompt").getString(),
             28,
             0xFFBBBBBB
         );
@@ -254,11 +267,11 @@ final class WaypointIconPickerScreen extends ConfluxScreen {
         );
     }
 
-    private static List<Choice> loadChoices() {
+    private static List<Choice> loadChoices(final boolean includeModded) {
         final List<Choice> result = new ArrayList<>();
         for (final Item item : Regs.items()) {
             final String id = Regs.itemId(item).toString();
-            if (!id.startsWith("minecraft:")) {
+            if (!includeModded && !id.startsWith("minecraft:")) {
                 continue;
             }
             final ItemStack stack = new ItemStack(item);

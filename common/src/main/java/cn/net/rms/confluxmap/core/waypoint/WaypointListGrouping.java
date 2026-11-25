@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * Flattens pre-filtered waypoint rows into the group-collapsible model used
@@ -33,6 +34,27 @@ public final class WaypointListGrouping {
     }
 
     private WaypointListGrouping() {
+    }
+
+    /** Pins matching rows above every header; remaining rows keep their original grouping. */
+    public static <T> List<Entry<T>> groupPinned(
+        final List<GroupRef> groups,
+        final List<T> rows,
+        final Function<T, String> groupKeyOf,
+        final Predicate<T> pinned,
+        final boolean expandAll
+    ) {
+        final List<Entry<T>> result = new ArrayList<>();
+        final List<T> remaining = new ArrayList<>();
+        for (final T row : rows) {
+            if (pinned.test(row)) {
+                result.add(new Member<>(groupKeyOf.apply(row), row));
+            } else {
+                remaining.add(row);
+            }
+        }
+        result.addAll(group(groups, remaining, groupKeyOf, expandAll));
+        return result;
     }
 
     /**

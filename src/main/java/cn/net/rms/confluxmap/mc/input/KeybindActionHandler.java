@@ -76,6 +76,18 @@ final class KeybindActionHandler {
                 }
                 handled = openScreen(WaypointListScreen.openedFromHotkey());
                 break;
+            case TEMPORARY_WAYPOINT:
+                if (!ConfluxMapClient.get().waypointListMemory().options().temporaryWaypoint || !waypointsAllowed()) return false;
+                final var app = ConfluxMapClient.get();
+                final var player = app.gameBridge().player();
+                final var store = app.waypointService().current();
+                if (player.isEmpty() || store == null || !store.persistenceWritable()) return false;
+                store.add(cn.net.rms.confluxmap.core.waypoint.Waypoint.create(
+                    cn.net.rms.confluxmap.compat.Texts.translatable("confluxmap.map.location_menu.temporary_name").getString(),
+                    app.gameBridge().session().dimension(), player.get().x(), player.get().y(), player.get().z(),
+                    0xFF3498DB, "", cn.net.rms.confluxmap.core.waypoint.Waypoint.Type.TEMPORARY));
+                handled = true;
+                break;
             case NEW_WAYPOINT:
                 if (!waypointsAllowed()) {
                     return false;

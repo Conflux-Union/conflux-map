@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -8,6 +9,12 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 final class FullscreenMapSettingsButtonTest {
+    @Test
+    void waypointGroupWrapsBeforeTheBottomOfAShortMap() {
+        assertEquals(5, FullscreenMapScreen.waypointGroupRows(95, 240));
+        assertTrue(FullscreenMapScreen.waypointGroupRows(95, 280) >= 7);
+    }
+
     @Test
     void rightToolbarSettingsButtonOpensSettingsThatReturnToTheMap() throws IOException {
         final String mapSource = source(
@@ -47,7 +54,7 @@ final class FullscreenMapSettingsButtonTest {
             "    void rebuild()"
         );
         assertTrue(
-            close.contains("requestClose(parent);"),
+            close.contains(": parent;") && close.contains("requestClose(target);"),
             "closing map settings must restore the fullscreen map"
         );
     }

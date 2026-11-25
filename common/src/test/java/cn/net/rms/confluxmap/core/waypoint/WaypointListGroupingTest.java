@@ -98,6 +98,41 @@ class WaypointListGroupingTest {
         ), render(grouped));
     }
 
+    @Test
+    void starsAppearAboveAllGroupsWithoutDuplicatingRows() {
+        final List<String> rows = List.of("Travel near", "Base camp", "Second base", "Unassigned");
+        final var result = WaypointListGrouping.groupPinned(GROUPS, rows,
+            WaypointListGroupingTest::groupOf, row -> row.equals("Travel near") || row.equals("Second base"), false);
+        assertEquals(List.of(
+            "member Travel near -> \"Travel\"",
+            "member Second base -> \"Bases\"",
+            "header: \"Bases\" (1)",
+            "member Base camp -> \"Bases\"",
+            "header: \"\" (1)",
+            "member Unassigned -> \"\""
+        ), render(result));
+    }
+
+    @Test
+    void unstarRestoresTheOriginalGroupingAndDistanceEncounterOrder() {
+        final List<String> rows = List.of("Travel near", "Second base", "Base camp", "Unassigned");
+        assertEquals(
+            WaypointListGrouping.group(GROUPS, rows, WaypointListGroupingTest::groupOf, false),
+            WaypointListGrouping.groupPinned(GROUPS, rows, WaypointListGroupingTest::groupOf, row -> false, false)
+        );
+    }
+
+    @Test
+    void starredRowsRemainVisibleWhenTheirOriginalGroupIsCollapsed() {
+        final List<GroupRef> groups = List.of(new GroupRef("Bases", "Bases", true));
+        assertEquals(List.of("member Base camp -> \"Bases\"", "header: \"Bases\" [collapsed] (1)"), render(
+            WaypointListGrouping.groupPinned(groups, List.of("Base camp", "Second base"),
+                WaypointListGroupingTest::groupOf, row -> row.equals("Base camp"), false)
+        ));
+        assertEquals(List.of(), WaypointListGrouping.groupPinned(groups, List.<String>of(),
+            WaypointListGroupingTest::groupOf, row -> true, false));
+    }
+
     private static String groupOf(final String row) {
         if (row.startsWith("Base") || row.startsWith("Second")) {
             return "Bases";

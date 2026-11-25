@@ -56,7 +56,13 @@ final class MonochromeUiIconTest {
         "annotation_label.png",
         "annotation_undo.png",
         "annotation_redo.png",
-        "measure.png"
+        "measure.png",
+        "end_gateway_visibility.png",
+        "map_coordinate_jump.png",
+        "map_loaded_range.png",
+        "nether_portal_visibility.png",
+        "screenshot_visibility.png",
+        "structure_visibility.png"
     };
 
     /** Keeps the declared contract and the shipped folder in step, in both directions. */

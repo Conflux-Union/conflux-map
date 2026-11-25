@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 final class KeybindActionTest {
     @Test
     void sharedRegistryContainsEveryExistingActionWithUniqueBackendKeys() {
-        assertEquals(10, KeybindAction.values().length);
+        assertEquals(11, KeybindAction.values().length);
         assertEquals(
             Set.of(
                 "toggle_minimap",
@@ -32,6 +32,7 @@ final class KeybindActionTest {
                 "cycle_layer",
                 "waypoints",
                 "new_waypoint",
+                "temporary_waypoint",
                 "toggle_local_waypoints",
                 "open_config",
                 "cycle_prediction",

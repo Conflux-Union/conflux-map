@@ -42,6 +42,13 @@ final class IntSliderValue {
         }
     }
 
+    boolean step(int delta) {
+        int next = clamp((long) value + delta);
+        if (next == value) return false;
+        value = next;
+        return true;
+    }
+
     String text() {
         return Integer.toString(value);
     }

@@ -23,4 +23,10 @@ final class WaypointIconSearch {
             .filter(entry -> entry.displayName().toLowerCase(Locale.ROOT).contains(query))
             .toList();
     }
+
+    static List<Entry> filterResources(final List<Entry> entries, final String rawQuery) {
+        final String query = rawQuery == null ? "" : rawQuery.trim().toLowerCase(Locale.ROOT);
+        return entries.stream().filter(entry -> entry.displayName().toLowerCase(Locale.ROOT).contains(query)
+            || entry.itemId().toLowerCase(Locale.ROOT).contains(query)).toList();
+    }
 }
