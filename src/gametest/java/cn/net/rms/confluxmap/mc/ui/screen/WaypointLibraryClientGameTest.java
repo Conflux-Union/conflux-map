@@ -807,7 +807,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$             var screen = MinecraftAccess.screen(client);
 //$$             var inputs = (java.util.List<?>) field(field(screen, "rows"), "sliderInputs");
 //$$             return inputs.stream().filter(value -> (Boolean) field(value, "wheelEnabled"))
-//$$                 .map(IntSliderInput.class::cast).toList();
+//$$                 .map(SliderInput.class::cast).toList();
 //$$         });
 //$$         if (sizes.size() != 2) throw new AssertionError("Missing independent compact size settings");
 //$$         var width = sizes.get(0).input();
