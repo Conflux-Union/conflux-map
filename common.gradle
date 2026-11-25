@@ -144,8 +144,12 @@ loom {
             if (project.hasProperty('autoServer')) {
                 final int autoServerPort = project.hasProperty('autoServerPort')
                     ? Integer.parseInt(project.property('autoServerPort').toString()) : 25565
-                // Minecraft 1.20.1+ uses Quick Play instead of the legacy server/port options.
-                if (mcVersion >= 12001) {
+                if (mcVersion == 11701 && project.hasProperty('legacyWaypointSmoke')) {
+                    // The legacy CLI connects before initial resources are ready. Let the UI test
+                    // start the connection after the loading overlay closes.
+                    vmArg "-Dconfluxmap.gametest.serverPort=${autoServerPort}"
+                } else if (mcVersion >= 12001) {
+                    // Minecraft 1.20.1+ uses Quick Play instead of the legacy server/port options.
                     programArgs '--quickPlayMultiplayer', "127.0.0.1:${autoServerPort}"
                 } else {
                     programArgs '--server', '127.0.0.1', '--port', String.valueOf(autoServerPort)

@@ -22,6 +22,12 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
+//#if MC==11701
+import net.minecraft.client.gui.screen.ConnectScreen;
+import net.minecraft.client.gui.screen.TitleScreen;
+import net.minecraft.client.network.ServerAddress;
+import net.minecraft.client.network.ServerInfo;
+//#endif
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.util.ScreenshotRecorder;
@@ -36,6 +42,10 @@ public final class LegacyWaypointPortClientTest implements ClientModInitializer 
     private MapScreenshotIndex.Scope scope;
     private String screenshotFile;
     private double screenshotX;
+    //#if MC==11701
+    private final Integer serverPort = Integer.getInteger("confluxmap.gametest.serverPort");
+    private boolean connectionStarted;
+    //#endif
 
     @Override
     public void onInitializeClient() {
@@ -46,6 +56,15 @@ public final class LegacyWaypointPortClientTest implements ClientModInitializer 
         if (done) return;
         try {
             check(++ticks < 1_200, "Timed out at waypoint check " + stage);
+            //#if MC==11701
+            if (serverPort != null && !connectionStarted && client.getOverlay() == null
+                && client.currentScreen instanceof TitleScreen titleScreen) {
+                connectionStarted = true;
+                final String address = "127.0.0.1:" + serverPort;
+                ConnectScreen.connect(titleScreen, client, ServerAddress.parse(address),
+                    new ServerInfo("Conflux Map smoke test", address, false));
+            }
+            //#endif
             var app = ConfluxMapClient.get();
             if (client.player != null && app.waypointLibraryService().world() != null && advance(client, app)) {
                 stage++;
