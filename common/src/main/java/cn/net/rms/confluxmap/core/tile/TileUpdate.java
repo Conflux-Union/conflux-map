@@ -18,7 +18,8 @@ public record TileUpdate(
     int[] argbPixels,
     List<Rect> changed,
     Relight relight,
-    Rect payloadBounds
+    Rect payloadBounds,
+    boolean fullComposition
 ) {
     /** One composed sub-rect of the 256x256 tile, in tile-pixel coordinates. */
     public record Rect(int x, int y, int width, int height) {
@@ -33,7 +34,32 @@ public record TileUpdate(
         final List<Rect> changed,
         final Relight relight
     ) {
-        this(key, argbPixels, changed, relight, null);
+        this(key, argbPixels, changed, relight, null, changed.equals(FULL_TILE));
+    }
+
+    /** Backward-compatible 5-component constructor preserving existing test callers. */
+    public TileUpdate(
+        final TileKey key,
+        final int[] argbPixels,
+        final List<Rect> changed,
+        final Relight relight,
+        final Rect payloadBounds
+    ) {
+        this(
+            key, argbPixels, changed, relight, payloadBounds,
+            payloadBounds == null && changed.equals(FULL_TILE)
+        );
+    }
+
+    /** Composed tile update explicitly carrying whether a full-tile pass produced it. */
+    public static TileUpdate composed(
+        final TileKey key,
+        final int[] argbPixels,
+        final List<Rect> changed,
+        final Relight relight,
+        final boolean fullComposition
+    ) {
+        return new TileUpdate(key, argbPixels, changed, relight, null, fullComposition);
     }
 
     /** A packed single-rectangle update. Both color and light planes use the rectangle's stride. */
@@ -48,7 +74,7 @@ public record TileUpdate(
             || (relight != null && relight.lightLevels.length != expected)) {
             throw new IllegalArgumentException("packed tile patch has the wrong plane size");
         }
-        return new TileUpdate(key, argbPixels, List.of(changed), relight, changed);
+        return new TileUpdate(key, argbPixels, List.of(changed), relight, changed, false);
     }
 
     /**
@@ -87,7 +113,25 @@ public record TileUpdate(
     }
 
     public static TileUpdate fullTile(final TileKey key, final int[] argbPixels, final Relight relight) {
-        return new TileUpdate(key, argbPixels, FULL_TILE, relight, null);
+        return new TileUpdate(key, argbPixels, FULL_TILE, relight, null, true);
+    }
+
+    /** Returns true when at least one pixel in {@link #changed} has non-zero alpha. */
+    public boolean hasVisiblePixels() {
+        if (changed.isEmpty()) {
+            return false;
+        }
+        for (final Rect rect : changed) {
+            for (int y = rect.y; y < rect.y + rect.height; y++) {
+                final int source = sourceIndexAt(rect.x, y);
+                for (int offset = 0; offset < rect.width; offset++) {
+                    if ((argbPixels[source + offset] >>> 24) != 0) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /** Returns one destination pixel regardless of whether this update is full or packed. */
@@ -125,7 +169,7 @@ public record TileUpdate(
         }
         // A complete replacement owns every pixel and light value. Retaining older rectangles
         // would copy two full planes and make the renderer upload overwritten pixels again.
-        if (newer.changed.equals(FULL_TILE)) {
+        if (newer.changed.equals(FULL_TILE) || (newer.fullComposition && newer.payloadBounds == null)) {
             return newer;
         }
         final int[] pixels = new int[256 * 256];
@@ -135,7 +179,8 @@ public record TileUpdate(
         changed.addAll(older.changed);
         changed.addAll(newer.changed);
         return new TileUpdate(
-            older.key, pixels, List.copyOf(changed), mergeRelight(older, newer), null
+            older.key, pixels, List.copyOf(changed), mergeRelight(older, newer), null,
+            older.fullComposition || newer.fullComposition
         );
     }
 
