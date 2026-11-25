@@ -400,45 +400,22 @@ public final class TileTextureManager {
     }
 
     /**
-     * Binds the parent tile one LOD coarser than {@code key} when it is resident, filling
-     * {@code uvOut} with the {@code [u0, v0, u1, v1]} quadrant of that parent covering {@code key}.
-     * Read-only on a miss: a missing parent is not requested, because the caller only wants it as a
-     * stand-in while {@code key} itself loads. Returns false (leaving {@code uvOut} untouched) when
-     * no coarser tile exists - at {@link TileMath#MAX_LOD}, before that parent has uploaded, or
-     * when a predicted parent's composition has gone stale (see {@link #bindFallbackChild}).
+     * Whether {@code key} has a resident GPU texture whose contents are valid to draw as a
+     * cross-LOD fallback without enqueueing any work.
      */
-    public boolean bindFallbackParent(final TileKey key, final float[] uvOut) {
-        if (key.lod() >= TileMath.MAX_LOD) {
+    public boolean isFallbackUsable(final TileKey key) {
+        if (!textures.containsKey(key)) {
             return false;
         }
-        final TileKey parent = new TileKey(
-            key.world(), key.dimension(), key.layerId(),
-            key.lod() + 1,
-            TileMath.parentTile(key.tileX()),
-            TileMath.parentTile(key.tileZ())
-        );
-        if (!bindFallbackIfFresh(parent)) {
-            return false;
-        }
-        TileMath.parentUv(key.tileX(), key.tileZ(), uvOut);
-        return true;
+        return !PredictedTileKeys.isPredicted(key) || predictionTiles.compositionCurrent(key);
     }
 
     /**
-     * Binds a resident finer tile for the children fallback, read-only like the parent probe.
-     * A predicted tile additionally passes {@link PredictionTileService#compositionCurrent}:
-     * only the viewport's own LOD recomposes, so a tile left stale behind a zoom still claims
-     * terrain the real layer has since filled in, and drawing it across LODs would paint
-     * fabricated terrain over resident real tiles. A refused stand-in leaves the gap showing
-     * the background until the tile's LOD is viewed again.
+     * Binds {@code key} for a cross-LOD fallback draw without triggering any tile request on a
+     * miss; returns false when absent or (for predicted tiles) when its composition is stale.
      */
-    public boolean bindFallbackChild(final TileKey key) {
-        return bindFallbackIfFresh(key);
-    }
-
-    /** Residency plus the predicted-composition validity every cross-LOD probe is gated on. */
-    private boolean bindFallbackIfFresh(final TileKey key) {
-        if (PredictedTileKeys.isPredicted(key) && !predictionTiles.compositionCurrent(key)) {
+    public boolean bindFallback(final TileKey key) {
+        if (!isFallbackUsable(key)) {
             return false;
         }
         return bindIfResident(key);

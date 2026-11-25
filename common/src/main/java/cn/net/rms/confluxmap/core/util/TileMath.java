@@ -93,6 +93,14 @@ public final class TileMath {
         return childTile >> 1;
     }
 
+    /**
+     * Ancestor tile coordinate {@code lodDelta} levels coarser than {@code childTile}. Uses
+     * arithmetic right shift so negative tiles floor into the enclosing coarser tile consistently.
+     */
+    public static int ancestorTile(final int childTile, final int lodDelta) {
+        return lodDelta <= 0 ? childTile : childTile >> lodDelta;
+    }
+
     /** Child tile coordinate one LOD finer, for the half of {@code parentTile} selected by {@code quadrant}. */
     public static int childTile(final int parentTile, final int quadrant) {
         return (parentTile << 1) + (quadrant & 1);
@@ -116,12 +124,35 @@ public final class TileMath {
         final int childTileZ,
         final float[] uvOut
     ) {
-        final float u0 = (childTileX & 1) * 0.5f;
-        final float v0 = (childTileZ & 1) * 0.5f;
+        ancestorUv(childTileX, childTileZ, 1, uvOut);
+    }
+
+    /**
+     * UV rectangle of {@code childTile} inside its ancestor {@code lodDelta} levels coarser,
+     * written into {@code uvOut} as {@code [u0, v0, u1, v1]}.
+     */
+    public static void ancestorUv(
+        final int childTileX,
+        final int childTileZ,
+        final int lodDelta,
+        final float[] uvOut
+    ) {
+        if (lodDelta <= 0) {
+            uvOut[0] = 0f;
+            uvOut[1] = 0f;
+            uvOut[2] = 1f;
+            uvOut[3] = 1f;
+            return;
+        }
+        final int span = 1 << lodDelta;
+        final int mask = span - 1;
+        final float step = 1.0f / span;
+        final float u0 = (childTileX & mask) * step;
+        final float v0 = (childTileZ & mask) * step;
         uvOut[0] = u0;
         uvOut[1] = v0;
-        uvOut[2] = u0 + 0.5f;
-        uvOut[3] = v0 + 0.5f;
+        uvOut[2] = u0 + step;
+        uvOut[3] = v0 + step;
     }
 
     /** Whether two aligned LOD tiles overlap when expressed in LOD-0 tile coordinates. */
