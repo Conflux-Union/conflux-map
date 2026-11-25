@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.server.web;
 
 import cn.net.rms.confluxmap.server.ServerConfig;
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.nio.charset.StandardCharsets;
 import java.util.function.BooleanSupplier;
@@ -41,9 +42,9 @@ public final class ServerConfigControl {
             String message = "Forbidden";
             if (allowed) {
                 try {
-                    message = update(config, request.get("key").getAsString(),
-                        request.get("value").getAsString(), save, settingsChanged);
-                } catch (IllegalArgumentException | IllegalStateException | NullPointerException invalid) {
+                    message = update(config, field(request, "key").getAsString(),
+                        field(request, "value").getAsString(), save, settingsChanged);
+                } catch (IllegalArgumentException | IllegalStateException invalid) {
                     message = "Invalid setting";
                 }
             }
@@ -62,6 +63,12 @@ public final class ServerConfigControl {
         }
         reply.accept(encode(status));
         return true;
+    }
+
+    private static JsonElement field(JsonObject request, String name) {
+        final JsonElement element = request.get(name);
+        if (element == null) throw new IllegalArgumentException("Missing field " + name);
+        return element;
     }
 
     private static String update(ServerConfig config, String key, String next,

@@ -133,7 +133,7 @@ public final class WebMapGateway implements AutoCloseable {
             candidate.bind(new InetSocketAddress(host, port));
             listener = candidate;
             workers.execute(() -> accept(candidate));
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             candidate.close();
             lock.release();
             lock = null;
@@ -227,23 +227,24 @@ public final class WebMapGateway implements AutoCloseable {
     private static void response(Socket s, int status, String reason, String type, String body)
             throws IOException {
         byte[] data = body.getBytes(StandardCharsets.UTF_8);
-        OutputStream out = s.getOutputStream();
-        out.write(
-                ("HTTP/1.1 "
-                                + status
-                                + " "
-                                + reason
-                                + "\r\nContent-Type: "
-                                + type
-                                + "\r\nContent-Length: "
-                                + data.length
-                                + "\r\n"
-                                + "Cache-Control: no-store\r\n"
-                                + "Connection: close\r\n"
-                                + "X-Content-Type-Options: nosniff\r\n\r\n")
-                        .getBytes(StandardCharsets.US_ASCII));
-        out.write(data);
-        out.flush();
+        try (OutputStream out = s.getOutputStream()) {
+            out.write(
+                    ("HTTP/1.1 "
+                                    + status
+                                    + " "
+                                    + reason
+                                    + "\r\nContent-Type: "
+                                    + type
+                                    + "\r\nContent-Length: "
+                                    + data.length
+                                    + "\r\n"
+                                    + "Cache-Control: no-store\r\n"
+                                    + "Connection: close\r\n"
+                                    + "X-Content-Type-Options: nosniff\r\n\r\n")
+                            .getBytes(StandardCharsets.US_ASCII));
+            out.write(data);
+            out.flush();
+        }
     }
 
     private void relay(Socket client) throws IOException {
@@ -353,14 +354,9 @@ public final class WebMapGateway implements AutoCloseable {
                     backend.setSoTimeout(90000);
                     workers.execute(
                             () -> {
-                                try {
+                                try (backend) {
                                     in.transferTo(backend.getOutputStream());
                                 } catch (IOException ignored) {
-                                } finally {
-                                    try {
-                                        backend.close();
-                                    } catch (IOException ignored) {
-                                    }
                                 }
                             });
                 }
