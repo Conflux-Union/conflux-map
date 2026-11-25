@@ -662,7 +662,7 @@ final class StructureSearchScreen extends SplitMapScreen {
         final int mouseY,
         final float tickDelta
     ) {
-        mapPane.drawMenuHotkeys(draw, this.textRenderer);
+        super.renderAfterWidgets(draw, mouseX, mouseY, tickDelta);
         StructureSearchScrollBar.drawOverflowCues(
             draw,
             rowX - 4,

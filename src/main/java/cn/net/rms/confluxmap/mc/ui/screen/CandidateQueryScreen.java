@@ -86,7 +86,7 @@ abstract class CandidateQueryScreen<R> extends SplitMapScreen {
     /** The search button's label, rebuilt with the panel. */
     protected abstract Text searchButtonLabel();
 
-    /** Refreshes the control buttons' availability after a rebuild and on each tick. */
+    /** Runs at the end of {@link #rebuild()}; a screen needing a per-tick refresh drives its own update from tick(). */
     protected abstract void afterTick();
 
     /** Buttons in the control row; the shared width budget follows the count. */
