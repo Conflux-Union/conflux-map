@@ -9,7 +9,6 @@ import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SampleSource;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
-import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.core.store.MapWorld;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.store.RegionColumns;
@@ -215,7 +214,6 @@ public final class McaBackfillService {
             }
             submit(session, layer, slot, mtime);
         }
-        this.cursor = cursor;
     }
 
     /**
@@ -320,7 +318,7 @@ public final class McaBackfillService {
                 doneRegions.put(slot, mtime);
             }
             final List<ChunkSnapshot> snapshots =
-                McaSnapshotConverter.toSnapshots(scanned, session.token(), layer, baker);
+                McaSnapshotConverter.toSnapshots(scanned, session.token(), baker);
             int accepted = 0;
             final RegionColumns region = world.store(layer).region(regionX, regionZ);
             final List<TileService.RegionUnit> units = new ArrayList<>(snapshots.size());

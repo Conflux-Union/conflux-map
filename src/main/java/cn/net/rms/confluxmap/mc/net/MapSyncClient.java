@@ -110,7 +110,6 @@ public final class MapSyncClient {
     private final FullSyncTracker fullSyncTracker =
         new FullSyncTracker(MapSyncClient::sendClientFeedback);
     private final ArrayDeque<FullSyncPendingRegion> fullSyncPendingQueue = new ArrayDeque<>();
-    private int fullSyncSyncId = -1;
     private int fullSyncDimIndex = -1;
     private int fullSyncLod;
     private long lastFullSyncSentMs;
@@ -1020,7 +1019,6 @@ public final class MapSyncClient {
     private void beginFullSync() {
         fullSyncDimIndex = manifestDimIndex;
         fullSyncLod = manifestLod;
-        fullSyncSyncId = manifestSyncId;
         fullSyncPendingQueue.clear();
         for (final MapFullSyncManifestS2C.RegionCoord coord : manifestRegions) {
             fullSyncPendingQueue.add(new FullSyncPendingRegion(
@@ -1149,7 +1147,6 @@ public final class MapSyncClient {
 
     private void clearFullSyncState() {
         fullSyncPendingQueue.clear();
-        fullSyncSyncId = -1;
         manifestSyncId = -1;
         manifestRegions = null;
         manifestPageCount = 0;

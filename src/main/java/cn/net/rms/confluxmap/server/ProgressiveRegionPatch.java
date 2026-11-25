@@ -433,7 +433,7 @@ final class ProgressiveRegionPatch implements ProgressiveTask {
                         return;
                     }
                 }
-                PatchBuilder.Result result = null;
+                PatchBuilder.Result result;
                 final long computeStartedNanos = System.nanoTime();
                 try {
                     result = patchEncoder.encode(snapshot, sinceRevision, prepared);

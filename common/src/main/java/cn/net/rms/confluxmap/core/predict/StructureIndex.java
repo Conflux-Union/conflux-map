@@ -971,15 +971,6 @@ public final class StructureIndex {
         }
     }
 
-    private void addCandidates(final StructureType type, final long[] positions) {
-        if (positions == null) {
-            return;
-        }
-        for (final long packed : positions) {
-            addCandidate(type, new Candidate((int) (packed >>> 32), (int) packed, 0));
-        }
-    }
-
     private void addCandidates(final StructureType type, final Candidate[] candidates) {
         if (candidates == null) {
             return;

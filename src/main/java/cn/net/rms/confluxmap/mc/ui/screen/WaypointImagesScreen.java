@@ -232,9 +232,12 @@ final class WaypointImagesScreen extends PhotoViewerScreen {
                 path = java.nio.file.Files.createTempFile("confluxmap-clipboard-", ".png");
                 MapExportClipboardProcess.paste(path);
                 return path;
-            } catch (java.io.IOException | InterruptedException error) {
+            } catch (java.io.IOException error) {
                 cleanPasteFile(path);
-                if (error instanceof InterruptedException) Thread.currentThread().interrupt();
+                throw new java.util.concurrent.CompletionException(error);
+            } catch (InterruptedException error) {
+                cleanPasteFile(path);
+                Thread.currentThread().interrupt();
                 throw new java.util.concurrent.CompletionException(error);
             }
         }).whenComplete((path, error) -> MinecraftClient.getInstance().execute(() -> {

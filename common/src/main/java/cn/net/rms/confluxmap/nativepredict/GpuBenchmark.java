@@ -317,7 +317,7 @@ public final class GpuBenchmark {
                         }
                     });
                 }
-                await(ctx, done);
+                await(done);
                 elapsed[round] = ctx.seams().clock().getAsLong() - start;
                 if (!ok.get() || elapsed[round] <= 0) {
                     return -1;
@@ -352,7 +352,7 @@ public final class GpuBenchmark {
         }
     }
 
-    private static void await(final BenchmarkContext ctx, final CountDownLatch done) {
+    private static void await(final CountDownLatch done) {
         try {
             done.await();
         } catch (final InterruptedException interrupted) {

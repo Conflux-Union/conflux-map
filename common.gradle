@@ -344,6 +344,34 @@ if (mcVersion >= 12104) {
     }
 }
 
+// The gametest smoke suites probe screen internals through a stringly-typed
+// field() helper, so renamed or relocated fields only fail in the gametest
+// lane. Audit every probe against the production classes of this version
+// before the sources compile; a broken probe fails here with the field's new
+// home. The mainProject compiles the raw shared sources directly, every other
+// version audits its preprocessed view.
+def checkGametestReflection = tasks.register('checkGametestReflection', Exec) {
+    def gametestView
+    def mainView
+    if (tasks.names.contains('preprocessGametestCode')) {
+        dependsOn tasks.named('preprocessGametestCode')
+        dependsOn tasks.named('preprocessCode')
+        gametestView = layout.buildDirectory.dir('preprocessed/gametest/java').get().asFile
+        mainView = layout.buildDirectory.dir('preprocessed/main/java').get().asFile
+    } else {
+        gametestView = sourceSets.gametest.allJava.srcDirs.first()
+        mainView = sourceSets.main.allJava.srcDirs.first()
+    }
+    inputs.dir gametestView
+    inputs.dir mainView
+    outputs.upToDateWhen { false }
+    commandLine 'python3', rootProject.file('tools/check_gametest_reflection.py'),
+        '--gametest', gametestView, '--main', mainView
+}
+tasks.named('compileGametestJava') {
+    dependsOn checkGametestReflection
+}
+
 // A targeted UI smoke suite can run without the prediction benchmark suites.
 tasks.named('processGametestResources') {
     def clientTests = mcVersion >= 12104 && project.hasProperty('waypointSmoke')

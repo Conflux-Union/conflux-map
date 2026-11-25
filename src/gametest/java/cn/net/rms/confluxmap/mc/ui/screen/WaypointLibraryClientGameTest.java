@@ -807,7 +807,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$             var screen = MinecraftAccess.screen(client);
 //$$             var inputs = (java.util.List<?>) field(field(screen, "rows"), "sliderInputs");
 //$$             return inputs.stream().filter(value -> (Boolean) field(value, "wheelEnabled"))
-//$$                 .map(IntSliderInput.class::cast).toList();
+//$$                 .map(SliderInput.class::cast).toList();
 //$$         });
 //$$         if (sizes.size() != 2) throw new AssertionError("Missing independent compact size settings");
 //$$         var width = sizes.get(0).input();
@@ -818,7 +818,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$             MinecraftAccess.screen(client).setFocused(width);
 //$$             int scale = client.getWindow().getGuiScale();
 //$$             return new int[]{(width.getX() + 5) * scale, (width.getY() + 5) * scale,
-//$$                 (Integer) field(MinecraftAccess.screen(client), "scrollOffset")};
+//$$                 (Integer) field(field(MinecraftAccess.screen(client), "pane"), "scrollOffset")};
 //$$         });
 //$$         if (options.compactWidthPercent() != 30 || options.compactHeightPercent() != 300) {
 //$$             throw new AssertionError("Manual size input did not clamp independently");
@@ -828,7 +828,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$         context.getInput().scroll(1);
 //$$         context.waitFor(client -> options.compactWidthPercent() == 31, 80);
 //$$         context.runOnClient(client -> {
-//$$             if ((Integer) field(MinecraftAccess.screen(client), "scrollOffset") != wheel[2]
+//$$             if ((Integer) field(field(MinecraftAccess.screen(client), "pane"), "scrollOffset") != wheel[2]
 //$$                 || !width.getValue().equals("31") || options.compactHeightPercent() != 300) {
 //$$                 throw new AssertionError("Wheel did not update just the size control");
 //$$             }

@@ -195,7 +195,7 @@ public final class WaypointLibraryService {
             } catch (final InterruptedException e) {
                 interrupted = true;
             } catch (final ExecutionException e) {
-                throw new IllegalStateException("Library IO barrier failed", e.getCause());
+                throw new IllegalStateException("Library IO barrier failed", e);
             }
         }
         if (interrupted) {

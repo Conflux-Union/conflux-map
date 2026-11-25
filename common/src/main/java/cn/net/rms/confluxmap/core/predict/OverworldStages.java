@@ -161,7 +161,7 @@ final class OverworldStages {
             case BAND -> runBandStage(state, sampler);
             case EXACT_COLUMNS -> runExactColumnsStage(state, sampler);
             case CELLS -> runCellsStage(state, sampler);
-            case COMPOSE -> runComposeStage(state, sampler);
+            case COMPOSE -> runComposeStage(state);
         };
     }
 
@@ -274,10 +274,7 @@ final class OverworldStages {
         return true;
     }
 
-    private static boolean runComposeStage(
-        final OverworldStageState state,
-        final BaselineSampler sampler
-    ) {
+    private static boolean runComposeStage(final OverworldStageState state) {
         resolveOverviewFluids(state.grid, state.lod, state.fluidConfidence);
         return true;
     }

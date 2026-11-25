@@ -592,11 +592,11 @@ public final class ServerNetworking {
         }
     }
 
-    private static RegionSummaryService.MessageSender senderFor(
+    private static MessageSender senderFor(
         final ServerPlayerEntity player,
         final NegotiatedMapSync session
     ) {
-        return new RegionSummaryService.MessageSender() {
+        return new MessageSender() {
             @Override
             public void send(final Message message) {
                 ServerNetworking.sendNegotiated(player, session, message);

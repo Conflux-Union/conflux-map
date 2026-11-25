@@ -1,7 +1,12 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
+import java.util.regex.Pattern;
+
 /** Minecraft-free value mapping shared by an integer slider and its numeric input. */
-final class IntSliderValue {
+final class IntSliderValue implements SliderValue<Integer> {
+    static final Pattern INTEGER_TEXT = Pattern.compile("[+-]?\\d*");
+    static final int MAX_TEXT_LENGTH = 11;
+
     private final int min;
     private final int max;
     private int value;
@@ -15,22 +20,26 @@ final class IntSliderValue {
         this.value = clamp(initialValue);
     }
 
-    int value() {
+    @Override
+    public Integer value() {
         return value;
     }
 
-    double position() {
+    @Override
+    public double position() {
         final long span = (long) max - min;
         return span == 0L ? 0.0 : (value - (long) min) / (double) span;
     }
 
-    int updateFromPosition(final double position) {
+    @Override
+    public Integer updateFromPosition(final double position) {
         final double bounded = Double.isNaN(position) ? 0.0 : Math.max(0.0, Math.min(1.0, position));
         value = (int) (min + Math.round(bounded * ((long) max - min)));
         return value;
     }
 
-    boolean updateFromText(final String text) {
+    @Override
+    public boolean updateFromText(final String text) {
         if (text == null || text.isEmpty() || "+".equals(text) || "-".equals(text)) {
             return false;
         }
@@ -42,14 +51,16 @@ final class IntSliderValue {
         }
     }
 
-    boolean step(int delta) {
-        int next = clamp((long) value + delta);
+    @Override
+    public boolean step(final int delta) {
+        final int next = clamp((long) value + delta);
         if (next == value) return false;
         value = next;
         return true;
     }
 
-    String text() {
+    @Override
+    public String text() {
         return Integer.toString(value);
     }
 

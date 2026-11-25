@@ -1,7 +1,7 @@
 package cn.net.rms.confluxmap.core.backfill;
 
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
-import cn.net.rms.confluxmap.core.model.MapLayer;
+import cn.net.rms.confluxmap.core.model.ChunkSnapshotArrays;
 import cn.net.rms.confluxmap.core.model.SampleSource;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
@@ -29,7 +29,6 @@ public final class McaSnapshotConverter {
     public static List<ChunkSnapshot> toSnapshots(
         final SummaryCodec.SampledRegion region,
         final long sessionToken,
-        final MapLayer layer,
         final McaColumnBaker baker
     ) {
         if (region.sampleStride() != 1) {
@@ -44,7 +43,7 @@ public final class McaSnapshotConverter {
             }
             final int chunkX = region.rx() * 16 + index % 16;
             final int chunkZ = region.rz() * 16 + index / 16;
-            out.add(toSnapshot(chunk, chunkX, chunkZ, sessionToken, layer, baker, region.sourceMcaMtimeMs()));
+            out.add(toSnapshot(chunk, chunkX, chunkZ, sessionToken, baker, region.sourceMcaMtimeMs()));
         }
         return out;
     }
@@ -54,49 +53,35 @@ public final class McaSnapshotConverter {
         final int chunkX,
         final int chunkZ,
         final long sessionToken,
-        final MapLayer layer,
         final McaColumnBaker baker,
         final long sourceRevision
     ) {
-        final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
-        final String[] biomeId = new String[ChunkSnapshot.COLUMNS];
-        final byte[] fluidDepth = new byte[ChunkSnapshot.COLUMNS];
-        final int[] baseArgb = new int[ChunkSnapshot.COLUMNS];
-        final int[] xaeroBaseArgb = new int[ChunkSnapshot.COLUMNS];
-        final int[] tintArgb = new int[ChunkSnapshot.COLUMNS];
-        final int[] overlayArgb = new int[ChunkSnapshot.COLUMNS];
-        final int[] xaeroOverlayArgb = new int[ChunkSnapshot.COLUMNS];
-        final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
-        final byte[] light = new byte[ChunkSnapshot.COLUMNS];
+        final ChunkSnapshotArrays arrays = new ChunkSnapshotArrays();
 
         for (int x = 0; x < 16; x++) {
             for (int z = 0; z < 16; z++) {
                 final int index = z * 16 + x;
                 final SummaryCodec.Column column = chunk.column(x, z);
                 final SurfaceKind surfaceKind = SurfaceKind.byOrdinal(column.kind());
-                kind[index] = (byte) surfaceKind.ordinal();
-                biomeId[index] = biomeName(column.biomeId());
-                light[index] = (byte) column.blockLight();
+                arrays.kind[index] = (byte) surfaceKind.ordinal();
+                arrays.biomeId[index] = biomeName(column.biomeId());
+                arrays.light[index] = (byte) column.blockLight();
                 if (surfaceKind == SurfaceKind.VOID) {
-                    surfaceY[index] = ChunkSnapshot.NO_SURFACE;
+                    arrays.surfaceY[index] = ChunkSnapshot.NO_SURFACE;
                     continue;
                 }
-                surfaceY[index] = (short) column.surfaceY();
-                fluidDepth[index] = (byte) column.fluidDepth();
+                arrays.surfaceY[index] = (short) column.surfaceY();
+                arrays.fluidDepth[index] = (byte) column.fluidDepth();
                 final McaColumnBaker.Baked baked =
                     baker.bake(column, chunkX * 16 + x, chunkZ * 16 + z, column.biomeId());
-                baseArgb[index] = baked.baseArgb();
-                xaeroBaseArgb[index] = baked.xaeroBaseArgb();
-                tintArgb[index] = baked.tintArgb();
-                overlayArgb[index] = baked.overlayArgb();
-                xaeroOverlayArgb[index] = baked.xaeroOverlayArgb();
+                arrays.baseArgb[index] = baked.baseArgb();
+                arrays.xaeroBaseArgb[index] = baked.xaeroBaseArgb();
+                arrays.tintArgb[index] = baked.tintArgb();
+                arrays.overlayArgb[index] = baked.overlayArgb();
+                arrays.xaeroOverlayArgb[index] = baked.xaeroOverlayArgb();
             }
         }
-        return new ChunkSnapshot(
-            chunkX, chunkZ, sessionToken, sourceRevision,
-            surfaceY, biomeId, fluidDepth,
-            baseArgb, xaeroBaseArgb, tintArgb, overlayArgb, xaeroOverlayArgb, kind, light
-        );
+        return arrays.toSnapshot(chunkX, chunkZ, sessionToken, sourceRevision);
     }
 
     /** Numeric cubiomes biome ids map back to names; unknown ids keep the column unlabelled. */

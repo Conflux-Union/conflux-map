@@ -583,8 +583,6 @@ public final class EntityIconManager implements AutoCloseable {
         final int top = bounds[1];
         final int right = bounds[2];
         final int bottom = bounds[3];
-        final int width = right - left;
-        final int height = bottom - top;
         final int column = sprite.slot() % CELLS_PER_ROW;
         final int row = sprite.slot() / CELLS_PER_ROW;
         final DisplayScale scale = displayScale(bounds, area);

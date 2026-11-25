@@ -113,7 +113,7 @@ public final class WebMapFeatures implements AutoCloseable {
                                 && im.author() != null
                                 && p.getFileName().toString().equals(im.id() + ".json")
                                 && Files.isRegularFile(file(im.id()))) images.put(im.id(), im);
-                    } catch (Exception ignored) {
+                    } catch (IOException | JsonSyntaxException ignored) {
                     }
                 }
             }

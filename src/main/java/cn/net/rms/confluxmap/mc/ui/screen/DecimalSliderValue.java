@@ -2,10 +2,13 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.regex.Pattern;
 
 /** Minecraft-free decimal mapping shared by a slider and numeric input. */
-final class DecimalSliderValue {
+final class DecimalSliderValue implements SliderValue<Double> {
     static final double CONTINUOUS = 0.0;
+    static final Pattern DECIMAL_TEXT = Pattern.compile("[+-]?(?:\\d+)?(?:\\.\\d*)?");
+    static final int MAX_TEXT_LENGTH = 8;
 
     private final double min;
     private final double max;
@@ -23,11 +26,13 @@ final class DecimalSliderValue {
         this.value = clampAndRound(initialValue);
     }
 
-    double value() {
+    @Override
+    public Double value() {
         return value;
     }
 
-    double position() {
+    @Override
+    public double position() {
         final double span = max - min;
         if (span == 0.0) {
             return 0.0;
@@ -39,7 +44,8 @@ final class DecimalSliderValue {
         return Math.log(value / min) / Math.log(max / min);
     }
 
-    double updateFromPosition(final double position) {
+    @Override
+    public Double updateFromPosition(final double position) {
         final double bounded = Double.isNaN(position) ? 0.0 : Math.max(0.0, Math.min(1.0, position));
         final double candidate = min <= 0.0
             ? min + bounded * (max - min)
@@ -48,7 +54,8 @@ final class DecimalSliderValue {
         return value;
     }
 
-    boolean updateFromText(final String text) {
+    @Override
+    public boolean updateFromText(final String text) {
         if (text == null || text.isEmpty() || "+".equals(text) || "-".equals(text)
             || ".".equals(text) || "+.".equals(text) || "-.".equals(text)) {
             return false;
@@ -61,7 +68,8 @@ final class DecimalSliderValue {
         }
     }
 
-    String text() {
+    @Override
+    public String text() {
         return format(value);
     }
 

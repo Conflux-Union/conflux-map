@@ -233,7 +233,6 @@ public final class ConfluxMapCompanion {
             loadStates.clear();
         }
         sharedWaypoints = null;
-        webMap = null;
         ConfluxMapMod.LOGGER.info("[ConfluxMap] companion stopping");
     }
 

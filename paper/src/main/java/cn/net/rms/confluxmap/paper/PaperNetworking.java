@@ -28,6 +28,7 @@ import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import cn.net.rms.confluxmap.server.CompanionPolicy;
 import cn.net.rms.confluxmap.server.DatapackLangService;
+import cn.net.rms.confluxmap.server.MessageSender;
 import cn.net.rms.confluxmap.server.ServerConfig;
 import java.util.ArrayList;
 import java.util.List;
@@ -390,8 +391,8 @@ final class PaperNetworking implements PluginMessageListener {
         }
     }
 
-    private PaperCorrectionService.MessageSender sender(final UUID playerId) {
-        return new PaperCorrectionService.MessageSender() {
+    private MessageSender sender(final UUID playerId) {
+        return new MessageSender() {
             @Override
             public void send(final Message message) {
                 final Player current = Bukkit.getPlayer(playerId);

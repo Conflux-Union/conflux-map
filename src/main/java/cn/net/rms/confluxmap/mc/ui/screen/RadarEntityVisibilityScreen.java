@@ -50,8 +50,8 @@ public final class RadarEntityVisibilityScreen extends ConfluxScreen {
     private final List<SectionLabel> sectionLabels = new ArrayList<>();
 
     private int rowWidth = MAX_ROW_WIDTH;
-    /** Rows scroll in {@link #ROW_HEIGHT} steps; widgets outside the viewport are not built. */
-    private int scrollOffset;
+    /** Shared row scrolling: the offset, the wheel test and the scrollbar. */
+    private final RowScrollPane pane = new RowScrollPane(ROW_HEIGHT);
     private int contentHeight;
     private TextFieldWidget searchField;
 
@@ -163,7 +163,7 @@ public final class RadarEntityVisibilityScreen extends ConfluxScreen {
 
         final String query = Widgets.text(searchField).trim().toLowerCase(Locale.ROOT);
         contentHeight = rowsTop();
-        int y = contentHeight - scrollOffset;
+        int y = contentHeight - pane.scrollOffset();
         if (query.isEmpty()) {
             for (final RadarCategory category : new RadarCategory[] {
                 RadarCategory.HOSTILE, RadarCategory.PASSIVE, RadarCategory.OTHER
@@ -188,7 +188,7 @@ public final class RadarEntityVisibilityScreen extends ConfluxScreen {
                 }
             }
         }
-        contentHeight = y + scrollOffset;
+        contentHeight = y + pane.scrollOffset();
         clampScroll();
     }
 
@@ -279,7 +279,7 @@ public final class RadarEntityVisibilityScreen extends ConfluxScreen {
 
     private void clampScroll() {
         final int maxScroll = Math.max(0, contentHeight - viewportHeight());
-        scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset));
+        pane.scrollOffset(Math.max(0, Math.min(maxScroll, pane.scrollOffset())));
     }
 
     @Override
@@ -294,19 +294,13 @@ public final class RadarEntityVisibilityScreen extends ConfluxScreen {
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
     //#endif
         // Scrolling rebuilds the rows and would destroy the search field mid-edit.
-        if (getFocused() instanceof TextFieldWidget) {
+        if (pane.blocksScroll(getFocused())) {
             return false;
         }
-        final boolean overRows = mouseX >= rowX() && mouseX <= rowX() + rowWidth + 8
-            && mouseY >= rowsTop() && mouseY <= height - BOTTOM_MARGIN;
-        if (amount != 0 && overRows) {
-            final int maxScroll = Math.max(0, contentHeight - viewportHeight());
-            final int next = Math.max(
-                0,
-                Math.min(maxScroll, scrollOffset - (int) Math.signum(amount) * ROW_HEIGHT)
-            );
-            if (next != scrollOffset) {
-                scrollOffset = next;
+        if (pane.consumesScroll(
+            mouseX, mouseY, amount, rowX(), rowWidth, rowsTop(), height - BOTTOM_MARGIN
+        )) {
+            if (pane.scrollBy(amount, contentHeight, viewportHeight())) {
                 rebuild();
             }
             return true;
@@ -348,19 +342,10 @@ public final class RadarEntityVisibilityScreen extends ConfluxScreen {
     }
 
     private void drawScrollbar(final GuiDraw draw) {
-        final int viewport = viewportHeight();
-        final int maxScroll = Math.max(0, contentHeight - viewport);
-        if (maxScroll <= 0) {
-            return;
-        }
-        final int top = rowsTop();
-        final int trackHeight = viewport;
-        final int thumbHeight = Math.max(12, trackHeight * viewport / contentHeight);
-        final int thumbTravel = Math.max(1, trackHeight - thumbHeight);
-        final int thumbY = top + (int) Math.round(thumbTravel * (scrollOffset / (double) maxScroll));
-        final int x = rowX() + rowWidth + 4;
-        draw.fill(x, top, x + 2, top + trackHeight, SCROLL_TRACK_COLOR);
-        draw.fill(x, thumbY, x + 2, thumbY + thumbHeight, SCROLL_THUMB_COLOR);
+        pane.drawScrollbar(
+            draw, rowX() + rowWidth + 4, rowsTop(), contentHeight, viewportHeight(),
+            SCROLL_TRACK_COLOR, SCROLL_THUMB_COLOR
+        );
     }
 
     private record SectionLabel(int y, String key) {

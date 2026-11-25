@@ -14,9 +14,6 @@ public final class PortraitLayout {
     private static final Profile DEFAULT_PROFILE = new Profile(
         0f, 0f, false, Framing.DOMINANT
     );
-    private static final Profile RIGHT_SIDE_PROFILE = new Profile(
-        90f, 0f, true, Framing.DOMINANT
-    );
     private static final Profile LEFT_SIDE_PROFILE = new Profile(
         -90f, 0f, true, Framing.DOMINANT
     );

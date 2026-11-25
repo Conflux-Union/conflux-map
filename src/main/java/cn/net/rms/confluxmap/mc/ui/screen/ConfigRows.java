@@ -113,8 +113,7 @@ final class ConfigRows {
     private ConfigScreen.Category rowCategory;
     private boolean measuring;
 
-    private final List<IntSliderInput> sliderInputs = new ArrayList<>();
-    private final List<DecimalSliderInput> decimalSliderInputs = new ArrayList<>();
+    private final List<SliderInput<?>> sliderInputs = new ArrayList<>();
     private final List<TextFieldWidget> textFields = new ArrayList<>();
     private final List<IconTextureLabel> iconTextureLabels = new ArrayList<>();
     private final List<SectionLabel> sectionLabels = new ArrayList<>();
@@ -138,7 +137,6 @@ final class ConfigRows {
     /** Drops every per-rebuild input widget; called before the screen clears its children. */
     void clearInputs() {
         sliderInputs.clear();
-        decimalSliderInputs.clear();
         textFields.clear();
         iconTextureLabels.clear();
         sectionLabels.clear();
@@ -190,17 +188,14 @@ final class ConfigRows {
     }
 
     boolean scrollSizeInput(double x, double y, double amount) {
-        for (final IntSliderInput input : sliderInputs) {
+        for (final SliderInput<?> input : sliderInputs) {
             if (input.scrollAt(x, y, amount)) return true;
         }
         return false;
     }
 
     void tickInputs() {
-        for (final IntSliderInput sliderInput : sliderInputs) {
-            sliderInput.tick();
-        }
-        for (final DecimalSliderInput sliderInput : decimalSliderInputs) {
+        for (final SliderInput<?> sliderInput : sliderInputs) {
             sliderInput.tick();
         }
         for (final TextFieldWidget field : textFields) {
@@ -323,7 +318,8 @@ final class ConfigRows {
      * from it).
      */
     int addRows() {
-        int y = screen.rowsTop() - screen.scrollOffset;
+        final int rowsTop = screen.rowsTop();
+        int y = rowsTop - screen.pane.scrollOffset();
         search = new ConfigSearch(screen.searchQuery());
         if (!search.active()) return addCategoryRows(screen.category, y);
         for (ConfigScreen.Category category : ConfigScreen.Category.values()) {
@@ -1332,16 +1328,16 @@ final class ConfigRows {
     ) {
         if (!search.matches(labelKey, hoverTooltipKey == null ? disabledTooltipKey : hoverTooltipKey, rowCategory.labelKey())) return y;
         if (!measuring && screen.rowVisible(y)) {
-            final IntSliderInput sliderInput = new IntSliderInput(
+            final SliderInput<Integer> sliderInput = new SliderInput<>(
                 screen.textRenderer(),
                 screen.rowX(),
                 y,
                 screen.rowWidth,
                 ConfigScreen.ROW_HEIGHT - 2,
-                min,
-                max,
-                getter.getAsInt(),
-                setter,
+                new IntSliderValue(min, max, getter.getAsInt()),
+                IntSliderValue.INTEGER_TEXT,
+                IntSliderValue.MAX_TEXT_LENGTH,
+                value -> setter.accept(value),
                 value -> Texts.translatable(labelKey, valueText.apply(value))
             );
             sliderInput.setActive(active);
@@ -1377,16 +1373,15 @@ final class ConfigRows {
     ) {
         if (!search.matches(labelKey, disabledTooltipKey, rowCategory.labelKey())) return y;
         if (!measuring && screen.rowVisible(y)) {
-            final DecimalSliderInput sliderInput = new DecimalSliderInput(
+            final SliderInput<Double> sliderInput = new SliderInput<>(
                 screen.textRenderer(),
                 screen.rowX(),
                 y,
                 screen.rowWidth,
                 ConfigScreen.ROW_HEIGHT - 2,
-                min,
-                max,
-                step,
-                getter.getAsDouble(),
+                new DecimalSliderValue(min, max, step, getter.getAsDouble()),
+                DecimalSliderValue.DECIMAL_TEXT,
+                DecimalSliderValue.MAX_TEXT_LENGTH,
                 value -> {
                     setter.accept(value);
                     configIo.save(config);
@@ -1394,7 +1389,7 @@ final class ConfigRows {
                 value -> Texts.translatable(labelKey, valueText.apply(value))
             );
             sliderInput.setActive(active);
-            decimalSliderInputs.add(sliderInput);
+            sliderInputs.add(sliderInput);
             screen.addRowWidget(sliderInput.slider());
             screen.addRowWidget(sliderInput.input());
             screen.setDisabledTooltip(sliderInput.slider(), disabledTooltipKey);

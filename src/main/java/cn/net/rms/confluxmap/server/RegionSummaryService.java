@@ -13,7 +13,6 @@ import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapRegionViewReqC2S;
 import cn.net.rms.confluxmap.core.net.MapSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
-import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
@@ -78,15 +77,6 @@ public final class RegionSummaryService {
      * while worldgen mutates far more regions per tick than the drain can republish. */
     private static final int CHANGED_REGIONS_LIMIT = 4_096;
     private static final AtomicLong NEXT_REGION_WORK_ID = new AtomicLong();
-
-    @FunctionalInterface
-    public interface MessageSender {
-        void send(Message message);
-
-        default void sendEncoded(final Message message, final byte[] payload) {
-            send(message);
-        }
-    }
 
     private final ServerConfig config;
     private final ChunkSummarizer summarizer = new ChunkSummarizer(new RegistryMapColors());

@@ -12,7 +12,6 @@ import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapRegionViewReqC2S;
 import cn.net.rms.confluxmap.core.net.MapSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
-import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
@@ -24,13 +23,13 @@ import cn.net.rms.confluxmap.server.LiveChunkSummaryCache;
 import cn.net.rms.confluxmap.server.ChunkColumnSummarizer;
 import cn.net.rms.confluxmap.server.CorrectionSlotQueue;
 import cn.net.rms.confluxmap.server.EncodedResponse;
+import cn.net.rms.confluxmap.server.MessageSender;
 import cn.net.rms.confluxmap.server.PatchBuilder;
 import cn.net.rms.confluxmap.server.PlayerBudget;
 import cn.net.rms.confluxmap.server.RegionPatchBuilder;
 import cn.net.rms.confluxmap.server.ServerConfig;
 import cn.net.rms.confluxmap.server.SyncPerformanceMonitor;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,12 +44,6 @@ import org.slf4j.Logger;
 
 /** Paper transport-neutral correction engine with asynchronous, non-generating Anvil reads. */
 final class PaperCorrectionService implements AutoCloseable {
-
-    interface MessageSender {
-        void send(Message message);
-
-        void sendEncoded(Message message, byte[] payload);
-    }
 
     private record ProgressiveKey(
         PaperWorldDirectory.Entry world,

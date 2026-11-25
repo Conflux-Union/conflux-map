@@ -70,36 +70,13 @@ public final class ManualSeedConfig {
 
     public ManualSeedConfig copy() {
         final ManualSeedConfig copy = new ManualSeedConfig();
-        for (final Map.Entry<String, Map<String, Entry>> server : servers.entrySet()) {
-            copy.servers.put(server.getKey(), new TreeMap<>(server.getValue()));
-        }
+        copy.servers = WorldScopedMaps.copy(servers);
         return copy;
     }
 
     /** Repairs hand-edited JSON and discards entries that cannot produce a supported prediction. */
     public void normalize() {
-        final Map<String, Map<String, Entry>> normalized = new TreeMap<>();
-        if (servers != null) {
-            for (final Map.Entry<String, Map<String, Entry>> server : servers.entrySet()) {
-                if (server.getKey() == null || server.getKey().isBlank() || server.getValue() == null) {
-                    continue;
-                }
-                final Map<String, Entry> worlds = new TreeMap<>();
-                for (final Map.Entry<String, Entry> world : server.getValue().entrySet()) {
-                    if (world.getKey() == null || world.getKey().isBlank() || world.getValue() == null) {
-                        continue;
-                    }
-                    final Entry entry = world.getValue().normalized();
-                    if (entry != null) {
-                        worlds.put(world.getKey(), entry);
-                    }
-                }
-                if (!worlds.isEmpty()) {
-                    normalized.put(server.getKey(), worlds);
-                }
-            }
-        }
-        servers = normalized;
+        servers = WorldScopedMaps.normalize(servers, (storageId, entry) -> entry.normalized());
     }
 
     public static final class Entry {

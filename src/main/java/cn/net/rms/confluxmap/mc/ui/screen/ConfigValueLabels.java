@@ -66,7 +66,7 @@ final class ConfigValueLabels {
 
     static String structureIconDetailLimitText(final double scale) {
         return Texts.translatable(
-            "confluxmap.value.zoom_multiplier", DecimalSliderInput.format(scale)
+            "confluxmap.value.zoom_multiplier", DecimalSliderValue.format(scale)
         ).getString();
     }
 

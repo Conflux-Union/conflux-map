@@ -32,7 +32,6 @@ public final class XaeroRegionReader {
         record Decoded(int chunks, int tiles, boolean truncated) implements Result {}
     }
 
-    private static final int CHUNKS_PER_SIDE = 8;
     private static final int TILES_PER_CHUNK_SIDE = 4;
     private static final int TILE_COLUMNS = 256;
     private static final int MAX_OVERLAYS = 10;

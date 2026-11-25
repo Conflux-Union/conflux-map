@@ -393,10 +393,10 @@ public final class LodSampling {
                 sampler, lod, tileOriginX, tileOriginZ, expMinPx, expMinPz, expW, expH
             );
             int[] windowAnchors = null;
-            int anchorCellX0 = cellX0;
-            int anchorCellZ0 = cellZ0;
-            int anchorCellsW = cellX1 - cellX0;
-            int anchorCellsH = cellZ1 - cellZ0;
+            final int anchorCellX0 = anchorCellMinX;
+            final int anchorCellZ0 = anchorCellMinZ;
+            final int anchorCellsW = anchorCellMaxX - anchorCellX0;
+            final int anchorCellsH = anchorCellMaxZ - anchorCellZ0;
             if (latticeData != null) {
                 OverworldStages.reconstructOverviewLattice(expMinPx, expMinPz, expW, expH, latticeData, expTerrain);
                 /*
@@ -405,10 +405,6 @@ public final class LodSampling {
                  * range, because the full tile treats anchors outside it as absent and the
                  * window must resolve the same gate verdicts.
                  */
-                anchorCellX0 = anchorCellMinX;
-                anchorCellZ0 = anchorCellMinZ;
-                anchorCellsW = anchorCellMaxX - anchorCellX0;
-                anchorCellsH = anchorCellMaxZ - anchorCellZ0;
                 windowAnchors = SubBiomeSampling.solveSubBiomeAnchors(
                     sampler, lod, tileOriginX, tileOriginZ, sub,
                     anchorCellX0, anchorCellZ0, anchorCellsW, anchorCellsH,
@@ -474,7 +470,7 @@ public final class LodSampling {
         // Same subsumption as the full tile: a successful sub-sample sweep answers the pixel's
         // own biome from its first sub-sample, so the centre pass never runs separately.
         final int[] subRaw = sampleSubBiomeWindowRaw(
-            sampler, grid, blockX, blockZ, minPixelX, minPixelZ, width, height,
+            sampler, grid, blockX, blockZ, width, height,
             blocksPerPixel, terrain
         );
         if (subRaw != null) {
@@ -508,8 +504,6 @@ public final class LodSampling {
         final BaselineGrid grid,
         final int blockX,
         final int blockZ,
-        final int minPixelX,
-        final int minPixelZ,
         final int width,
         final int height,
         final int blocksPerPixel,

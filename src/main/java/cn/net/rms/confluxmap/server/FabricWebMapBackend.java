@@ -6,17 +6,13 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
-import cn.net.rms.confluxmap.core.net.Message;
-import cn.net.rms.confluxmap.core.net.MsgCodec;
-import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
-import cn.net.rms.confluxmap.server.web.WebMapBackend;
+import cn.net.rms.confluxmap.server.web.AbstractWebMapBackend;
 import cn.net.rms.confluxmap.server.web.WebMapManifest;
 import cn.net.rms.confluxmap.server.web.WebMapSnapshot;
 import cn.net.rms.confluxmap.server.web.WebPlayerSnapshot;
-import cn.net.rms.confluxmap.server.web.WebAvatarCache;
 import cn.net.rms.confluxmap.server.web.WebSkinTexture;
 import java.net.URI;
 import java.lang.reflect.Method;
@@ -25,21 +21,17 @@ import java.util.Map;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.server.network.ServerPlayerEntity;
 
 /** Fabric main-thread adapter for the shared HTTP transport. */
-final class FabricWebMapBackend implements WebMapBackend {
+final class FabricWebMapBackend extends AbstractWebMapBackend {
     private final MinecraftServer server;
     private final ConfluxMapCompanion companion;
     private volatile WebMapManifest manifest;
     private volatile String defaultGameMode;
-    private volatile WebMapSnapshot snapshot = WebMapSnapshot.EMPTY;
-    private volatile Map<UUID, URI> skinUrls = Map.of();
-    private final WebAvatarCache avatars = new WebAvatarCache();
     private final cn.net.rms.confluxmap.server.web.WebMapFeatures features;
     @Override public cn.net.rms.confluxmap.server.web.WebMapFeatures features(){return features;}
 
@@ -136,44 +128,12 @@ final class FabricWebMapBackend implements WebMapBackend {
         server.execute(() -> companion.summaries().remove(clientId));
     }
 
-    @Override
-    public WebPlayerSnapshot players() {
-        return new WebPlayerSnapshot(snapshot.playerRevision(), snapshot.players());
-    }
-
-    @Override
-    public WebMapSnapshot snapshot() {
-        return snapshot;
-    }
-
-    @Override
-    public CompletableFuture<byte[]> avatar(final UUID playerId) {
-        final URI skin = skinUrls.get(playerId);
-        return avatars.face(skin == null ? features.chatSkin(playerId) : skin,
-            snapshot.publicPlayerName(playerId));
-    }
-
-    private static RegionSummaryService.MessageSender sender(
+    private static MessageSender sender(
         final Consumer<byte[]> response
     ) {
-        return new RegionSummaryService.MessageSender() {
-            @Override
-            public void send(final Message message) {
-                try {
-                    response.accept(MsgCodec.encode(message));
-                } catch (final ProtoException ignored) {
-                    // Every server-originated message is validated before it reaches this seam.
-                }
-            }
-
-            @Override
-            public void sendEncoded(final Message message, final byte[] payload) {
-                response.accept(payload);
-            }
-        };
+        return MessageSender.forwardingTo(response);
     }
 
-    private static String serverName(String motd,String fallback){String name=motd==null?"":motd.replaceAll("§.","").replaceAll("[\\p{Cc}\\p{Cf}]"," ").strip();if(name.isBlank())return fallback;return name.codePointCount(0,name.length())>80?name.substring(0,name.offsetByCodePoints(0,80)):name;}
     void gameChat(ServerPlayerEntity player,String text){if(!companion.config().webMap.enableChat||!companion.config().webMap.showGameChat)return;features.gameChat(player.getUuid(),player.getName().getString(),text,skin(player));}
 
     @Override
@@ -219,8 +179,7 @@ final class FabricWebMapBackend implements WebMapBackend {
                 }
             }
         }
-        snapshot = snapshot.next(result, waypoints);
-        skinUrls = Map.copyOf(currentSkins);
+        publish(result, waypoints, currentSkins);
     }
 
     private static URI skin(final ServerPlayerEntity player) {

@@ -101,8 +101,8 @@ public final class ConfigScreen extends ConfluxScreen {
 
     Category category = Category.MINIMAP;
     int rowWidth = MAX_ROW_WIDTH;
-    /** Rows scroll in ROW_HEIGHT steps; widgets outside the viewport are simply not built. */
-    int scrollOffset;
+    /** Shared row scrolling: the offset, the wheel test and the scrollbar. */
+    final RowScrollPane pane = new RowScrollPane(ROW_HEIGHT);
     private int contentHeight;
     private String searchQuery = "";
     private TextFieldWidget searchField;
@@ -164,7 +164,7 @@ public final class ConfigScreen extends ConfluxScreen {
     @Override
     protected void init() {
         rowWidth = Math.min(MAX_ROW_WIDTH, width - MARGIN * 2);
-        scrollOffset = 0;
+        pane.scrollOffset(0);
         manualSeedAvailable = manualSeedService.available();
         // Arm for a real open only: a resize re-init lands on a settled reveal, and a
         // parent screen reopened from a child replays its reveal after init, so neither
@@ -187,7 +187,7 @@ public final class ConfigScreen extends ConfluxScreen {
             String next = Widgets.text(searchField);
             if (!next.equals(searchQuery) && tabSwitch.phase() != TabSwitchFlow.Phase.RETIRING) {
                 searchQuery = next;
-                scrollOffset = 0;
+                pane.scrollOffset(0);
                 rebuild();
             }
         }
@@ -290,19 +290,13 @@ public final class ConfigScreen extends ConfluxScreen {
         }
         if (rows.scrollSizeInput(mouseX, mouseY, amount)) return true;
         // Scrolling rebuilds the rows and would destroy a text field mid-edit.
-        if (getFocused() instanceof TextFieldWidget && getFocused() != searchField) {
+        if (pane.blocksScroll(getFocused()) && getFocused() != searchField) {
             return false;
         }
-        final boolean overRows = mouseX >= rowX() && mouseX <= rowX() + rowWidth + 8
-            && mouseY >= rowsTop() && mouseY <= height - BOTTOM_MARGIN;
-        if (amount != 0 && overRows) {
-            final int maxScroll = Math.max(0, contentHeight - viewportHeight());
-            final int next = Math.max(
-                0,
-                Math.min(maxScroll, scrollOffset - (int) Math.signum(amount) * ROW_HEIGHT)
-            );
-            if (next != scrollOffset) {
-                scrollOffset = next;
+        if (pane.consumesScroll(
+            mouseX, mouseY, amount, rowX(), rowWidth, rowsTop(), height - BOTTOM_MARGIN
+        )) {
+            if (pane.scrollBy(amount, contentHeight, viewportHeight())) {
                 rebuild();
             }
             return true;
@@ -342,10 +336,10 @@ public final class ConfigScreen extends ConfluxScreen {
             addBottomButtons();
             return;
         }
-        contentHeight = rows.addRows() + scrollOffset - rowsTop();
+        contentHeight = rows.addRows() + pane.scrollOffset() - rowsTop();
         int limit = Math.max(0, contentHeight - viewportHeight());
-        if (scrollOffset > limit) {
-            scrollOffset = limit;
+        if (pane.scrollOffset() > limit) {
+            pane.scrollOffset(limit);
             rebuild();
             return;
         }
@@ -461,7 +455,7 @@ public final class ConfigScreen extends ConfluxScreen {
     /** Swaps the rows in place: the transitions-off path and the pre-transition behavior. */
     private void switchTo(final Category c) {
         category = c;
-        scrollOffset = 0;
+        pane.scrollOffset(0);
         rebuild();
     }
 
@@ -788,19 +782,10 @@ public final class ConfigScreen extends ConfluxScreen {
     }
 
     private void drawScrollbar(final GuiDraw draw) {
-        final int viewport = viewportHeight();
-        final int maxScroll = Math.max(0, contentHeight - viewport);
-        if (maxScroll <= 0) {
-            return;
-        }
-        final int top = rowsTop();
-        final int trackHeight = viewport;
-        final int thumbHeight = Math.max(12, trackHeight * viewport / contentHeight);
-        final int thumbTravel = Math.max(1, trackHeight - thumbHeight);
-        final int thumbY = top + (int) Math.round(thumbTravel * (scrollOffset / (double) maxScroll));
-        final int x = rowX() + rowWidth + 4;
-        draw.fill(x, top, x + 2, top + trackHeight, 0xFF3A3A3A);
-        draw.fill(x, thumbY, x + 2, thumbY + thumbHeight, 0xFFFFFFFF);
+        pane.drawScrollbar(
+            draw, rowX() + rowWidth + 4, rowsTop(), contentHeight, viewportHeight(),
+            0xFF3A3A3A, 0xFFFFFFFF
+        );
     }
 
     private void drawRadarPolicyNotice(final GuiDraw draw) {

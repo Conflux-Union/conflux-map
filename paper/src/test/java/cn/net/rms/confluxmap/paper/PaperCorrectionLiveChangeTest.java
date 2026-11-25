@@ -11,6 +11,7 @@ import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
 import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
+import cn.net.rms.confluxmap.server.MessageSender;
 import cn.net.rms.confluxmap.server.ServerConfig;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
@@ -40,7 +41,7 @@ class PaperCorrectionLiveChangeTest {
         final PaperWorldDirectory worlds = directory(temporary);
         final PaperWorldDirectory.Entry world = worlds.at(0);
         final AtomicInteger responses = new AtomicInteger();
-        final PaperCorrectionService.MessageSender sender = sender(
+        final MessageSender sender = sender(
             MapRegionPatchS2C.class, responses
         );
 
@@ -76,7 +77,7 @@ class PaperCorrectionLiveChangeTest {
         final PaperWorldDirectory worlds = directory(temporary);
         final PaperWorldDirectory.Entry world = worlds.at(0);
         final AtomicInteger responses = new AtomicInteger();
-        final PaperCorrectionService.MessageSender sender = sender(MapPatchS2C.class, responses);
+        final MessageSender sender = sender(MapPatchS2C.class, responses);
 
         try (PaperCorrectionService service = service(worlds)) {
             service.requestTiles(
@@ -108,8 +109,8 @@ class PaperCorrectionLiveChangeTest {
         final PaperWorldDirectory worlds = directory(temporary);
         final AtomicReference<ErrorS2C> error = new AtomicReference<>();
         final AtomicInteger patches = new AtomicInteger();
-        final PaperCorrectionService.MessageSender sender =
-            new PaperCorrectionService.MessageSender() {
+        final MessageSender sender =
+            new MessageSender() {
                 @Override
                 public void send(final Message message) {
                     record(message);
@@ -173,11 +174,11 @@ class PaperCorrectionLiveChangeTest {
         );
     }
 
-    private static PaperCorrectionService.MessageSender sender(
+    private static MessageSender sender(
         final Class<? extends Message> responseType,
         final AtomicInteger responses
     ) {
-        return new PaperCorrectionService.MessageSender() {
+        return new MessageSender() {
             @Override
             public void send(final Message message) {
                 record(message);

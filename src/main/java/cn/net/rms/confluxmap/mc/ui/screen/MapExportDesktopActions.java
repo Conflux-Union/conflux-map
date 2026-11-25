@@ -195,18 +195,16 @@ final class MapExportDesktopActions {
                 runCommand("open", path.toString());
                 return;
             }
-            IOException firstFault = null;
             try {
                 runCommand("xdg-open", path.toString());
                 return;
-            } catch (final IOException e) {
-                firstFault = e;
-            }
-            try {
-                runCommand("gio", "open", path.toString());
-            } catch (final IOException e) {
-                e.addSuppressed(firstFault);
-                throw e;
+            } catch (final IOException firstFault) {
+                try {
+                    runCommand("gio", "open", path.toString());
+                } catch (final IOException e) {
+                    e.addSuppressed(firstFault);
+                    throw e;
+                }
             }
         }
 

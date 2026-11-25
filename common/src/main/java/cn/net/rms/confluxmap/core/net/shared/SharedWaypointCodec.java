@@ -744,14 +744,14 @@ public final class SharedWaypointCodec {
         if (type == null) {
             throw new SharedWaypointProtocolException("null waypoint type");
         }
-        switch (type) {
-            case NORMAL -> out.writeByte(0);
-            case DEATH -> out.writeByte(1);
-            // A silent fall-through would write no byte and corrupt the stream.
+        out.writeByte(switch (type) {
+            case NORMAL -> 0;
+            case DEATH -> 1;
+            // Exhaustive expression: a new Waypoint.Type constant cannot skip its wire byte.
             case TEMPORARY -> throw new SharedWaypointProtocolException(
                 "temporary waypoints are never shared"
             );
-        }
+        });
     }
 
     private static Waypoint.Type readWaypointType(final DataInputStream in)

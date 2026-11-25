@@ -2,12 +2,20 @@ package cn.net.rms.confluxmap.core.waypoint;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
+import com.google.gson.JsonParser;
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -302,6 +310,25 @@ class WaypointIoTest {
             assertTrue(Files.notExists(file));
             assertEquals(document, Files.readString(file.resolveSibling(file.getFileName() + ".bad")));
         }
+    }
+
+    @Test
+    void malformedSchemaVersionKeepsTheNumberFormatExceptionAsCause(@TempDir final Path tempDir)
+        throws IOException, NoSuchMethodException {
+        final Path file = tempDir.resolve("malformed-schema.json");
+        Files.writeString(file, "{\"schemaVersion\": 1e2147483648, \"waypoints\": []}");
+        // loadState quarantines instead of throwing, so the schema gate is reached directly for the preserved cause.
+        final Method usesFutureSchema = WaypointIo.class
+            .getDeclaredMethod("usesFutureSchema", JsonObject.class);
+        usesFutureSchema.setAccessible(true);
+        final JsonObject root = new JsonParser()
+            .parse(Files.readString(file, StandardCharsets.UTF_8))
+            .getAsJsonObject();
+
+        final InvocationTargetException thrown = assertThrows(
+            InvocationTargetException.class, () -> usesFutureSchema.invoke(null, root));
+        final JsonParseException reported = assertInstanceOf(JsonParseException.class, thrown.getCause());
+        assertInstanceOf(NumberFormatException.class, reported.getCause());
     }
 
     @Test

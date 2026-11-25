@@ -6,6 +6,7 @@ import cn.net.rms.confluxmap.core.color.OverlaySlotAssignment;
 import cn.net.rms.confluxmap.core.color.OverlayVisibility;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
+import cn.net.rms.confluxmap.core.model.ChunkSnapshotArrays;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.util.Argb;
@@ -94,16 +95,7 @@ public final class McChunkSnapshotFactory {
             return null;
         }
 
-        final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
-        final String[] biomeId = new String[ChunkSnapshot.COLUMNS];
-        final byte[] fluidDepth = new byte[ChunkSnapshot.COLUMNS];
-        final int[] baseArgb = new int[ChunkSnapshot.COLUMNS];
-        final int[] xaeroBaseArgb = new int[ChunkSnapshot.COLUMNS];
-        final int[] tintArgb = new int[ChunkSnapshot.COLUMNS];
-        final int[] overlayArgb = new int[ChunkSnapshot.COLUMNS];
-        final int[] xaeroOverlayArgb = new int[ChunkSnapshot.COLUMNS];
-        final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
-        final byte[] light = new byte[ChunkSnapshot.COLUMNS];
+        final ChunkSnapshotArrays arrays = new ChunkSnapshotArrays();
 
         final BlockPos.Mutable pos = new BlockPos.Mutable();
         final int baseX = chunkX << 4;
@@ -118,8 +110,9 @@ public final class McChunkSnapshotFactory {
                 for (int x = 0; x < 16; x++) {
                     sampleColumn(
                         chunk, world, pos, baseX, baseZ, x, z, bottomY, topY, heightmap, z * 16 + x,
-                        surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light,
-                        xaeroBaseArgb, xaeroOverlayArgb
+                        arrays.surfaceY, arrays.fluidDepth, arrays.baseArgb, arrays.tintArgb,
+                        arrays.overlayArgb, arrays.kind, arrays.light,
+                        arrays.xaeroBaseArgb, arrays.xaeroOverlayArgb
                     );
                 }
             }
@@ -133,20 +126,18 @@ public final class McChunkSnapshotFactory {
                     sampleFloorColumn(
                         chunk, world, pos, baseX, baseZ, x, z, pivotY, worldMinY, worldMaxY,
                         netherAmbient, deferBlockLight, z * 16 + x,
-                        surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light
+                        arrays.surfaceY, arrays.fluidDepth, arrays.baseArgb, arrays.tintArgb,
+                        arrays.overlayArgb, arrays.kind, arrays.light
                     );
                 }
             }
-            System.arraycopy(baseArgb, 0, xaeroBaseArgb, 0, ChunkSnapshot.COLUMNS);
-            System.arraycopy(overlayArgb, 0, xaeroOverlayArgb, 0, ChunkSnapshot.COLUMNS);
+            System.arraycopy(arrays.baseArgb, 0, arrays.xaeroBaseArgb, 0, ChunkSnapshot.COLUMNS);
+            System.arraycopy(arrays.overlayArgb, 0, arrays.xaeroOverlayArgb, 0, ChunkSnapshot.COLUMNS);
         }
         BiomeIdentityCapture.capture(
-            world, pos, baseX, baseZ, surfaceY, biomeId, tints.biomeIdentityWindow()
+            world, pos, baseX, baseZ, arrays.surfaceY, arrays.biomeId, tints.biomeIdentityWindow()
         );
-        return new ChunkSnapshot(
-            chunkX, chunkZ, sessionToken, world.getTime(), surfaceY, biomeId, fluidDepth,
-            baseArgb, xaeroBaseArgb, tintArgb, overlayArgb, xaeroOverlayArgb, kind, light
-        );
+        return arrays.toSnapshot(chunkX, chunkZ, sessionToken, world.getTime());
     }
 
     /**
@@ -170,16 +161,8 @@ public final class McChunkSnapshotFactory {
         }
 
         final short[] surfaceY = selection.surfaceY().clone();
-        final String[] biomeId = new String[ChunkSnapshot.COLUMNS];
-        final byte[] fluidDepth = new byte[ChunkSnapshot.COLUMNS];
-        final int[] baseArgb = new int[ChunkSnapshot.COLUMNS];
-        final int[] xaeroBaseArgb = new int[ChunkSnapshot.COLUMNS];
-        final int[] tintArgb = new int[ChunkSnapshot.COLUMNS];
-        final int[] overlayArgb = new int[ChunkSnapshot.COLUMNS];
-        final int[] xaeroOverlayArgb = new int[ChunkSnapshot.COLUMNS];
-        final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
-        final byte[] light = new byte[ChunkSnapshot.COLUMNS];
-        java.util.Arrays.fill(tintArgb, 0xFFFFFFFF);
+        final ChunkSnapshotArrays arrays = new ChunkSnapshotArrays();
+        java.util.Arrays.fill(arrays.tintArgb, 0xFFFFFFFF);
 
         final BlockPos.Mutable pos = new BlockPos.Mutable();
         final int baseX = selection.chunkX() << 4;
@@ -193,8 +176,8 @@ public final class McChunkSnapshotFactory {
                 final int expectedFloor = selection.floorStateId()[index];
                 if (expectedFloor < 0) {
                     writeVoid(
-                        index, selection.pivotY(), surfaceY, kind, baseArgb, tintArgb,
-                        overlayArgb, fluidDepth, light
+                        index, selection.pivotY(), surfaceY, arrays.kind, arrays.baseArgb,
+                        arrays.tintArgb, arrays.overlayArgb, arrays.fluidDepth, arrays.light
                     );
                     continue;
                 }
@@ -232,23 +215,21 @@ public final class McChunkSnapshotFactory {
                         pos, world, overlay.getBlock(), netherAmbient
                     );
                 }
-                baseArgb[index] = color;
-                overlayArgb[index] = overlayColor;
-                kind[index] = (byte) classifySurfaceKind(floor.getBlock()).ordinal();
-                light[index] = sampleBlockLightAbove(
+                arrays.baseArgb[index] = color;
+                arrays.overlayArgb[index] = overlayColor;
+                arrays.kind[index] = (byte) classifySurfaceKind(floor.getBlock()).ordinal();
+                arrays.light[index] = sampleBlockLightAbove(
                     world, pos, worldX, y, worldZ, worldMaxY
                 );
             }
         }
-        System.arraycopy(baseArgb, 0, xaeroBaseArgb, 0, ChunkSnapshot.COLUMNS);
-        System.arraycopy(overlayArgb, 0, xaeroOverlayArgb, 0, ChunkSnapshot.COLUMNS);
+        System.arraycopy(arrays.baseArgb, 0, arrays.xaeroBaseArgb, 0, ChunkSnapshot.COLUMNS);
+        System.arraycopy(arrays.overlayArgb, 0, arrays.xaeroOverlayArgb, 0, ChunkSnapshot.COLUMNS);
         BiomeIdentityCapture.capture(
-            world, pos, baseX, baseZ, surfaceY, biomeId, tints.biomeIdentityWindow()
+            world, pos, baseX, baseZ, surfaceY, arrays.biomeId, tints.biomeIdentityWindow()
         );
-        return new ChunkSnapshot(
-            selection.chunkX(), selection.chunkZ(), sessionToken, selection.revision(),
-            surfaceY, biomeId, fluidDepth, baseArgb, xaeroBaseArgb, tintArgb,
-            overlayArgb, xaeroOverlayArgb, kind, light
+        return arrays.toSnapshot(
+            selection.chunkX(), selection.chunkZ(), sessionToken, selection.revision(), surfaceY
         );
     }
 

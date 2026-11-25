@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.waypoint;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.util.AtomicFiles;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
@@ -10,10 +11,8 @@ import com.google.gson.JsonParseException;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -116,7 +115,7 @@ public final class WaypointIo {
             return new WaypointStore.State(sets, result);
         } catch (final IOException | RuntimeException e) {
             logger.warn("Waypoint file {} unreadable ({}), quarantining and starting empty", file, e.toString());
-            quarantine(file, logger);
+            AtomicFiles.quarantine(file, logger);
             return new WaypointStore.State(List.of(), List.of());
         }
     }
@@ -160,7 +159,7 @@ public final class WaypointIo {
         }
         final Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
         Files.writeString(tmp, GSON.toJson(shape), StandardCharsets.UTF_8);
-        move(tmp, file);
+        AtomicFiles.moveReplacing(tmp, file);
     }
 
     private static Waypoint toWaypoint(final Entry entry, final Logger logger) {
@@ -220,7 +219,7 @@ public final class WaypointIo {
         try {
             version = schema.getAsBigDecimal().stripTrailingZeros();
         } catch (final NumberFormatException e) {
-            throw new JsonParseException("waypoint file has an invalid schemaVersion");
+            throw new JsonParseException("waypoint file has an invalid schemaVersion", e);
         }
         if (version.scale() > 0) {
             throw new JsonParseException("waypoint schemaVersion must be an integer");
@@ -255,21 +254,5 @@ public final class WaypointIo {
         entry.markerLabel = waypoint.markerLabel;
         entry.createdAtEpochMs = waypoint.createdAtEpochMs;
         return entry;
-    }
-
-    private static void move(final Path tmp, final Path file) throws IOException {
-        try {
-            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (final AtomicMoveNotSupportedException e) {
-            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    private static void quarantine(final Path file, final Logger logger) {
-        try {
-            Files.move(file, file.resolveSibling(file.getFileName() + ".bad"), StandardCopyOption.REPLACE_EXISTING);
-        } catch (final IOException e) {
-            logger.warn("Could not quarantine {}", file, e);
-        }
     }
 }

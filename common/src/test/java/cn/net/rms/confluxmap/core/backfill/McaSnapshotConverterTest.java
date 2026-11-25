@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
-import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
 import java.util.List;
@@ -76,7 +75,7 @@ class McaSnapshotConverterTest {
     void convertsOnlyGeneratedChunksAtRegionLocalCoordinates() {
         final RecordingBaker baker = new RecordingBaker();
         final List<ChunkSnapshot> snapshots =
-            McaSnapshotConverter.toSnapshots(region(), SESSION, MapLayer.SURFACE, baker);
+            McaSnapshotConverter.toSnapshots(region(), SESSION, baker);
 
         assertEquals(3, snapshots.size());
         final int[] chunkXs = snapshots.stream().mapToInt(s -> s.chunkX).toArray();
@@ -91,7 +90,7 @@ class McaSnapshotConverterTest {
     void landColumnCarriesSummaryFieldsAndBakedColors() {
         final RecordingBaker baker = new RecordingBaker();
         final List<ChunkSnapshot> snapshots =
-            McaSnapshotConverter.toSnapshots(region(), SESSION, MapLayer.SURFACE, baker);
+            McaSnapshotConverter.toSnapshots(region(), SESSION, baker);
         final ChunkSnapshot land = snapshots.stream()
             .filter(s -> s.chunkX == 160 && s.chunkZ == -64).findFirst().orElseThrow();
 
@@ -115,7 +114,7 @@ class McaSnapshotConverterTest {
     void voidColumnHasNoSurfaceAndNoColors() {
         final RecordingBaker baker = new RecordingBaker();
         final List<ChunkSnapshot> snapshots =
-            McaSnapshotConverter.toSnapshots(region(), SESSION, MapLayer.SURFACE, baker);
+            McaSnapshotConverter.toSnapshots(region(), SESSION, baker);
         final ChunkSnapshot voidChunk = snapshots.stream()
             .filter(s -> s.chunkX == 160 && s.chunkZ == -63).findFirst().orElseThrow();
 
@@ -129,7 +128,7 @@ class McaSnapshotConverterTest {
     void waterColumnKeepsDepthAndLight() {
         final RecordingBaker baker = new RecordingBaker();
         final List<ChunkSnapshot> snapshots =
-            McaSnapshotConverter.toSnapshots(region(), SESSION, MapLayer.SURFACE, baker);
+            McaSnapshotConverter.toSnapshots(region(), SESSION, baker);
         final ChunkSnapshot water = snapshots.stream()
             .filter(s -> s.chunkX == 161 && s.chunkZ == -63).findFirst().orElseThrow();
 
@@ -147,7 +146,7 @@ class McaSnapshotConverterTest {
         }
         final SummaryCodec.SampledRegion region = new SummaryCodec.SampledRegion(0, 0, MTIME, 8, chunks);
         assertThrows(IllegalArgumentException.class,
-            () -> McaSnapshotConverter.toSnapshots(region, SESSION, MapLayer.SURFACE, new RecordingBaker()));
+            () -> McaSnapshotConverter.toSnapshots(region, SESSION, new RecordingBaker()));
     }
 
     private static boolean contains(final int[] values, final int value) {
