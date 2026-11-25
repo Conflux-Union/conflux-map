@@ -55,11 +55,29 @@ title: 服务端组件(Fabric)
 
 ## 内置网页地图 (`webMap.*`)
 
-组件内置了独立的 HTTP 网页地图，可在浏览器中查看已探索地形、预测地形与共享路径点：
+组件内置了独立的 HTTP 网页地图，可在浏览器中查看已探索地形、预测地形与共享路径点（浏览端功能见[网页地图](../features/web-map.md)）：
 
 - **默认监听**：`127.0.0.1:8123`，默认开启且不显示玩家位置（由 `sharePlayers` 控制）。
 - **公网访问**：如需公开访问，请将其置于保留原始 `Host` 请求头的 HTTPS 反向代理之后。
+- **多服共用入口**：`sharedGateway`（默认开启）允许同一主机上的 Fabric 与 Paper 服务端共用一个网页入口；访客通过「切换服务端」下拉框选择实例，`serverDisplayName` 设定本服在列表中显示的名称。
 - **隐私隐藏**：玩家可在游戏内执行 `/confluxmap webmap hide` 将自己从网页地图中隐藏，执行 `/confluxmap webmap show` 恢复显示。
+
+### 网页地图选项
+
+| 选项 | 默认 | 说明 |
+|---|---|---|
+| `enableChat` | 关闭 | 显示网页聊天面板 |
+| `showGameChat` | 开启 | 将游戏聊天转发到网页面板 |
+| `allowWebChat` | 关闭 | 允许浏览器向游戏发送消息 |
+| `allowPlayerSearch` | 关闭 | 网页中的玩家搜索 |
+| `allowWaypointSearch` | 开启 | 网页中的公共路径点搜索 |
+| `showWaypointImages` | 开启 | 在网页中显示路径点照片 |
+| `waypointImageMode` | `APPROVAL` | 谁可以查看路径点照片：`APPROVAL`（需要审核）、`OP_ONLY`（仅管理员）、`EVERYONE`（所有玩家）、`DISABLED`（关闭） |
+| `defaultMode` | `AUTO` | 新访客的默认区域模式：`AUTO`（自动）、`ALL`（全部区域）、`GENERATED`（已生成区域） |
+
+### 游戏内服务端配置
+
+管理员可在游戏内「设置 → 服务端配置」分类中编辑这些选项——开关、枚举与数值输入均显示当前实际值，同屏还可调整 `allowBiomeMap`、`shareChunkLoadState` 等地图同步选项。可在线生效的修改立即应用；其余选项会注明需要重启服务端，保存失败时自动恢复原值。
 
 ### 自定义网页标题与图标
 

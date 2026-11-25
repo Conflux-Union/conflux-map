@@ -99,6 +99,7 @@ nav:
       - Portal markers: features/portal-markers.md
       - Waypoints: features/waypoints.md
       - Shared waypoints: features/shared-waypoints.md
+      - Web map: features/web-map.md
       - Entity radar: features/entity-radar.md
       - Drawings & export: features/drawings-export.md
       - Appearance: features/appearance.md

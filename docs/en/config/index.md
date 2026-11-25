@@ -38,8 +38,17 @@ Every option below is available in the in-game settings screen (`Mod Menu → Co
 | Show Nether Ceiling Bedrock Thickness | `confluxmap.config.map.bedrock_thickness_shading` | — |
 | Map Color Style | `confluxmap.config.map.color_style` | — |
 | Dynamic Lighting | `confluxmap.config.map.dynamic_lighting` | — |
+| Real Map Coverage Style | `confluxmap.config.map.loaded_range_style` | — |
+| Highlight Real Map Coverage | `confluxmap.config.map.loaded_range_visible` | — |
+| Maximum Zoom | `confluxmap.config.map.max_zoom` | — |
+| Minimum Zoom | `confluxmap.config.map.min_zoom` | — |
+| Photo pan and rotation | `confluxmap.config.map.photo_gestures` | — |
+| Map photos | `confluxmap.config.map.photos` | — |
 | Map Quality | `confluxmap.config.map.quality` | — |
+| Show screenshots on map | `confluxmap.config.map.screenshots` | — |
+| Prediction and Blank Area Brightness | `confluxmap.config.map.unloaded_brightness` | 100% keeps the original brightness. 0% is fully dark. Real terrain stays at its original brightness. |
 | Void Color | `confluxmap.config.map.void_color` | — |
+| Show photos at waypoints | `confluxmap.config.map.waypoint_photos` | — |
 
 ## minimap
 

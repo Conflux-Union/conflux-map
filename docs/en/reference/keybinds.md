@@ -23,6 +23,7 @@ All bindings can be customized in Minecraft's controls screen under **Options â†
 | `,` | Settings | Open Conflux Map settings |
 | `P` | Map autofill | Cycle autofill range (everywhere / generated-only / explored-only) |
 | `F9` | Map autofill | Refresh map autofill tiles |
+| *(unbound)* | Waypoints | Place a temporary waypoint at your position (removed when leaving the world) |
 
 ---
 

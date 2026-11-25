@@ -55,11 +55,29 @@ Servers running [quadra-gen](https://github.com/Fallen-Breath/quadra-gen) are de
 
 ## Built-in Web Map (`webMap.*`)
 
-The companion serves a standalone HTTP web map showing explored terrain, predicted terrain, and shared waypoints:
+The companion serves a standalone HTTP web map showing explored terrain, predicted terrain, and shared waypoints (see [Web map](../features/web-map.md) for the browsing side):
 
 - **Default bind**: `127.0.0.1:8123`, enabled by default with player positions hidden (`sharePlayers` controls inclusion).
 - **Public access**: Place it behind an HTTPS reverse proxy that preserves the original `Host` header.
+- **Shared entry point**: With `sharedGateway` (on by default), a Fabric and a Paper server on the same host share one web map entry; visitors pick an instance from the **Switch server** dropdown, and `serverDisplayName` sets the name shown for this server.
 - **Privacy**: Players can run `/confluxmap webmap hide` in game to hide themselves from the web map, and `/confluxmap webmap show` to return.
+
+### Web Map Options
+
+| Option | Default | Behavior |
+|---|---|---|
+| `enableChat` | Off | Shows the web chat panel |
+| `showGameChat` | On | Relays game chat into the web panel |
+| `allowWebChat` | Off | Allows browsers to send messages to the game |
+| `allowPlayerSearch` | Off | Player search in the browser |
+| `allowWaypointSearch` | On | Public-waypoint search in the browser |
+| `showWaypointImages` | On | Shows waypoint photos in the browser |
+| `waypointImageMode` | `APPROVAL` | Who sees waypoint photos: `APPROVAL` (operator-approved), `OP_ONLY`, `EVERYONE`, or `DISABLED` |
+| `defaultMode` | `AUTO` | Initial region mode for new visitors: `AUTO`, `ALL`, or `GENERATED` |
+
+### In-Game Server Configuration
+
+Operators can edit these options in game under **Settings → Server** — toggles, enums, and numbers showing the live value, alongside map-sync options such as `allowBiomeMap` and `shareChunkLoadState`. Changes that can apply online take effect immediately; the remainder state that they require a server restart, and a failed save restores the previous value.
 
 ### Custom Title and Favicon
 

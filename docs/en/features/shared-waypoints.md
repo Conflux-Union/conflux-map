@@ -28,6 +28,10 @@ Shared waypoints require the [server companion](../technical/server-companion.md
 !!! info "GUI Management"
     Clients with Conflux Map installed can create, rename, and delete sets directly from the **Public** tab of the waypoint screen, or select entries for batch moving.
 
+## Waypoint Photos
+
+When publishing a local waypoint, select up to four photos from its album in the confirmation dialog; a saved public waypoint accepts photos through **Upload waypoint image**. Photos stay on the submitting player's device until selected, and operators preview and decide each submission under **Settings → Server → Review waypoint photos**. Approved photos are shown to everyone who opens the waypoint on the [web map](web-map.md).
+
 Per-world and per-player limits are configured in `config/confluxmap/server.json`.
 
 ---

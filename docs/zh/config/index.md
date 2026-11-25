@@ -38,8 +38,17 @@ title: 配置参考
 | 显示下界顶层基岩厚度 | `confluxmap.config.map.bedrock_thickness_shading` | — |
 | 地图颜色风格 | `confluxmap.config.map.color_style` | — |
 | 动态光照 | `confluxmap.config.map.dynamic_lighting` | — |
+| 覆盖范围显示方式 | `confluxmap.config.map.loaded_range_style` | — |
+| 真实地图范围高亮 | `confluxmap.config.map.loaded_range_visible` | — |
+| 最大缩放倍率 | `confluxmap.config.map.max_zoom` | — |
+| 最小缩放倍率 | `confluxmap.config.map.min_zoom` | — |
+| 图片拖动与旋转 | `confluxmap.config.map.photo_gestures` | — |
+| 地图图片 | `confluxmap.config.map.photos` | — |
 | 地图画质等级 | `confluxmap.config.map.quality` | — |
+| 地图对应位置显示截图 | `confluxmap.config.map.screenshots` | — |
+| 预测及空白区域亮度 | `confluxmap.config.map.unloaded_brightness` | 100% 为原亮度，0% 为全暗。真实地形保持原亮度。 |
 | 虚空颜色 | `confluxmap.config.map.void_color` | — |
+| 对应路径点显示图片 | `confluxmap.config.map.waypoint_photos` | — |
 
 ## minimap
 

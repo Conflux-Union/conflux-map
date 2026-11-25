@@ -29,6 +29,7 @@ Conflux Map 是一款面向 **Fabric** 平台的小地图与世界地图模组�
     - [服务端组件 (Fabric)](technical/server-companion.md)
     - [Paper 伴随插件](technical/paper-companion.md)
     - [共享路径点命令](features/shared-waypoints.md)
+    - [网页地图](features/web-map.md)
 
 -   :material-tune: **配置与迁移**
 
@@ -59,7 +60,7 @@ Conflux Map 是一款面向 **Fabric** 平台的小地图与世界地图模组�
 | 功能模块 | 核心能力 |
 |---|---|
 | [小地图](features/minimap.md) | 方形/圆形外观、自定义位置与旋转、自动避让原版 HUD |
-| [世界地图](features/world-map.md) | 光标中心缩放、地图/群系/区块加载等级图层、分维度高度视图 |
+| [世界地图](features/world-map.md) | 光标中心缩放、坐标跳转、真实覆盖范围高亮、地图/群系/区块加载等级图层 |
 | [地图补全](features/autofill-prediction.md) | 由世界种子预测未探索地形（支持 GPU 加速），探索后实时替换 |
 | [结构与群系搜索](features/structure-biome-search.md) | 查找并标记原版结构（含变种）与群系，支持范围筛选 |
 | [箱子战利品预览](features/chest-loot-preview.md) | 预览并显示原版结构内的箱子战利品内容 |
@@ -69,8 +70,9 @@ Conflux Map 是一款面向 **Fabric** 平台的小地图与世界地图模组�
 
 | 功能模块 | 核心能力 |
 |---|---|
-| [路径点](features/waypoints.md) | 分组管理、自动死亡点、1:8 跨维度显示、Xaero/VoxelMap 数据一键迁移 |
-| [共享路径点](features/shared-waypoints.md) | 全服公共列表，支持 GUI 与 `/confluxmap waypoints` 命令操作 |
+| [路径点](features/waypoints.md) | 收藏星标、备注标签、照片、自动死亡点、1:8 跨维度显示、Xaero/VoxelMap 数据一键迁移 |
+| [共享路径点](features/shared-waypoints.md) | 全服公共列表，支持照片、GUI 与 `/confluxmap waypoints` 命令操作 |
+| [网页地图](features/web-map.md) | 内置浏览器地图：多服切换、玩家与路径点搜索、网页聊天 |
 | [实体雷达](features/entity-radar.md) | 玩家与生物雷达、精细过滤与单实体类型覆盖 |
 | [绘图与导出](features/drawings-export.md) | 地图手绘标注、多段测距、框选后台导出 PNG、Xaero 地图数据一键迁移 |
 | [显示与外观](features/appearance.md) | 界面动画、原版与 Xaero UI 资源包主题兼容 |
