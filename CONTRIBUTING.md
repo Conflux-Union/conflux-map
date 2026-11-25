@@ -66,6 +66,7 @@ Notes:
 6. **`native/cubiomes` is a submodule.** Don't edit it in place; changes go through the fork and a submodule pin bump.
 7. **English everywhere in code, comments, and commit messages.**
 8. **Markdown stays in the established documents.** User-facing behavior goes in `README.md`/`README_CN.md` (maintainers curate those); developer contracts and workflows go in the existing `docs/` files (e.g. `docs/reference-specs/`). Do not add new `.md` files for measurement reports, validation logs, benchmark summaries, or build/binary provenance — that evidence belongs in the PR description, an issue, or tests. `docs/performance/` and `native/prebuilt/BUILD_INFO.md` were removed on purpose; do not reintroduce them.
+9. **Feature changes update the wiki.** A change that adds or alters player-visible behavior must update the matching bilingual wiki pages under `docs/en/` and `docs/zh/` — the feature page, the companion docs, or the reference tables — in the same PR. Wording follows the in-game lang files; after changing config labels or tooltips, regenerate the config reference with `python tools/gen_config_ref.py` and review the generated diff, since the generator only knows what the lang files say.
 
 ## Testing
 

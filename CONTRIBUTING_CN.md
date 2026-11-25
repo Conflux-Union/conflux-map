@@ -66,6 +66,7 @@ cd conflux-map
 6. **`native/cubiomes` 是子模块。** 不要原地修改；改动通过 fork 提交并更新子模块指针。
 7. **代码、注释与提交信息一律使用英文。**
 8. **Markdown 只进既定文档。** 面向用户的行为写在 `README.md`/`README_CN.md`（由维护者把关）；开发者契约与流程写在 `docs/` 现有文件中（如 `docs/reference-specs/`）。不要为测量报告、验证记录、基准总结或构建/二进制溯源新增 `.md` 文件——这类证据应放进 PR 描述、issue 或测试。`docs/performance/` 与 `native/prebuilt/BUILD_INFO.md` 是有意删除的，不要恢复。
+9. **功能性变更须同步更新 wiki。** 新增或改变玩家可见行为的改动，必须在同一 PR 中更新 `docs/en/` 与 `docs/zh/` 下对应的 wiki 双语页面——功能页、服务端组件文档或参考表。措辞以游戏内语言文件为准；修改配置标签或提示后，用 `python tools/gen_config_ref.py` 重新生成配置参考页并检查生成 diff——生成器只知道语言文件里的内容。
 
 ## 测试
 
