@@ -3,7 +3,6 @@ package cn.net.rms.confluxmap.mixin;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
-import cn.net.rms.confluxmap.core.community.CommunityInviteClickPayload;
 import cn.net.rms.confluxmap.core.survey.SurveyReminderClickPayload;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatClickPayload;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
@@ -94,17 +93,11 @@ public abstract class ScreenMixin {
     ) {
         try {
             final String clickValue = clickEvent == null ? null : Texts.clickValue(clickEvent);
-            final boolean surveyOptOut = SurveyReminderClickPayload.isDismiss(clickValue);
-            final boolean communityOptOut = CommunityInviteClickPayload.isDismiss(clickValue);
-            if (surveyOptOut || communityOptOut) {
+            if (SurveyReminderClickPayload.isDismiss(clickValue)) {
                 if (clickEvent.getAction() == ClickEvent.Action.COPY_TO_CLIPBOARD) {
                     final ConfluxMapClient confluxMap = ConfluxMapClient.get();
                     if (confluxMap != null) {
-                        if (surveyOptOut) {
-                            confluxMap.dismissSurveyReminder();
-                        } else {
-                            confluxMap.dismissCommunityInvite();
-                        }
+                        confluxMap.dismissSurveyReminder();
                     }
                 }
                 return true;

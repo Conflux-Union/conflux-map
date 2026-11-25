@@ -339,16 +339,6 @@ final class ConfluxConfigTest {
     }
 
     @Test
-    void communityInviteDismissalSurvivesConfigCopy() {
-        final ConfluxConfig config = new ConfluxConfig();
-        assertFalse(config.communityInviteDismissed);
-
-        config.communityInviteDismissed = true;
-
-        assertTrue(config.copy().communityInviteDismissed);
-    }
-
-    @Test
     void minimapZoomCyclesThroughEveryLevelAndWraps() {
         final ConfluxConfig config = new ConfluxConfig();
         config.minimapZoomIndex = 0;

@@ -143,17 +143,23 @@ class LanguageResourceTest {
         assertTrue(mismatches.isEmpty(), String.join("\n", mismatches));
     }
 
-    // The Chinese survey copy is locked verbatim, so this pins the exact wording and the
-    // fragment order the chat message is assembled from.
+    // The Chinese survey reminder copy is locked verbatim, community links included, so this pins
+    // the exact wording and the fragment order the chat message is assembled from.
     @Test
     void chineseSurveyReminderMatchesTheRequestedChatCopy() {
         final Map<String, String> chinese = translations("zh_cn");
 
         assertEquals(
-            "想帮助我们做得更好吗？[点击此处]填写 Conflux 地图的调查问卷[不再提示]",
+            "想帮助我们做得更好吗？[点击此处]填写 Conflux 地图的调查问卷。如果你使用腾讯 QQ，可以加入 "
+                + "[QQ 交流群]；如果不使用 QQ，欢迎加入我们的官方社区 [Discord]。[不再提示]",
             chinese.get("confluxmap.survey.chat.intro")
                 + chinese.get("confluxmap.survey.chat.open")
                 + chinese.get("confluxmap.survey.chat.body")
+                + chinese.get("confluxmap.survey.chat.community.qq_head")
+                + chinese.get("confluxmap.survey.chat.community.qq_group")
+                + chinese.get("confluxmap.survey.chat.community.discord_head")
+                + chinese.get("confluxmap.survey.chat.community.discord")
+                + chinese.get("confluxmap.survey.chat.community.end")
                 + chinese.get("confluxmap.survey.chat.dismiss")
         );
     }

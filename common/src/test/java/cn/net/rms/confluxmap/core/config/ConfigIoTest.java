@@ -549,17 +549,6 @@ class ConfigIoTest {
     }
 
     @Test
-    void communityInviteDismissalRoundTrips(@TempDir final Path tmp) {
-        final ConfigIo io = new ConfigIo(tmp.resolve("config.json"), LOGGER);
-        final ConfluxConfig config = new ConfluxConfig();
-        config.communityInviteDismissed = true;
-
-        io.save(config);
-
-        assertTrue(io.load().communityInviteDismissed);
-    }
-
-    @Test
     void structureVisibilityProfilesRoundTrip(@TempDir final Path tmp) {
         final Path file = tmp.resolve("config.json");
         final ConfigIo io = new ConfigIo(file, LOGGER);
