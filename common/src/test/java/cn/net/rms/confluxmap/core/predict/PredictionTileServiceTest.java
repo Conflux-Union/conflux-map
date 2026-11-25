@@ -25,6 +25,7 @@ import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
+import cn.net.rms.confluxmap.core.store.RegionColumns;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.BiomeTileKeys;
@@ -2876,6 +2877,87 @@ class PredictionTileServiceTest {
         // serves the CPU reference from now on.
         assertEquals(PredictionBaselineCache.ENGINE_CPU, PredictionTileService.servingEngine(
             new GpuBackend.GpuStats(auto, "review-device", 4, 2, true)));
+    }
+
+    @Test
+    void paddedRingIsSkippedOnceRequestedUnlessInvalidatedOrForgotten() throws InterruptedException {
+        final SessionGuard sessionGuard = new SessionGuard();
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel());
+        final WaveHarness harness = newWaveHarness(sessionGuard, executors, uploads);
+        final PredictionTileService service = harness.service;
+        sessionGuard.begin(WORLD, DIM);
+        try {
+            service.setViewport(DIM, 2, 0, 0, 0, 0);
+            service.preloadViewportPaddedRing();
+            awaitIdle(service, 10_000L);
+            uploads.drainUploads(64);
+            final int firstCalls = harness.sampler.batchCalls.size() + harness.sampler.perTileCalls.size();
+            assertTrue(firstCalls > 0);
+
+            // Second preload call on steady viewport must not re-queue already requested ring tiles.
+            service.preloadViewportPaddedRing();
+            awaitIdle(service, 10_000L);
+            assertEquals(
+                firstCalls,
+                harness.sampler.batchCalls.size() + harness.sampler.perTileCalls.size(),
+                "steady-state padded ring preload must not churn already-requested tiles"
+            );
+
+            // Forgetting one evicted ring tile allows a single clean preload again.
+            final TileKey forgotten = surfaceTile(-1, -1);
+            service.forgetTile(forgotten);
+            service.preloadViewportPaddedRing();
+            awaitIdle(service, 10_000L);
+            assertTrue(
+                harness.sampler.batchCalls.size() + harness.sampler.perTileCalls.size() > firstCalls,
+                "forgetting an evicted GPU ring tile must allow one fresh preload"
+            );
+        } finally {
+            executors.shutdown(2000L);
+        }
+    }
+
+    @Test
+    void evictedPredictedUploadMarksTileNonCurrentAndSkipsOffscreenRecompose() throws InterruptedException {
+        final SessionGuard sessionGuard = new SessionGuard();
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel());
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.FLAT, WorldPreset.DEFAULT);
+        state.setFlatBaseline(new FlatBaseline(1, 63, SurfaceKind.LAND.ordinal(), 11, 0));
+        final PredictionTileService service = newService(sessionGuard, state, executors, uploads);
+        sessionGuard.begin(WORLD, DIM);
+        try {
+            final TileKey target = new TileKey(WORLD, DIM, "surface!pred", 0, 0, 0);
+            service.setViewport(DIM, 0, 0, 0, 0, 0);
+            service.requestTile(target);
+            awaitIdle(service, 10_000L);
+            assertTrue(service.compositionCurrent(target));
+
+            // Move the viewport elsewhere before overflowing the shared upload queue so target is offscreen.
+            service.setViewport(DIM, 0, 50, 50, 50, 50);
+            for (int i = 1; i <= uploads.uploadQueueCapacity() + 4; i++) {
+                final TileKey filler = new TileKey(WORLD, DIM, MapLayer.SURFACE.cacheId(), 0, i, 0);
+                uploads.submitUpload(TileUpdate.fullTile(filler, new int[RegionColumns.SIZE * RegionColumns.SIZE]));
+            }
+
+            assertFalse(
+                service.compositionCurrent(target),
+                "evicting a pending predicted upload must mark the tile non-current until recomposed"
+            );
+            assertFalse(
+                service.queuedOrInFlightKeysForTest().contains(target),
+                "offscreen evicted upload must stay deferred instead of burning workers immediately"
+            );
+
+            // Panning back to target queues it automatically from staleRealCoverageTiles.
+            service.setViewport(DIM, 0, 0, 0, 0, 0);
+            awaitIdle(service, 10_000L);
+            assertTrue(service.compositionCurrent(target));
+        } finally {
+            executors.shutdown(2000L);
+        }
     }
 
     private static long[] stageVector(final OverworldStages.OverworldStage first, final long firstNanos,

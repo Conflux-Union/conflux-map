@@ -338,7 +338,7 @@ public final class TileTextureManager {
             oldest.getValue().texture.close();
             // Nothing holds this tile's pixels any more, so the composer must stop refreshing it
             // and go back to composing it in full when bind() next asks for it.
-            tiles.forgetTile(oldest.getKey());
+            forgetResidentTile(oldest.getKey());
             over--;
         }
         if (over > 0 && textures.size() > HARD_CACHE_LIMIT) {
@@ -356,7 +356,7 @@ public final class TileTextureManager {
                 final Map.Entry<TileKey, TileTexture> oldest = it.next();
                 it.remove();
                 oldest.getValue().texture.close();
-                tiles.forgetTile(oldest.getKey());
+                forgetResidentTile(oldest.getKey());
                 over--;
             }
         }
@@ -472,7 +472,7 @@ public final class TileTextureManager {
         assert RenderSystem.isOnRenderThread() : "TileTextureManager.releaseAll() must run on the render thread";
         for (final Map.Entry<TileKey, TileTexture> entry : textures.entrySet()) {
             entry.getValue().texture.close();
-            tiles.forgetTile(entry.getKey());
+            forgetResidentTile(entry.getKey());
         }
         textures.clear();
         emptyRealTiles.clear();
@@ -502,6 +502,14 @@ public final class TileTextureManager {
         }
         drawnThisFrame.clear();
         drawnLastFrame.clear();
+    }
+
+    private void forgetResidentTile(final TileKey key) {
+        if (PredictedTileKeys.isPredicted(key)) {
+            predictionTiles.forgetTile(key);
+        } else {
+            tiles.forgetTile(key);
+        }
     }
 
     /** Test-support only: snapshot of the keys with a resident GPU texture (monitor-guarded). */

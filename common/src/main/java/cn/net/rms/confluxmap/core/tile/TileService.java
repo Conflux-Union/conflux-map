@@ -1681,6 +1681,16 @@ public final class TileService {
         uploads.keySet().removeIf(predicate);
     }
 
+    /** Pending uploads waiting for the render thread to drain them. */
+    public synchronized int pendingUploadCount() {
+        return uploads.size();
+    }
+
+    /** Hard bound on {@link #uploads} before enqueueing a new update evicts the oldest one. */
+    public int uploadQueueCapacity() {
+        return UPLOAD_QUEUE_CAPACITY;
+    }
+
     /** Render thread: pop up to {@code max} freshly-composed tiles to upload to the GPU. */
     public List<TileUpdate> drainUploads(final int max) {
         final List<TileUpdate> result = new ArrayList<>(Math.min(max, UPLOAD_QUEUE_CAPACITY));

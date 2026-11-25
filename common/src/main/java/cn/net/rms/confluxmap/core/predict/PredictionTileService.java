@@ -230,7 +230,29 @@ public final class PredictionTileService {
         this.millisClock = millisClock;
         this.maxConcurrentCompositions = Math.max(1, executors.workerCount());
         uploads.bindRealCoverageListener(this::onRealCoverageChanged);
-        uploads.bindPredictedUploadReloader(this::requestTile);
+        uploads.bindPredictedUploadReloader(this::onPredictedUploadEvicted);
+    }
+
+    private void onPredictedUploadEvicted(final TileKey key) {
+        final SessionGuard.Session session = sessionGuard.current();
+        if (!session.active()
+            || !key.world().equals(session.world())
+            || !key.dimension().equals(session.dimension())) {
+            return;
+        }
+        synchronized (this) {
+            if (requestedTiles.contains(key)) {
+                staleRealCoverageTiles.add(key);
+            }
+            if (dirty.containsKey(key) || inFlight.contains(key)) {
+                return;
+            }
+            if (viewport != null && !viewport.containsPadded(key)) {
+                return;
+            }
+            dirtyPut(key, session.token());
+        }
+        pump();
     }
 
     private void onRealCoverageChanged(final TileKey realKey) {
@@ -878,6 +900,9 @@ public final class PredictionTileService {
      * targeting the specified layer namespace (or the dimension's default predicted layer when null).
      */
     public void preloadViewportPaddedRing(final String targetLayerId) {
+        if (uploads.pendingUploadCount() >= uploads.uploadQueueCapacity() / 2) {
+            return;
+        }
         final SessionGuard.Session session = sessionGuard.current();
         final ViewportRect rect;
         synchronized (this) {
@@ -908,13 +933,15 @@ public final class PredictionTileService {
                         session.world(), rect.dimension(), predictedLayerId,
                         rect.lod(), tileX, tileZ
                     );
-                    // Called every frame: a ring tile that already composed at this LOD and view
-                    // mode has nothing left to prefetch. Without this check the whole ring would be
-                    // recomposed (and re-uploaded) once per frame, which is exactly the kind of
-                    // background load that starves the visible tiles.
+                    // Called every frame: skip tiles already queued, composed at the current
+                    // state, or still valid from an earlier request so mip-cache LRU eviction
+                    // never triggers per-frame background recomposition churn.
                     if (dirty.containsKey(key) || inFlight.contains(key)
                         || mipCache.exact(key, effectiveViewMode()) != null
-                        || nonCacheableTiles.contains(key)) {
+                        || nonCacheableTiles.contains(key)
+                        || (requestedTiles.contains(key)
+                            && !staleRealCoverageTiles.contains(key)
+                            && !staleViewModeTiles.contains(key))) {
                         continue;
                     }
                     dirtyPut(key, session.token());
@@ -1104,6 +1131,15 @@ public final class PredictionTileService {
      * cross-LOD consumer drawing a stale tile would paint fabricated terrain over newer real
      * tiles, so {@code TileTextureManager}'s fallback probes consult this before binding.
      */
+    /**
+     * Render thread: the predicted texture for {@code key} was evicted from the GPU cache.
+     * Removing it from {@link #requestedTiles} lets a subsequent ring preload or bind schedule it
+     * again cleanly without keeping dead keys pinned in {@link #requestedTiles}.
+     */
+    public synchronized void forgetTile(final TileKey key) {
+        requestedTiles.remove(key);
+    }
+
     public boolean compositionCurrent(final TileKey key) {
         synchronized (this) {
             return !staleRealCoverageTiles.contains(key) && !staleViewModeTiles.contains(key);
@@ -1540,16 +1576,21 @@ public final class PredictionTileService {
                 && requestedMode == viewMode) {
                 requestedTiles.add(key);
                 metadataTiles.put(metadataKey(key), composition.metadata());
-                // A null tile means "not planar-cacheable" (see planarTile): it still
-                // composed and uploads, it just never enters the mip cache. Recording the
-                // key lets per-frame request dedup skip it without a cache to consult.
-                if (composition.tile() != null) {
-                    mipCache.put(key, composition.tile());
-                } else {
-                    nonCacheableTiles.add(key);
+                // If an invalidation re-queued this key while the current worker was still running,
+                // keep the stale flags intact (and avoid caching stale pixels) until that newer
+                // work lands.
+                if (!dirty.containsKey(key)) {
+                    // A null tile means "not planar-cacheable" (see planarTile): it still
+                    // composed and uploads, it just never enters the mip cache. Recording the
+                    // key lets per-frame request dedup skip it without a cache to consult.
+                    if (composition.tile() != null) {
+                        mipCache.put(key, composition.tile());
+                    } else {
+                        nonCacheableTiles.add(key);
+                    }
+                    staleViewModeTiles.remove(key);
+                    staleRealCoverageTiles.remove(key);
                 }
-                staleViewModeTiles.remove(key);
-                staleRealCoverageTiles.remove(key);
                 invalidateCachedAncestorsAndQueueVisible(key, token);
                 uploads.submitUpload(composition.update());
                 submittedUpload = true;
