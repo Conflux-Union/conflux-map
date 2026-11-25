@@ -27,6 +27,21 @@ class WaypointMediaServiceTest {
         var full = media.pixels(key(false), photo.id(), false).join(); assertEquals(1200, full.width()); assertEquals(0xFFCC8844, full.argb()[0]);
         assertArrayEquals(before, Files.readAllBytes(temp.resolve("media/local/test/" + photo.id() + ".png")));
     }
+    @Test void webCopyUsesOnlyTheSelectedSavedPhotoAndPreservesTheOriginal() throws Exception {
+        Path external = image("wide-web.png", "png", 2600, 1300);
+        byte[] original = Files.readAllBytes(external);
+        var media = service();
+        var photo = media.add(key(false), external).join();
+        media.saveRotation(key(false), photo.id(), 90).join();
+        byte[] web = media.webCopy(key(false), photo.id()).join();
+        assertTrue(web.length <= 2 * 1024 * 1024);
+        var preview = ImageIO.read(new java.io.ByteArrayInputStream(web));
+        assertTrue(preview.getWidth() < preview.getHeight());
+        assertTrue(preview.getHeight() <= 2048);
+        assertArrayEquals(original, Files.readAllBytes(external));
+        assertThrows(CompletionException.class, () -> media.webCopy(key(true), photo.id()).join());
+    }
+
     @Test void sameUuidHasIndependentLocalSharedAndWorldBindings() throws Exception {
         Path file = image("photo.jpg", "jpeg", 20, 10); var media = service(); var local = key(false);
         var photo = media.add(local, file).join();

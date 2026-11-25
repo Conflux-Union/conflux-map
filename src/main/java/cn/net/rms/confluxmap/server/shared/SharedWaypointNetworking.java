@@ -94,6 +94,10 @@ public final class SharedWaypointNetworking {
         for (final SharedWaypointMessage delta : dispatch.broadcasts()) {
             broadcast(server, delta);
         }
+        byte[] target = cn.net.rms.confluxmap.server.web.WebMapFeatures.publicationTarget(
+            message, dispatch.broadcasts()
+        );
+        if (target != null) companion.sendWebMapPacket(player, target);
     }
 
     private void broadcast(final MinecraftServer server, final SharedWaypointMessage message) {

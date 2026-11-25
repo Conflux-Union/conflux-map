@@ -250,6 +250,14 @@ public final class MinecraftAccess {
         //#endif
     }
 
+    public static void sendSystemMessage(final ServerPlayerEntity player, final Text message) {
+        //#if MC>=260100
+        //$$ player.sendSystemMessage(message);
+        //#else
+        player.sendMessage(message, false);
+        //#endif
+    }
+
     public static void sendFeedback(
         final ServerCommandSource source,
         final Text message,

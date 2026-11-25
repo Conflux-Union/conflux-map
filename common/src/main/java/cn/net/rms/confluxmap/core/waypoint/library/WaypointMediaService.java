@@ -202,6 +202,55 @@ public final class WaypointMediaService implements AutoCloseable {
         finally { graphics.dispose(); }
         return result;
     }
+    /** Encodes the saved photo for publication without changing its original file. */
+    public CompletableFuture<byte[]> webCopy(Key key, UUID id) {
+        return async(() -> {
+            Photo photo = load(key).bindings.getOrDefault(key.binding(), List.of()).stream()
+                .filter(candidate -> candidate.id.equals(id)).findFirst()
+                .orElseThrow(() -> new IOException("Photo no longer exists"));
+            try (var input = ImageIO.createImageInputStream(image(key, photo, false).toFile())) {
+                var readers = ImageIO.getImageReaders(input);
+                if (!readers.hasNext()) throw new IOException("Unsupported photo");
+                var reader = readers.next();
+                try {
+                    reader.setInput(input, false, true);
+                    for (int limit = 1280; limit >= 160; limit /= 2) {
+                        var scaled = decodePreview(reader, photo.width(), photo.height(), limit);
+                        var bytes = new java.io.ByteArrayOutputStream();
+                        ImageIO.write(rotatedForWeb(scaled, photo.rotation()), "png", bytes);
+                        if (bytes.size() <= 2 * 1024 * 1024) return bytes.toByteArray();
+                    }
+                    throw new IOException("Could not fit the web photo upload");
+                } finally {
+                    reader.dispose();
+                }
+            }
+        });
+    }
+
+    private static BufferedImage rotatedForWeb(BufferedImage source, double degrees) {
+        if (degrees == 0) return source;
+        final double radians = Math.toRadians(degrees);
+        final int width = (int) Math.ceil(
+            Math.abs(source.getWidth() * Math.cos(radians)) + Math.abs(source.getHeight() * Math.sin(radians))
+        );
+        final int height = (int) Math.ceil(
+            Math.abs(source.getWidth() * Math.sin(radians)) + Math.abs(source.getHeight() * Math.cos(radians))
+        );
+        final BufferedImage result = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        final Graphics2D graphics = result.createGraphics();
+        try {
+            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            graphics.translate(width / 2.0, height / 2.0);
+            graphics.rotate(radians);
+            graphics.translate(-source.getWidth() / 2.0, -source.getHeight() / 2.0);
+            graphics.drawImage(source, 0, 0, null);
+        } finally {
+            graphics.dispose();
+        }
+        return result;
+    }
+
     public CompletableFuture<Pixels> pixels(Key key, UUID id, boolean thumbnail) {
         return async(() -> {
             Photo photo = load(key).bindings.getOrDefault(key.binding(), List.of()).stream().filter(p -> p.id.equals(id)).findFirst().orElseThrow(() -> new IOException("Photo no longer exists"));

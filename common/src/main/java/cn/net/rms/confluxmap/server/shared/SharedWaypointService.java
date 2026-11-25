@@ -68,6 +68,11 @@ public final class SharedWaypointService {
         OWNER_MANAGED
     }
 
+    public synchronized void applySettings(final int maxPerPlayer, final AccessPolicy accessPolicy) {
+        this.maxPerPlayer = maxPerPlayer;
+        this.accessPolicy = Objects.requireNonNull(accessPolicy, "accessPolicy");
+    }
+
     public record Limits(int maxPerWorld, int maxPerPlayer, int mutationsPerMinute) {
         public Limits {
             if (maxPerWorld < 1 || maxPerPlayer < 1 || maxPerPlayer > maxPerWorld || mutationsPerMinute < 1) {
@@ -359,7 +364,8 @@ public final class SharedWaypointService {
     private final Clock clock;
     private final Supplier<UUID> idSupplier;
     private final Limits limits;
-    private final AccessPolicy accessPolicy;
+    private int maxPerPlayer;
+    private volatile AccessPolicy accessPolicy;
     private final AuditSink auditSink;
     private final Logger logger;
     private final Map<UUID, PlayerState> players = new LinkedHashMap<UUID, PlayerState>(16, 0.75f, true) {
@@ -386,6 +392,7 @@ public final class SharedWaypointService {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.idSupplier = Objects.requireNonNull(idSupplier, "idSupplier");
         this.limits = Objects.requireNonNull(limits, "limits");
+        this.maxPerPlayer = limits.maxPerPlayer();
         this.accessPolicy = Objects.requireNonNull(accessPolicy, "accessPolicy");
         this.auditSink = Objects.requireNonNull(auditSink, "auditSink");
         this.logger = Objects.requireNonNull(logger, "logger");
@@ -496,7 +503,7 @@ public final class SharedWaypointService {
             return finish(player, request, actor, request.operationId(), Action.CREATE, null,
                 rejected(request.operationId(), MutationError.WORLD_QUOTA_EXCEEDED), now);
         }
-        if (store.countPublishedBy(actor.playerId()) >= limits.maxPerPlayer()) {
+        if (store.countPublishedBy(actor.playerId()) >= maxPerPlayer) {
             return finish(player, request, actor, request.operationId(), Action.CREATE, null,
                 rejected(request.operationId(), MutationError.PLAYER_QUOTA_EXCEEDED), now);
         }

@@ -145,7 +145,7 @@ final class PaperCompanion implements Listener {
     private PaperPluginMessageDispatcher pluginMessages;
     private BukkitTask tickTask;
     private WebMapServer webMap;
-    private PaperWebMapBackend webMapBackend;
+    private volatile PaperWebMapBackend webMapBackend;
     private int webPlayerTicks;
     private WebMapPrivacyStore webMapPrivacy;
     private final PlayerPositionBroadcastGate playerPositionBroadcast =
@@ -225,6 +225,27 @@ final class PaperCompanion implements Listener {
         sharedNetworking = new PaperSharedWaypointNetworking(plugin, this, pluginMessages);
         networking.register();
         sharedNetworking.register();
+        plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin,"confluxmap:webmap_v1",(channel,player,payload)->{
+            PaperWebMapBackend current=webMapBackend;
+            if (payload.length < 2 || payload.length > 16000
+                || current != null && !current.features().allowPacket(player.getUniqueId())) return;
+            byte[] stable = payload.clone();
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (!player.isOnline()) return;
+                PaperWebMapBackend backend = webMapBackend;
+                java.util.function.Consumer<byte[]> reply = data -> sendWebMapPacket(player, data);
+                java.util.function.BooleanSupplier operator = () -> player.hasPermission("confluxmap.admin");
+                if (cn.net.rms.confluxmap.server.web.ServerConfigControl.handle(
+                    stable, config, operator.getAsBoolean(), this::saveWebMapConfig,
+                    this::applyServerSettings, reply
+                )) return;
+                if (backend != null && backend == current) backend.features().handle(
+                    player.getUniqueId(), player.getName(), operator,
+                    () -> webMapBackend == backend && player.isOnline(), stable, reply, this::notifyImageOperators
+                );
+            });
+        });
+        plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin,"confluxmap:webmap_v1");
         Bukkit.getPluginManager().registerEvents(this, plugin);
         for (final PaperWorldDirectory.Entry entry : worlds.entries()) {
             plugin.getSLF4JLogger().info(
@@ -244,7 +265,7 @@ final class PaperCompanion implements Listener {
         if (config.enabled && config.webMap.enabled) {
             try {
                 webMapBackend = new PaperWebMapBackend(plugin, this);
-                webMap = WebMapServer.start(config.webMap, webMapBackend, configIo.directory());
+                webMap = WebMapServer.startShared(config.webMap, webMapBackend, configIo.directory());
                 plugin.getSLF4JLogger().info(
                     "Web map listening on {}:{}",
                     config.webMap.bindAddress, config.webMap.port
@@ -272,6 +293,8 @@ final class PaperCompanion implements Listener {
             tickTask = null;
         }
         HandlerList.unregisterAll(this);
+        plugin.getServer().getMessenger().unregisterIncomingPluginChannel(plugin,"confluxmap:webmap_v1");
+        plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin,"confluxmap:webmap_v1");
         if (networking != null) {
             networking.unregister();
         }
@@ -381,6 +404,7 @@ final class PaperCompanion implements Listener {
     @EventHandler
     public void onPlayerQuit(final PlayerQuitEvent event) {
         final UUID playerId = event.getPlayer().getUniqueId();
+        if(webMapBackend!=null)webMapBackend.features().disconnect(playerId);
         networking.disconnect(playerId);
         sharedNetworking.disconnect(playerId);
         pluginMessages.disconnect(playerId);
@@ -422,6 +446,59 @@ final class PaperCompanion implements Listener {
     }
 
     /** Identity of this server installation, unaffected by copying the world it hosts. */
+    java.nio.file.Path webMapImageDirectory(String worldId){return configIo.directory().resolve("webmap-images").resolve(instanceId().toString()).resolve(worldId);}
+    void sendWebMapPacket(org.bukkit.entity.Player player, byte[] payload) {
+        String channel = cn.net.rms.confluxmap.server.web.WebMapFeatures.CHANNEL;
+        var recipient = PaperPluginMessageDispatcher.recipient(plugin, player);
+        if (recipient.listensTo(channel)) pluginMessages.send(recipient, channel, payload);
+    }
+
+    private void applyServerSettings() {
+        if (config.shareChunkLoadState && chunkLoadStates == null) {
+            chunkLoadStates = new PaperChunkLoadStateService();
+            liveChunks.forEach((key, chunk) -> chunkLoadStates.onChunkLoad(key.world(), chunk));
+        } else if (!config.shareChunkLoadState && chunkLoadStates != null) {
+            chunkLoadStates.clear();
+            chunkLoadStates = null;
+        }
+        if (sharedWaypoints != null) {
+            sharedWaypoints.applySettings(config.maxSharedWaypointsPerPlayer, config.sharedWaypointAccessPolicy());
+            sharedNetworking.featureStateChanged();
+        }
+        if (webMapBackend != null) {
+            webMapBackend.refreshManifest();
+            webMapBackend.features().settingsChanged();
+        }
+        networking.broadcastSettings();
+    }
+
+    boolean saveWebMapConfig() {
+        if (!configIo.saveAtomically(config)) {
+            return false;
+        }
+        final PaperWebMapBackend backend = webMapBackend;
+        if (backend != null) {
+            backend.updatePlayers();
+        }
+        return true;
+    }
+    cn.net.rms.confluxmap.server.web.WebMapFeatures webFeatures(){return webMapBackend==null?null:webMapBackend.features();}
+    private void notifyImageOperators(String notice){
+        String[] parts=notice.split(" \\| ");
+        for(var player:Bukkit.getOnlinePlayers())if(player.hasPermission("confluxmap.admin")){
+            var text=net.kyori.adventure.text.Component.text(parts[0]+" ");
+            if(parts.length==3)text=text.append(net.kyori.adventure.text.Component.text("[同意] ").clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand(parts[1]))).append(net.kyori.adventure.text.Component.text("[拒绝]").clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand(parts[2])));
+            player.sendMessage(text);
+        }
+    }
+    @org.bukkit.event.EventHandler(priority=org.bukkit.event.EventPriority.MONITOR,ignoreCancelled=true)
+    public void onWebMapChat(io.papermc.paper.event.player.AsyncChatEvent event){
+        if (!event.viewers().contains(Bukkit.getConsoleSender())) return;
+        String text=net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(event.message());
+        var player=event.getPlayer();
+        var recipients=event.viewers().stream().filter(v->v instanceof org.bukkit.entity.Player).map(v->((org.bukkit.entity.Player)v).getUniqueId()).collect(java.util.stream.Collectors.toSet());
+        Bukkit.getScheduler().runTask(plugin,()->{PaperWebMapBackend b=webMapBackend;if(b!=null&&Bukkit.getOnlinePlayers().stream().allMatch(p->recipients.contains(p.getUniqueId())))b.gameChat(player,text);});
+    }
     UUID instanceId() {
         return instanceId;
     }
@@ -447,7 +524,7 @@ final class PaperCompanion implements Listener {
     }
 
     boolean chunkLoadStatesEnabled() {
-        return isEnabled() && config.shareChunkLoadState && chunkLoadStates != null;
+        return isEnabled() && chunkLoadStates != null;
     }
 
     SharedWaypointService sharedWaypoints() {
@@ -527,7 +604,7 @@ final class PaperCompanion implements Listener {
         if (playerPositionBroadcast.tick(config.allowEntityRadar)) {
             networking.broadcastPlayerPositions();
         }
-        if (webMapBackend != null && (config.webMap.sharePlayers || sharedWaypointsEnabled())
+        if (webMapBackend != null
             && ++webPlayerTicks >= 40) {
             webPlayerTicks = 0;
             webMapBackend.updatePlayers();

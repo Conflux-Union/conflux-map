@@ -14,6 +14,10 @@ import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import java.math.BigDecimal;
+import java.util.List;
+import java.util.UUID;
+import cn.net.rms.confluxmap.core.waypoint.library.WaypointMediaService;
+import cn.net.rms.confluxmap.mc.net.WebMapClient;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -44,6 +48,7 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
     private final String confluxPreview;
     private final String xaeroPreview;
     private ButtonWidget confirmButton;
+    private List<UUID> selectedPhotos = List.of();
     private String errorKey;
 
     public WaypointShareConfirmScreen(final Screen parent, final Waypoint waypoint, final Target target) {
@@ -177,6 +182,13 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
         ));
         if (target == Target.PUBLIC) {
             updatePublicButton();
+            final var album = localAlbum();
+            if (album != null && WebMapClient.flag("albumUpload")) {
+                addDrawableChild(Widgets.button(centerX - 104, Math.max(142, height - 77), 208, 20,
+                    Texts.translatable("confluxmap.webmap.publication_photos", selectedPhotos.size()),
+                    button -> MinecraftAccess.setScreen(MinecraftClient.getInstance(),
+                        new WebMapImageScreen(this, album, selectedPhotos, chosen -> selectedPhotos = chosen))));
+            }
         } else {
             confirmButton.active = confluxPreview != null && xaeroPreview != null;
         }
@@ -253,6 +265,15 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
         ));
     }
 
+    private WaypointMediaService.Key localAlbum() {
+        final var app = ConfluxMapClient.get();
+        final var store = app.waypointService().current();
+        final var world = app.waypointLibraryService().world();
+        if (publicDraft != null || store == null || world == null
+            || store.list().stream().noneMatch(saved -> saved.id.equals(waypoint.id))) return null;
+        return new WaypointMediaService.Key(world, false, waypoint.id);
+    }
+
     private void confirm() {
         errorKey = null;
         if (target == Target.PUBLIC) {
@@ -266,9 +287,12 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
             }
             // The public form's publish goes through the shared model so the selected
             // group rides along; a plain local waypoint keeps the gateway create.
+            final var album = localAlbum();
             final boolean sent = publicDraft != null
                 ? ConfluxMapClient.get().sharedWaypointListModel().createWaypoint(publicDraft)
-                : sharedWaypoints.create(waypoint);
+                : sharedWaypoints.create(waypoint, operation -> {
+                    if (album != null) WebMapClient.preparePublication(operation, album, selectedPhotos);
+                });
             if (!sent) {
                 final String reasonKey =
                     ConfluxMapClient.get().sharedWaypointListModel().canCreateWaypoint().reasonKey();

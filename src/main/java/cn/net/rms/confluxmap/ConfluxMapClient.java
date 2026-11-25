@@ -398,6 +398,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         clientNetworking.register();
         sharedWaypoints = new SharedWaypointClient(client, config, configIo);
         sharedWaypoints.register();
+        cn.net.rms.confluxmap.mc.net.WebMapClient.register();
         groundTeleportService = new ClientGroundTeleportService(client, config, this::resolveUnknownLanding);
 
         predictionPaletteBuilder = new PredictionPaletteBuilder(client, predictionState, spriteColorSampler);

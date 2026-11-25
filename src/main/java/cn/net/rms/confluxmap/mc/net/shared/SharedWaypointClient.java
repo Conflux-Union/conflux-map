@@ -240,6 +240,10 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
 
     /** Publishes a copy of a local waypoint using the current authoritative revision. */
     public boolean create(final Waypoint waypoint) {
+        return create(waypoint, operation -> {});
+    }
+
+    public boolean create(final Waypoint waypoint, final java.util.function.Consumer<UUID> afterSend) {
         if (waypoint == null || !canCreate()
             || isLocationShared(waypoint) || isCreatePending(waypoint)) {
             return false;
@@ -251,7 +255,7 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
         final Waypoint.Type publishedType = waypoint.type == Waypoint.Type.TEMPORARY
             ? Waypoint.Type.NORMAL
             : waypoint.type;
-        return sendMutation(
+        final boolean sent = sendMutation(
             operationId,
             new PendingOperation(
                 OperationKind.CREATE, location, waypoint.crossDimensionVisible, waypoint.crossDimensionY
@@ -270,6 +274,8 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
                 waypoint.markerLabel
             )
         );
+        if (sent) afterSend.accept(operationId);
+        return sent;
     }
 
     public boolean canCreate() {
@@ -728,6 +734,9 @@ public final class SharedWaypointClient implements SharedWaypointMutations {
                 );
             }
             applyPendingCrossDimensionPreferences(stateMachine.view().list());
+        }
+        if (!applied && pending.kind() == OperationKind.CREATE) {
+            cn.net.rms.confluxmap.mc.net.WebMapClient.cancelPublication(result.operationId());
         }
         if (!applied && !rejected) {
             ConfluxMapMod.LOGGER.warn(

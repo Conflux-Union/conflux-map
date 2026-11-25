@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.server.web;
 
 import java.util.List;
+import java.util.UUID;
 
 /** Immutable public state pushed to browser map clients. */
 public record WebMapSnapshot(
@@ -65,6 +66,14 @@ public record WebMapSnapshot(
             waypointsChanged ? increment(waypointRevision) : waypointRevision,
             waypointCopy
         );
+    }
+
+    public String publicPlayerName(final UUID id) {
+        final String playerId = id.toString();
+        for (final WebPlayerSnapshot.Player player : players) {
+            if (player.id().equals(playerId)) return player.name();
+        }
+        return null;
     }
 
     public long revision() {

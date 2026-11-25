@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.core.net.FeatureRestrictionsS2C;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.MapSyncCapability;
 import cn.net.rms.confluxmap.core.net.NegotiatedMapSync;
+import cn.net.rms.confluxmap.core.net.Proto;
 
 /** Platform-neutral policy projection shared by the Fabric and Paper transports. */
 public final class CompanionPolicy {
@@ -22,6 +23,13 @@ public final class CompanionPolicy {
             config.enabled && !config.allowWaypoints,
             config.enabled && !config.allowPrediction,
             config.restrictionMessage
+        );
+    }
+
+    public static HelloPolicyS2C.Budgets budgets(final ServerConfig config) {
+        return new HelloPolicyS2C.Budgets(
+            config.maxBytesPerSecondPerPlayer, config.maxTilesPerRequest,
+            config.minRequestIntervalMs, Proto.DEFAULT_MAX_PATCH_LOD
         );
     }
 

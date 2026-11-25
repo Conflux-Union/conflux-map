@@ -52,20 +52,24 @@ class FakeElement {
 }
 
 const iconSource = declaration('function playerIcon(');
-if (iconSource) {
-  function fallbackFor(random) {
+const avatarSource = declaration('function installPlayerAvatar(');
+if (iconSource && avatarSource) {
+  function fallbackFor(id) {
     const document = {createElement: tag => new FakeElement(tag)};
     const L = {divIcon: options => options};
-    const create = new Function('document', 'L', 'Math', `${iconSource}; return playerIcon;`)(
-      document, L, {random: () => random}
+    const create = new Function('document', 'L', 'apiPath', `${avatarSource}
+${iconSource}; return playerIcon;`)(
+      document, L, path => path + '?serverId=selected-server'
     );
-    const icon = create({id: 'offline-player', name: 'Offline', translucent: false});
+    const icon = create({id, name: 'Offline', translucent: false});
     const image = icon.html.children.find(child => child.tag === 'img');
+    expect('avatar follows the selected server',
+      image.src === '/api/v1/avatars/' + id + '.png?serverId=selected-server', image.src);
     image.dispatch('error');
     return image;
   }
-  const first = fallbackFor(0.1);
-  const second = fallbackFor(0.9);
+  const first = fallbackFor('00000000-0000-0000-0000-000000000000');
+  const second = fallbackFor('00000000-0000-0000-0000-000000000001');
   const defaults = [first.src, second.src];
   expect(
     'missing skin keeps an image avatar',

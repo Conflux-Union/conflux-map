@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.core.util.Easing;
 import cn.net.rms.confluxmap.nativepredict.GpuBackend;
 import cn.net.rms.confluxmap.nativepredict.PredictionBackend;
 import cn.net.rms.confluxmap.core.util.Stagger;
+import cn.net.rms.confluxmap.mc.net.WebMapClient;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.predict.ManualSeedService;
@@ -60,7 +61,8 @@ public final class ConfigScreen extends ConfluxScreen {
         RADAR("confluxmap.screen.config.category.radar"),
         WAYPOINTS("confluxmap.screen.config.category.waypoints"),
         PREDICTION("confluxmap.screen.config.category.prediction"),
-        GENERAL("confluxmap.screen.config.category.general");
+        GENERAL("confluxmap.screen.config.category.general"),
+        SERVER("confluxmap.screen.config.category.server");
 
         private final String labelKey;
 
@@ -114,6 +116,7 @@ public final class ConfigScreen extends ConfluxScreen {
     PlayerMarkerSettingsAccess playerMarkerAccess =
         PlayerMarkerSettingsAccess.from(false);
     boolean manualSeedAvailable;
+    private int serverConfigRevision = -1;
     boolean minimapRestrictedByServer;
     boolean waypointsRestrictedByServer;
     /** True while the open reveal should still drive the rows' staggered fade-in. */
@@ -174,6 +177,11 @@ public final class ConfigScreen extends ConfluxScreen {
     public void tick() {
         super.tick();
         rows.tickInputs();
+        final int revisedServerConfig = WebMapClient.configRevision();
+        if (serverConfigRevision != revisedServerConfig) {
+            serverConfigRevision = revisedServerConfig;
+            if (category == Category.SERVER || searching()) rebuild();
+        }
         if (searchField != null) {
             Widgets.tick(searchField);
             String next = Widgets.text(searchField);
@@ -771,6 +779,10 @@ public final class ConfigScreen extends ConfluxScreen {
         if (searching() && contentHeight == 0) {
             draw.drawTextWithShadow(this.textRenderer, Texts.translatable("confluxmap.screen.config.no_matches").getString(),
                 rowX() + 4, rowsTop() + 6, 0xFFBBBBBB);
+        }
+        if (category == Category.SERVER && !searching()) {
+            final String status = this.textRenderer.trimToWidth(WebMapClient.configResult(), rowWidth);
+            draw.drawTextWithShadow(this.textRenderer, status, rowX(), height - BOTTOM_MARGIN - 10, 0xFFDDDDDD);
         }
         drawScrollbar(draw);
     }

@@ -141,6 +141,7 @@ public final class LegacyWaypointPortClientTest implements ClientModInitializer 
             }
             case 7 -> {
                 if (((List<?>) field(field(map, "screenshotOverlay"), "markers")).isEmpty()) return false;
+                click(map, "confluxmap.map.tools.view");
                 click(map, "confluxmap.map.loaded_range");
                 app.config().fullscreenLoadedRangeStyle = ConfluxConfig.LoadedRangeStyle.DASHED;
             }

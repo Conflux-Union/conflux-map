@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.portal.PortalKind;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
+import cn.net.rms.confluxmap.mc.net.WebMapClient;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.nativepredict.GpuBackend;
@@ -836,6 +837,24 @@ final class ConfigRows {
                     ConfigValueLabels::plainText, underlayReason == null, underlayReason
                 );
                 break;
+            case SERVER:
+                if (WebMapClient.adminAllowed()) {
+                    y = addSectionRow(y, "confluxmap.webmap.server_live");
+                    for (String key : List.of("sharePlayers", "allowPlayerSearch", "allowWaypointSearch",
+                        "showWaypointImages", "waypointImageMode", "enableChat", "showGameChat",
+                        "allowWebChat", "defaultMode", "shareChunkLoadState", "allowBiomeMap",
+                        "allowStructureSearch", "allowEntityRadar", "allowNonOperatorSharedWaypointManagement",
+                        "maxTilesPerRequest", "minRequestIntervalMs", "maxSharedWaypointsPerPlayer")) {
+                        y = addServerSettingRow(y, key);
+                    }
+                } else {
+                    y = addSectionRow(y, "confluxmap.webmap.server_unavailable");
+                }
+                if (WebMapClient.flag("review")) {
+                    y = addActionRow(y, "confluxmap.webmap.review", () -> MinecraftAccess.setScreen(
+                        MinecraftClient.getInstance(), new WebMapReviewScreen(screen)));
+                }
+                break;
             case GENERAL:
                 y = addSectionRow(y, "confluxmap.screen.config.section.interface");
                 y = addToggleRow(
@@ -972,6 +991,44 @@ final class ConfigRows {
             setter.accept(value);
             ConfluxMapClient.get().waypointListMemory().save();
         });
+    }
+
+    private int addServerSettingRow(final int y, final String key) {
+        final String label = "confluxmap.webmap." + key;
+        if (!search.matches(label, null, rowCategory.labelKey())) return y;
+        if (!measuring && screen.rowVisible(y)) {
+            final String value = WebMapClient.setting(key);
+            final List<String> choices = switch (key) {
+                case "waypointImageMode" -> List.of("APPROVAL", "OP_ONLY", "EVERYONE", "DISABLED");
+                case "defaultMode" -> List.of("AUTO", "ALL", "GENERATED");
+                default -> List.of();
+            };
+            final boolean number = switch (key) {
+                case "maxTilesPerRequest", "minRequestIntervalMs", "maxSharedWaypointsPerPlayer" -> true;
+                default -> false;
+            };
+            final String current = number ? value
+                : !choices.isEmpty() ? ServerSettingScreen.optionLabel(value).getString()
+                : Texts.translatable(Boolean.parseBoolean(value)
+                    ? "confluxmap.value.on" : "confluxmap.value.off").getString();
+            final Text caption = Texts.literal(Texts.translatable(label).getString() + " · " + current);
+            final RowButton button = screen.addRowWidget(new RowButton(
+                screen.rowX(), y, screen.rowWidth, ConfigScreen.ROW_HEIGHT - 2, caption,
+                clicked -> {
+                    if (!WebMapClient.canEditSettings()) return;
+                    if (number || !choices.isEmpty()) {
+                        MinecraftAccess.setScreen(MinecraftClient.getInstance(),
+                            new ServerSettingScreen(screen, key, choices));
+                    } else {
+                        WebMapClient.setServerSetting(key,
+                            Boolean.toString(!Boolean.parseBoolean(WebMapClient.setting(key))));
+                    }
+                }
+            ));
+            button.active = WebMapClient.canEditSettings() && !value.isEmpty();
+            rowSlots.add(new RowSlot(y, button, List.of(button)));
+        }
+        return y + ConfigScreen.ROW_HEIGHT;
     }
 
     private int addToggleRow(final int y, final String labelKey, final BooleanSupplier getter, final Consumer<Boolean> setter) {

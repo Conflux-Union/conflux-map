@@ -225,6 +225,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final Identifier MAP_LOADED_RANGE_ICON = Ids.of(
         "confluxmap", "textures/gui/map_loaded_range.png"
     );
+    private static final Identifier MAP_CHUNK_GRID_ICON = Ids.of(
+        "confluxmap", "textures/gui/map_chunk_grid.png"
+    );
     private static final Identifier MAP_SETTINGS_ICON = Ids.of(
         "confluxmap", "textures/gui/map_settings.png"
     );
@@ -336,6 +339,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     final MapLoadStateOverlay loadStateOverlay;
     private final MapLoadedRangeOverlay loadedRange = new MapLoadedRangeOverlay(this);
     private MapIconButton coordinateJumpButton;
+    private MapCoordinateJumpScreen coordinateJump;
     private final MapInfoLabels infoLabels;
     private SharedWaypointAvailability sharedAvailability;
     private MapIconButton viewGroupButton;
@@ -362,6 +366,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     AnnotationToolbarBounds annotationToolbarBounds;
     AnnotationToolbarBounds annotationColorMenuBounds;
     private FullscreenDisplayMode controlsDisplayMode;
+    private boolean controlsLoadStateAvailable;
+    private boolean controlsBiomeAvailable;
     /** Buttons of the currently expanded tool group with their settle slots, where each rebuild creates them. */
     private final List<FullscreenMapToolPanel.FlyingButton> expansionButtons = new ArrayList<>();
     /** True once the expansion flight has displaced buttons and the settle restore still pends. */
@@ -537,9 +543,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int top = MARGIN + this.textRenderer.fontHeight + 5;
         int y = top;
         final int step = CONTROL_SIZE + CONTROL_GAP;
-        final boolean vertical = top + 6 * step + CONTROL_SIZE + MARGIN <= height;
-        addMapPositionControls(x, top, vertical);
-        y += vertical ? 2 * step : step;
+        addCoordinateJumpButton(x, top);
+        y += step;
         final int groupTop = y;
         viewGroupButton = addToolGroupButton(
             x, y, VIEW_GROUP_ICON, "confluxmap.map.tools.view", FullscreenMapToolPanel.Group.VIEW
@@ -573,6 +578,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         annotationTooltips.put(settingsButton, "confluxmap.screen.config.title");
         waypointControlsBottom = y + CONTROL_SIZE;
         controlsDisplayMode = displayMode();
+        controlsLoadStateAvailable = displayModeAvailable(FullscreenDisplayMode.CHUNK_LOAD_STATE);
+        controlsBiomeAvailable = displayModeAvailable(FullscreenDisplayMode.BIOME);
 
         final FullscreenMapToolPanel.Group openGroup = toolPanel.openGroup();
         if (openGroup != null) {
@@ -599,26 +606,55 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
 
-    private void addMapPositionControls(final int x, final int y, final boolean vertical) {
+    private void addCoordinateJumpButton(final int x, final int y) {
         final String jumpKey = "confluxmap.map.coordinate_jump";
         coordinateJumpButton = addDrawableChild(new MapIconButton(
-            vertical ? x : x - CONTROL_SIZE - CONTROL_GAP, y, MAP_COORDINATE_JUMP_ICON, Texts.translatable(jumpKey),
-            button -> MinecraftAccess.setScreen(MinecraftClient.getInstance(), new MapCoordinateJumpScreen(this))
+            x, y, MAP_COORDINATE_JUMP_ICON, Texts.translatable(jumpKey),
+            button -> openCoordinateJump()
         ));
         setHoverTooltip(coordinateJumpButton, jumpKey);
+    }
 
-        final String rangeKey = "confluxmap.map.loaded_range";
-        final MapIconButton range = addDrawableChild(new MapIconButton(
-            x, vertical ? y + CONTROL_SIZE + CONTROL_GAP : y, MAP_LOADED_RANGE_ICON, Texts.translatable(rangeKey), button -> {
-                config.fullscreenLoadedRangeVisible = !config.fullscreenLoadedRangeVisible;
-                ConfluxMapClient.get().configIo().save(config);
-                loadedRange.clear();
-                rebuildWaypointControls();
-            }
-        ));
-        range.setSelected(config.fullscreenLoadedRangeVisible);
-        setHoverTooltip(range, config.fullscreenLoadedRangeVisible
-            ? "confluxmap.map.loaded_range.on" : "confluxmap.map.loaded_range.off");
+    private void toggleLoadedRange() {
+        config.fullscreenLoadedRangeVisible = !config.fullscreenLoadedRangeVisible;
+        ConfluxMapClient.get().configIo().save(config);
+        loadedRange.clear();
+        rebuildWaypointControls();
+    }
+
+    private void toggleChunkGrid() {
+        config.fullmapChunkGrid = !config.fullmapChunkGrid;
+        ConfluxMapClient.get().configIo().save(config);
+        rebuildWaypointControls();
+    }
+
+    private void openCoordinateJump() {
+        coordinateJump = new MapCoordinateJumpScreen(this);
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), coordinateJump);
+    }
+
+    void renderCoordinateJumpBackdrop(final GuiDraw draw, final int width, final int height, final float tickDelta) {
+        final int previousWidth = this.width;
+        final int previousHeight = this.height;
+        this.width = width;
+        this.height = height;
+        try {
+            renderContents(draw, -1, -1, tickDelta);
+        } finally {
+            this.width = previousWidth;
+            this.height = previousHeight;
+        }
+    }
+
+    void coordinateJumpRemoved(final MapCoordinateJumpScreen dialog, final boolean returnedToMap) {
+        if (coordinateJump != dialog) {
+            return;
+        }
+        coordinateJump = null;
+        if (!returnedToMap) {
+            releaseMapView();
+            detachMapScreen();
+        }
     }
 
     void jumpToCoordinates(final int blockX, final int blockZ) {
@@ -842,12 +878,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     private void rebuildViewControls(final int top) {
-        int y = top;
+        final int x = secondaryControlsX();
         for (final FullscreenDisplayMode mode : FullscreenDisplayMode.values()) {
             final boolean available = displayModeAvailable(mode);
             final MapIconButton button = addDrawableChild(new MapIconButton(
-                secondaryControlsX(),
-                y,
+                x,
+                top,
                 DisplayModeIconCatalog.icon(mode, available),
                 Texts.translatable(displayModeValueKey(mode)),
                 ignored -> setDisplayMode(mode)
@@ -859,12 +895,30 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             if (displayMode() == mode) {
                 displayModeButton = button;
             }
-            y += CONTROL_SIZE + CONTROL_GAP;
         }
-        annotationToolbarBounds = new AnnotationToolbarBounds(
-            secondaryControlsX(), top, CONTROL_SIZE, y - top - CONTROL_GAP
-        );
+
+        final boolean loadedRangeVisible = config.fullscreenLoadedRangeVisible;
+        addViewToggle(x, top, MAP_LOADED_RANGE_ICON, "confluxmap.map.loaded_range", loadedRangeVisible,
+            loadedRangeVisible ? "confluxmap.map.loaded_range.on" : "confluxmap.map.loaded_range.off",
+            this::toggleLoadedRange);
+        final boolean chunkGridVisible = config.fullmapChunkGrid;
+        addViewToggle(x, top, MAP_CHUNK_GRID_ICON, "confluxmap.map.chunk_grid", chunkGridVisible,
+            chunkGridVisible ? "confluxmap.map.chunk_grid.on" : "confluxmap.map.chunk_grid.off",
+            this::toggleChunkGrid);
+        layoutExpandedControls(x, top);
         refreshDisplayModeButton();
+    }
+
+    private void addViewToggle(
+        final int x, final int top, final Identifier icon, final String key,
+        final boolean selected, final String tooltipKey, final Runnable toggle
+    ) {
+        final MapIconButton button = addDrawableChild(
+            new MapIconButton(x, top, icon, Texts.translatable(key), ignored -> toggle.run())
+        );
+        trackExpansionButton(button);
+        button.setSelected(selected);
+        setHoverTooltip(button, tooltipKey);
     }
 
     private void rebuildWaypointGroupControls(final int top) {
@@ -938,6 +992,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         refreshLayerButtons();
         manageWaypointsButton.active = viewingLiveWorld()
             && ConfluxMapClient.get().companionSession().waypointsAllowed();
+        layoutExpandedControls(x, top);
+    }
+
+    private void layoutExpandedControls(final int x, final int top) {
         final int rows = waypointGroupRows(top, height);
         final int step = CONTROL_SIZE + CONTROL_GAP;
         final int count = expansionButtons.size();
@@ -1102,7 +1160,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (!chunkLoadStates.available() && chunkLoadStates.snapshot().active()) {
             chunkLoadStates.reset();
         }
-        if (controlsDisplayMode != displayMode()) {
+        if (controlsDisplayMode != displayMode()
+            || controlsLoadStateAvailable != displayModeAvailable(FullscreenDisplayMode.CHUNK_LOAD_STATE)
+            || controlsBiomeAvailable != displayModeAvailable(FullscreenDisplayMode.BIOME)) {
             rebuildWaypointControls();
             return;
         }
@@ -1203,6 +1263,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     @Override
     public void removed() {
+        if (coordinateJump == null) {
+            detachMapScreen();
+        }
+        super.removed();
+    }
+
+    private void detachMapScreen() {
         screenshotOverlay.clear();
         waypointPhotoOverlay.clear();
         waypointHover.clear();
@@ -1217,7 +1284,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 api.fireFullscreenMapClosed(gameBridge.session().dimension());
             }
         }
-        super.removed();
     }
 
     @Override
@@ -3006,32 +3072,35 @@ public final class FullscreenMapScreen extends ConfluxScreen {
      * render under {@link #MIN_CHUNK_GRID_SPACING_PX} wide, to avoid moire noise when zoomed far out.
      */
     private void drawChunkGrid(final MatrixStack matrices, final int mouseX, final int mouseY) {
-        if (!config.fullmapChunkGrid) {
+        if (!config.fullmapChunkGrid && !regionSelectDragging) {
             return;
         }
         final int chunkGridColor = Argb.withAlphaPercent(0x000000, config.fullmapChunkGridOpacity);
         final double pxPerBlock = 1.0 / scale;
         final double chunkSpacingPx = 16.0 * pxPerBlock;
-        if (chunkSpacingPx < MIN_CHUNK_GRID_SPACING_PX) {
+        if (!regionSelectDragging && chunkSpacingPx < MIN_CHUNK_GRID_SPACING_PX) {
             return;
         }
+        final int stride = Math.max(1, (int) Math.ceil(MIN_CHUNK_GRID_SPACING_PX / chunkSpacingPx));
 
         // Floor/ceil-then-blockToChunk (arithmetic shift) keeps lines exact on chunk borders
         // for negative world coordinates too.
         final int firstChunkX = TileMath.blockToChunk((int) Math.floor(centerX - width / 2.0 * scale));
         final int lastChunkX = TileMath.blockToChunk((int) Math.ceil(centerX + width / 2.0 * scale));
-        for (int cx = firstChunkX; cx <= lastChunkX + 1; cx++) {
+        for (int cx = Math.floorDiv(firstChunkX, stride) * stride; cx <= lastChunkX + 1; cx += stride) {
             final float screenX = (float) (width / 2.0 + (cx * 16.0 - centerX) * pxPerBlock);
             GuiShapes.fillRect(matrices, screenX, 0f, 1f, height, chunkGridColor);
         }
         final int firstChunkZ = TileMath.blockToChunk((int) Math.floor(centerZ - height / 2.0 * scale));
         final int lastChunkZ = TileMath.blockToChunk((int) Math.ceil(centerZ + height / 2.0 * scale));
-        for (int cz = firstChunkZ; cz <= lastChunkZ + 1; cz++) {
+        for (int cz = Math.floorDiv(firstChunkZ, stride) * stride; cz <= lastChunkZ + 1; cz += stride) {
             final float screenY = (float) (height / 2.0 + (cz * 16.0 - centerZ) * pxPerBlock);
             GuiShapes.fillRect(matrices, 0f, screenY, width, 1f, chunkGridColor);
         }
 
-        drawHoveredChunkHighlight(matrices, mouseX, mouseY, pxPerBlock);
+        if (chunkSpacingPx >= MIN_CHUNK_GRID_SPACING_PX) {
+            drawHoveredChunkHighlight(matrices, mouseX, mouseY, pxPerBlock);
+        }
     }
 
     /** Fills the 16x16-block chunk under the cursor and outlines it, layered on top of the grid lines drawn just above. */

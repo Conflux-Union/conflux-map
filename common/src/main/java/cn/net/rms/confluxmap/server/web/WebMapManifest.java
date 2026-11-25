@@ -16,8 +16,25 @@ public record WebMapManifest(
     Long seed,
     int predictionVersion,
     List<Dimension> dimensions,
-    Limits limits
+    Limits limits,
+    Presentation presentation
 ) {
+    public record Presentation(String serverInstanceId, String serverDisplayName,
+        WebMapConfig.DefaultMode defaultMode, boolean allowPlayerSearch, boolean allowWaypointSearch) {
+        public static final Presentation DEFAULT = new Presentation("legacy", "", WebMapConfig.DefaultMode.AUTO, false, true);
+        String toJson() {
+            return "{\"serverInstanceId\":\"" + json(serverInstanceId) + "\",\"serverDisplayName\":\""
+                + json(serverDisplayName) + "\",\"defaultMode\":\"" + defaultMode.name()
+                + "\",\"allowPlayerSearch\":" + allowPlayerSearch
+                + ",\"allowWaypointSearch\":" + allowWaypointSearch + "}";
+        }
+    }
+
+    public WebMapManifest(String worldId, String worldgenVersion, Long seed,
+        int predictionVersion, List<Dimension> dimensions, Limits limits) {
+        this(worldId, worldgenVersion, seed, predictionVersion, dimensions, limits, Presentation.DEFAULT);
+    }
+
     public record Limits(int maxTilesPerRequest, int minRequestIntervalMs) {
         public static final Limits DEFAULT = new Limits(
             Proto.DEFAULT_MAX_TILES_PER_REQ,
@@ -73,6 +90,7 @@ public record WebMapManifest(
         }
         dimensions = dimensions == null ? List.of() : List.copyOf(dimensions);
         limits = limits == null ? Limits.DEFAULT : limits;
+        presentation = presentation == null ? Presentation.DEFAULT : presentation;
     }
 
     public boolean predictionAvailable() {
@@ -89,6 +107,9 @@ public record WebMapManifest(
                 .append(",\"predictionVersion\":").append(predictionVersion);
         }
         result.append(",\"limits\":").append(limits.toJson());
+        result.append(",\"presentation\":").append(presentation.toJson());
+        result.append(",\"predictionDarkTint\":").append(Integer.toUnsignedString(
+            cn.net.rms.confluxmap.core.predict.PredictionLighting.renderTint(true, 0f)));
         result.append(",\"predictionBiomes\":");
         appendPredictionBiomes(result);
         result.append(",\"dimensions\":[");

@@ -134,7 +134,11 @@ final class ConfluxMapCommands {
                     )))
                     .then(literal("show").executes(context -> webMapPrivacy(
                         companion, context.getSource(), false
-                    ))))
+                    )))
+                    .then(literal("approve").requires(source -> MinecraftAccess.hasPermission(source,2)).then(argument("image",word()).executes(context -> moderateImage(companion,context.getSource(),getString(context,"image"),"image-approve"))))
+                    .then(literal("reject").requires(source -> MinecraftAccess.hasPermission(source,2)).then(argument("image",word()).executes(context -> moderateImage(companion,context.getSource(),getString(context,"image"),"image-reject"))))
+                    .then(literal("delete-image").requires(source -> MinecraftAccess.hasPermission(source,2)).then(argument("image",word()).executes(context -> moderateImage(companion,context.getSource(),getString(context,"image"),"image-delete"))))
+                    .then(literal("pending-images").requires(source -> MinecraftAccess.hasPermission(source,2)).executes(context -> pendingImages(companion,context.getSource()))))
                 .then(literal("fullsync")
                     .requires(source -> source.getEntity() instanceof ServerPlayerEntity
                         && MinecraftAccess.hasPermission(source, 2))
@@ -145,6 +149,10 @@ final class ConfluxMapCommands {
         ));
     }
 
+    private static int moderateImage(ConfluxMapCompanion companion,ServerCommandSource source,String id,String action){
+        try{var f=companion.webFeatures();return f!=null&&f.moderate(UUID.fromString(id),action)?feedback(source,"Image updated"):error(source,"Image unavailable");}catch(IllegalArgumentException e){return error(source,"Invalid image ID");}
+    }
+    private static int pendingImages(ConfluxMapCompanion companion,ServerCommandSource source){var f=companion.webFeatures();if(f==null)return error(source,"Web map disabled");for(String item:f.pending())MinecraftAccess.sendFeedback(source,Texts.literal(item),false);return 1;}
     private static int list(
         final ConfluxMapCompanion companion,
         final ServerCommandSource source,

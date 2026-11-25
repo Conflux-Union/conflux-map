@@ -12,6 +12,8 @@ import {
   patchAction
 } from '/map-core.js';
 import {createMapRenderer} from '/map-renderer.js';
+import {installEntityControls} from '/entity-controls.js';
+import {apiPath,chooseServer,installWebExtras} from '/web-extras.js';
 import {createReconnectingWebSocket} from '/map-connection.js';
 
 const status = document.querySelector('#status');
@@ -21,6 +23,7 @@ const language = document.querySelector('#language');
 const playerList = document.querySelector('#player-list');
 const playerCount = document.querySelector('#player-count');
 const scaleLabel = document.querySelector('#scale-label');
+const centerCoordinates = document.querySelector('#center-coordinates');
 let messages = {
   connecting: 'Connecting…',
   loadError: 'Map loading failed',
@@ -46,11 +49,20 @@ language.addEventListener('change', () => {
   localStorage.setItem('conflux-map-locale', language.value);
   location.reload();
 });
-const manifest = await fetch('/api/v1/manifest', {cache: 'no-store'}).then(response => {
+const hasServerSwitcher = await chooseServer(message);
+const manifest = await fetch(apiPath('/api/v1/manifest'), {cache: 'no-store'}).then(response => {
   if (!response.ok) throw new Error(`manifest ${response.status}`);
   return response.json();
 });
-const limits = requestLimits(manifest);
+let limits = requestLimits(manifest);
+let modeChosen = false;
+const presentation = manifest.presentation ?? {};
+const displayName = presentation.serverDisplayName;
+if (displayName && document.title === 'Conflux Map') {
+  document.querySelector('.controls strong').textContent = displayName;
+  document.title = displayName;
+}
+applyDefaultMode(presentation.defaultMode);
 const mapRenderer = createMapRenderer(manifest);
 
 for (const item of manifest.dimensions) {
@@ -73,6 +85,7 @@ const map = L.map('map', {
 map.attributionControl.addAttribution('Conflux Map · Leaflet');
 localizeZoomControl();
 updateScaleLabel();
+updateCenterCoordinates();
 
 const playerMarkers = new Map();
 const waypointMarkers = new Map();
@@ -89,6 +102,8 @@ let visibleTileSyncTimer;
 const pendingRequests = new Map();
 const revisions = new Map();
 const validated = new Set();
+const unavailableTiles = new Set();
+const regionEpochs = new Map();
 const patchCache = new Map();
 const compressedCache = new Map();
 const queuedTileRequests = new Map();
@@ -124,8 +139,31 @@ class RegionLayer extends L.GridLayer {
     const lod = lodForLeafletZoom(coords.z);
     const generation = predictionGeneration;
     canvas.mapTile = {dim: Number(dimension.value), lod, x: coords.x, z: coords.y, generation};
-    canvas.localReady = renderTile(canvas, coords.x, coords.y, lod, generation);
-    canvas.localReady.then(() => done(null, canvas), error => done(error, canvas));
+    canvas.mapMode = mode.value;
+    let ready = false;
+    canvas.markReady = () => {
+      if (ready) return;
+      ready = true;
+      // Leaflet must have registered the tile before its callback runs.
+      queueMicrotask(() => done(null, canvas));
+    };
+    canvas.cacheReady = restoreAndDrawTile(canvas);
+    canvas.cacheReady.catch(error => console.warn('Map cache restore failed', error));
+    if (canvas.mapMode === 'all') {
+      renderPrediction(canvas).then(ok => {
+        if (!ok && currentCanvas(canvas)) {
+          canvas.predictionFailed = true;
+          if (canvas.authorityUnavailable) paintTile(canvas);
+        }
+      }).catch(error => {
+        console.warn('Map prediction failed', error);
+        if (currentCanvas(canvas)) {
+          canvas.predictionFailed = true;
+          if (canvas.authorityUnavailable) paintTile(canvas);
+          scheduleVisibleTileSync();
+        }
+      });
+    }
     scheduleVisibleTileSync();
     return canvas;
   }
@@ -144,13 +182,37 @@ dimension.addEventListener('change', () => {
   syncModeAvailability();
   refresh();
 });
-mode.addEventListener('change', refresh);
+mode.addEventListener('change', () => { modeChosen = true; refresh(); });
 map.on('moveend zoomend', () => {
   scheduleSubscription();
   scheduleVisibleTileSync();
 });
 map.on('zoom', updateScaleLabel);
-layer.on('tileunload', event => event.tile.cancelPrediction?.());
+map.on('move', updateCenterCoordinates);
+layer.on('tileunload', event => {
+  event.tile.cancelPrediction?.();
+  event.tile.disposed = true;
+});
+const extras = installWebExtras({manifest,message,send: value=>mapSocket.send(value),
+  onDark: value=>{mapRenderer.setPredictionDark(value);for(const canvas of layer.getContainer().querySelectorAll('canvas.map-tile'))paintTile(canvas);},
+  onPolicy: policy => {
+    if (policy.limits) limits = requestLimits(policy);
+    if (!modeChosen && policy.defaultMode) {
+      const previous = mode.value;
+      applyDefaultMode(policy.defaultMode);
+      syncModeAvailability();
+      if (previous !== mode.value) refresh();
+    }
+    entityControls.policy(policy);
+    renderMapState(currentMapState);
+  }
+});
+mapRenderer.setPredictionDark(extras.dark());
+const entityControls = installEntityControls({
+  manifest, message, focusLocation,
+  onChange: () => renderMapState(currentMapState)
+});
+renderMapState(currentMapState);
 
 function refresh() {
   beginPredictionGeneration();
@@ -160,81 +222,145 @@ function refresh() {
   scheduleSubscription();
 }
 
-async function renderTile(canvas, tileX, tileZ, lod, generation) {
-  const renderDimension = Number(dimension.value);
-  const renderMode = mode.value;
-  const cacheKey = tileKey(renderDimension, lod, tileX, tileZ);
+// Each canvas owns its displayed authority and prediction. Neither producer
+// directly overwrites the other. All writes after awaits must pass the guard.
+function currentCanvas(canvas) {
+  const t = canvas.mapTile;
+  return t && canvas.mapMode === mode.value
+    && tileStillCurrent(canvas, t.dim, t.lod, t.x, t.z, t.generation);
+}
+function paintTile(canvas) {
+  if (!currentCanvas(canvas)) return false;
+  const t = canvas.mapTile;
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
-  const cached = restoreRegion(cacheKey);
-  if (renderMode === 'all') {
-    try {
-      await drawPrediction(canvas, ctx, tileX, tileZ, lod, renderDimension, generation);
-    } catch (error) {
-      console.error('Map prediction failed', error);
-      showLoadError();
-    }
-  }
-  await cached;
-  if (!tileStillCurrent(canvas, renderDimension, lod, tileX, tileZ, generation)) return;
-  await drawCachedTile(canvas, cacheKey, lod, renderDimension);
-}
-
-async function syncTile(canvas, tileX, tileZ, lod, generation, force = false) {
-  const dimIndex = Number(dimension.value);
-  const cacheKey = tileKey(dimIndex, lod, tileX, tileZ);
-  if (!force && validated.has(cacheKey)) {
-    return;
-  }
-  const patchPromise = requestTile(tileX, tileZ, lod, dimIndex);
-  await canvas.localReady;
-  const patch = await patchPromise;
-  if (!tileStillCurrent(canvas, dimIndex, lod, tileX, tileZ, generation)) return;
-  const action = patchAction(patch.mode, mode.value);
-  if (action.retry) {
-    setTimeout(() => {
-      if (!tileStillCurrent(canvas, dimIndex, lod, tileX, tileZ, generation)) return;
-      syncTile(canvas, tileX, tileZ, lod, generation, true).catch(error => {
-        console.warn('Map correction retry failed', error);
-        if (error.retry !== false) scheduleVisibleTileSync();
-      });
-    }, 500);
-    return;
-  }
-  if (action.discardAuthority) {
-    await discardRegion(cacheKey);
-    const ctx = canvas.getContext('2d');
+  const span = 256 << t.lod;
+  const args = [t.lod, isNetherDimension(t.dim), t.x * span, t.z * span];
+  const predicted = canvas.mapMode === 'all' ? canvas.predicted : null;
+  if (canvas.authority) {
+    mapRenderer.drawCorrectedTile(ctx, predicted ?? null, canvas.authority, ...args);
+  } else if (predicted) {
+    mapRenderer.drawPredictedTile(ctx, predicted, ...args);
+  } else if (canvas.authorityUnavailable) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (action.replacement === 'prediction') {
-      await drawPrediction(canvas, ctx, tileX, tileZ, lod, dimIndex, generation);
+  } else {
+    return false;
+  }
+  canvas.markReady();
+  return true;
+}
+async function renderPrediction(canvas) {
+  const t = canvas.mapTile;
+  return drawPrediction(canvas, canvas.getContext('2d'), t.x, t.z, t.lod, t.dim, t.generation);
+}
+async function restoreAndDrawTile(canvas) {
+  const t = canvas.mapTile;
+  const key = tileKey(t.dim, t.lod, t.x, t.z);
+  const epoch = regionEpochs.get(key) ?? 0;
+  await restoreRegion(key);
+  if (!currentCanvas(canvas) || epoch !== (regionEpochs.get(key) ?? 0)) return;
+  let decoded = patchCache.get(key);
+  try {
+    if (!decoded && compressedCache.has(key)) {
+      decoded = await mapRenderer.decodeTilePatch(compressedCache.get(key));
     }
-    if (action.validate) validated.add(cacheKey);
+  } catch (error) {
+    if (epoch === (regionEpochs.get(key) ?? 0)) {
+      validated.delete(key);
+      await discardRegion(key);
+    }
     return;
   }
-  if (action.applyBody) {
-    const compressed = patch.mode === PATCH_MODE_UNCHANGED
-      ? compressedCache.get(cacheKey) : patch.body;
-    const decoded = compressed ? await mapRenderer.decodeTilePatch(compressed) : null;
-    if (decoded) {
-      patchCache.set(cacheKey, decoded);
-      const span = 256 << lod;
-      mapRenderer.drawCorrectedTile(
-        canvas.getContext('2d'), canvas.predicted ?? null, decoded, lod,
-        isNetherDimension(dimIndex), tileX * span, tileZ * span
-      );
+  if (!currentCanvas(canvas) || epoch !== (regionEpochs.get(key) ?? 0)) return;
+  if (decoded) {
+    patchCache.set(key, decoded);
+    canvas.authority = decoded;
+    paintTile(canvas);
+  } else if (unavailableTiles.has(key)) {
+    canvas.authorityUnavailable = true;
+    // In prediction mode keep the old LOD around until prediction is ready.
+    if (canvas.mapMode !== 'all' || canvas.predicted || canvas.predictionFailed) paintTile(canvas);
+  }
+}
+async function syncTile(canvas, tileX, tileZ, lod, generation, force = false) {
+  if (!currentCanvas(canvas) || canvas.syncing) return;
+  const dimIndex = canvas.mapTile.dim;
+  const key = tileKey(dimIndex, lod, tileX, tileZ);
+  canvas.syncing = true;
+  let retry = false;
+  try {
+    // Only await local disk restoration; exact prediction must never block network authority.
+    await canvas.cacheReady.catch(() => {});
+    if (!currentCanvas(canvas)) return;
+    if (!force && validated.has(key) && (canvas.authority || canvas.authorityUnavailable)) return;
+    const epoch = regionEpochs.get(key) ?? 0;
+    const patch = await requestTile(tileX, tileZ, lod, dimIndex);
+    if (!currentCanvas(canvas)) return;
+    if (epoch !== (regionEpochs.get(key) ?? 0)) { retry = true; return; }
+    const action = patchAction(patch.mode, canvas.mapMode);
+    if (action.retry) { retry = true; return; }
+    if (action.discardAuthority) {
+      // Clear the memory entries immediately; delete from disk asynchronously.
+      canvas.authority = null;
+      canvas.authorityUnavailable = true;
+      unavailableTiles.add(key);
+      validated.add(key);
+      const deletion = discardRegion(key);
+      if (canvas.mapMode !== 'all' || canvas.predicted || canvas.predictionFailed) paintTile(canvas);
+      else {
+        // An unavailable correction does not imply that prediction is unavailable.
+        const selected = manifest.dimensions.find(item => item.index === dimIndex);
+        if (!selected?.predictable || !predictor) paintTile(canvas);
+      }
+      await deletion;
+      return;
+    }
+    if (action.applyBody) {
+      const compressed = patch.mode === PATCH_MODE_UNCHANGED
+        ? compressedCache.get(key) : patch.body;
+      if (!compressed?.length) {
+        // UNCHANGED is unusable if the browser lost the corresponding body.
+        validated.delete(key);
+        await discardRegion(key);
+        retry = true;
+        return;
+      }
+      let decoded;
+      try { decoded = await mapRenderer.decodeTilePatch(compressed); }
+      catch (error) {
+        validated.delete(key);
+        await discardRegion(key);
+        throw error;
+      }
+      if (!currentCanvas(canvas)) return;
+      if (epoch !== (regionEpochs.get(key) ?? 0)) { retry = true; return; }
+      canvas.authority = decoded;
+      canvas.authorityUnavailable = false;
+      unavailableTiles.delete(key);
+      patchCache.set(key, decoded);
+      if (action.commitRevision) revisions.set(key, patch.revision);
+      if (action.persistBody) {
+        compressedCache.set(key, compressed);
+        void persistRegion(key, patch.revision, compressed);
+      }
+      if (action.validate) validated.add(key);
+      paintTile(canvas);
+    }
+  } finally {
+    canvas.syncing = false;
+    if (retry && currentCanvas(canvas)) {
+      setTimeout(() => syncTile(canvas, tileX, tileZ, lod, generation, true).catch(error => {
+        console.warn('Map retry failed', error);
+        if (error.retry !== false) scheduleVisibleTileSync();
+      }), 500);
     }
   }
-  if (action.commitRevision) revisions.set(cacheKey, patch.revision);
-  if (action.persistBody && patch.body.length) {
-    compressedCache.set(cacheKey, patch.body);
-    persistRegion(cacheKey, patch.revision, patch.body);
-  }
-  if (action.validate) validated.add(cacheKey);
 }
 
 function scheduleVisibleTileSync() {
-  clearTimeout(visibleTileSyncTimer);
+  if (visibleTileSyncTimer != null) return;
   visibleTileSyncTimer = setTimeout(() => {
+    visibleTileSyncTimer = undefined;
     const activeLod = lodForLeafletZoom(map.getZoom());
     for (const canvas of layer.getContainer().querySelectorAll('canvas.map-tile')) {
       const tile = canvas.mapTile;
@@ -249,48 +375,33 @@ function scheduleVisibleTileSync() {
   }, 500);
 }
 
-async function drawCachedTile(canvas, cacheKey, lod, dimIndex) {
-  let decoded = patchCache.get(cacheKey);
-  if (!decoded) {
-    const compressed = compressedCache.get(cacheKey);
-    if (compressed) {
-      decoded = await mapRenderer.decodeTilePatch(compressed);
-      patchCache.set(cacheKey, decoded);
-    }
-  }
-  if (!decoded) return false;
-  const tile = canvas.mapTile;
-  const span = 256 << lod;
-  mapRenderer.drawCorrectedTile(
-    canvas.getContext('2d'), canvas.predicted ?? null, decoded, lod,
-    isNetherDimension(dimIndex), tile.x * span, tile.z * span
-  );
-  return true;
-}
+
 
 function requestTile(tileX, tileZ, lod, dimIndex) {
   const cacheKey = tileKey(dimIndex, lod, tileX, tileZ);
-  const existing = inFlightTiles.get(cacheKey);
+  const epoch = regionEpochs.get(cacheKey) ?? 0;
+  const requestKey = `${cacheKey}:${epoch}`;
+  const existing = inFlightTiles.get(requestKey);
   if (existing) return existing;
   const request = new Promise((resolve, reject) => {
-    queuedTileRequests.set(cacheKey, {tileX, tileZ, lod, dimIndex, resolve, reject});
-    clearTimeout(tileBatchTimer);
-    tileBatchTimer = setTimeout(flushTileRequests, 20);
+    queuedTileRequests.set(requestKey, {tileX, tileZ, lod, dimIndex, epoch, resolve, reject});
+    if (tileBatchTimer == null) tileBatchTimer = setTimeout(flushTileRequests, 20);
   });
-  inFlightTiles.set(cacheKey, request);
+  inFlightTiles.set(requestKey, request);
   request.then(
-    () => inFlightTiles.delete(cacheKey),
-    () => inFlightTiles.delete(cacheKey)
+    () => inFlightTiles.delete(requestKey),
+    () => inFlightTiles.delete(requestKey)
   );
   return request;
 }
 
 async function flushTileRequests() {
+  tileBatchTimer = undefined;
   const queued = [...queuedTileRequests.values()];
   queuedTileRequests.clear();
   const groups = new Map();
   for (const item of queued) {
-    const key = `${item.dimIndex}:${item.lod}`;
+    const key = `${item.dimIndex}:${item.lod}:${item.epoch}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(item);
   }
@@ -339,7 +450,13 @@ async function requestTileBatch(tiles) {
       reject(new Error('tile response timed out'));
     }, 30000);
     pendingRequests.set(requestId, {expected: tiles.length, patches: [], resolve, reject, timer});
-    mapSocket.send(bytes);
+    try {
+      mapSocket.send(bytes);
+    } catch (error) {
+      clearTimeout(timer);
+      pendingRequests.delete(requestId);
+      reject(error);
+    }
   });
 }
 
@@ -347,7 +464,7 @@ function connectMapSocket() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   let heartbeat;
   return createReconnectingWebSocket({
-    url: `${protocol}//${location.host}/api/v1/map`,
+    url: `${protocol}//${location.host}${apiPath("/api/v1/map")}`,
     onOpen() {
       clearInterval(heartbeat);
       heartbeat = setInterval(() => {
@@ -359,18 +476,21 @@ function connectMapSocket() {
       }, 25000);
       status.classList.remove('error');
       status.textContent = messages.connected;
+      status.hidden = Boolean(hasServerSwitcher);
       scheduleSubscription();
       scheduleVisibleTileSync();
     },
     onMessage(event) {
       if (typeof event.data === 'string') {
-        if (event.data !== 'pong') updateMapState(JSON.parse(event.data));
+        if (event.data !== 'pong') { const data=JSON.parse(event.data);if(!extras.receive(data))updateMapState(data); }
         return;
       }
       handleMapFrame(new Uint8Array(event.data));
     },
     onDisconnect() {
       clearInterval(heartbeat);
+      validated.clear();
+      unavailableTiles.clear();
       const error = new Error('map websocket closed');
       for (const pending of pendingRequests.values()) {
         clearTimeout(pending.timer);
@@ -390,6 +510,8 @@ function handleMapFrame(bytes) {
     const patch = decodeTileFrame(frame);
     const pending = pendingRequests.get(patch.reqId);
     if (!pending) return;
+    if (pending.patches.some(item => item.dim === patch.dim && item.lod === patch.lod
+      && item.tileX === patch.tileX && item.tileZ === patch.tileZ)) return;
     pending.patches.push(patch);
     if (pending.patches.length === pending.expected) {
       clearTimeout(pending.timer);
@@ -436,6 +558,8 @@ function invalidateRegions(frame) {
     const tileZ = Math.floor(frame.i32() / regionsPerTile);
     const cacheKey = tileKey(dim, lod, tileX, tileZ);
     invalidTiles.add(cacheKey);
+    regionEpochs.set(cacheKey, (regionEpochs.get(cacheKey) ?? 0) + 1);
+    unavailableTiles.delete(cacheKey);
     validated.delete(cacheKey);
     revisions.delete(cacheKey);
     patchCache.delete(cacheKey);
@@ -495,9 +619,16 @@ function updateMapState(message) {
   const next = mergeMapState(currentMapState, message);
   if (next === currentMapState) return;
   currentMapState = next;
-  updatePlayerList(currentMapState.players ?? []);
-  updatePlayers(currentMapState.players ?? []);
-  updateWaypoints(currentMapState.waypoints ?? []);
+  renderMapState(currentMapState);
+}
+
+function renderMapState(state) {
+  const players = state.players ?? [];
+  const waypoints = state.waypoints ?? [];
+  updatePlayerList(entityControls.filterPlayers(players));
+  updatePlayers(entityControls.showPlayers() ? players : []);
+  updateWaypoints(entityControls.showWaypoints() ? waypoints : []);
+  entityControls.render(waypoints);
 }
 
 function updatePlayers(players) {
@@ -508,7 +639,7 @@ function updatePlayers(players) {
     let marker = playerMarkers.get(player.id);
     if (!marker) {
       marker = L.marker([-player.z, player.x], {icon: playerIcon(player)})
-        .bindTooltip(player.name).addTo(map);
+        .bindTooltip(safeTooltip(player.name)).addTo(map);
       playerMarkers.set(player.id, marker);
     } else {
       animatePlayerMarker(marker, [-player.z, player.x]);
@@ -519,6 +650,12 @@ function updatePlayers(players) {
   for (const [id, marker] of playerMarkers) if (!visible.has(id)) {
     removePlayerMarker(marker); playerMarkers.delete(id);
   }
+}
+
+function safeTooltip(text) {
+  const label = document.createElement('span');
+  label.textContent = text;
+  return label;
 }
 
 function updatePlayerList(players) {
@@ -539,20 +676,7 @@ function updatePlayerList(players) {
     button.addEventListener('click', () => focusLocation(player));
     const avatar = document.createElement('span');
     avatar.className = 'player-list-avatar';
-    const avatarImage = document.createElement('img');
-    avatarImage.alt = '';
-    avatarImage.src = `/api/v1/avatars/${player.id}.png`;
-    avatarImage.addEventListener('load', () => avatar.classList.add('image-loaded'));
-    avatarImage.addEventListener('error', () => {
-      if (avatarImage.src.includes('/api/v1/avatars/')) {
-        avatarImage.src = Math.random() < 0.5 ? '/default-steve.svg' : '/default-alex.svg';
-      } else {
-        avatar.classList.remove('image-loaded');
-      }
-    });
-    const avatarFallback = document.createElement('span');
-    avatarFallback.textContent = player.name.slice(0, 1).toUpperCase();
-    avatar.append(avatarImage, avatarFallback);
+    installPlayerAvatar(avatar, player, 'image-loaded');
     const details = document.createElement('span');
     details.className = 'player-details';
     const name = document.createElement('strong');
@@ -574,11 +698,12 @@ function updateWaypoints(waypoints) {
     let marker = waypointMarkers.get(waypoint.id);
     if (!marker) {
       marker = L.marker(target, {icon: waypointIcon(waypoint)})
-        .bindTooltip(waypointLabel(waypoint)).addTo(map);
+        .bindTooltip(waypointLabel(waypoint)).bindPopup(extras.popup(waypoint)).addTo(map);
       waypointMarkers.set(waypoint.id, marker);
     } else {
       marker.setLatLng(target);
       marker.setTooltipContent(waypointLabel(waypoint));
+      marker.setPopupContent(extras.popup(waypoint));
       marker.setIcon(waypointIcon(waypoint));
     }
   }
@@ -695,6 +820,8 @@ function createPredictor() {
         state.active.reject(error);
         state.active = null;
       }
+      worker.terminate();
+      startWorker(state);
       dispatch();
     });
   }
@@ -708,15 +835,9 @@ function createPredictor() {
       request.resolve(null);
       return;
     }
-    const state = states.find(item => item.active === request);
-    if (state) {
-      state.worker.terminate();
-      state.active = null;
-      pending.delete(request.id);
-      request.resolve(null);
-      startWorker(state);
-      dispatch();
-    }
+    // Let an already running worker finish; ignore its result. This avoids
+    // destroying and recreating WASM workers on every rapid zoom event.
+    request.resolve(null);
   }
   function dispatch() {
     for (const state of states) {
@@ -779,18 +900,14 @@ async function drawPrediction(canvas, ctx, tileX, tileZ, lod, dimIndex, generati
     blockZ: tileZ * span, lod
   };
   let predicted = await predictor.request({...request, exact: false}, generation, canvas);
-  if (!predicted || !canvas.isConnected || generation !== predictionGeneration) return false;
+  if (!predicted || !currentCanvas(canvas)) return false;
   canvas.predicted = predicted;
-  mapRenderer.drawPredictedTile(
-    ctx, predicted, lod, isNetherDimension(dimIndex), tileX * span, tileZ * span
-  );
+  paintTile(canvas);
   if ((nativeDimension === 0 && lod <= 1) || nativeDimension === 1) {
     predicted = await predictor.request({...request, exact: true}, generation, canvas);
-    if (!predicted || !canvas.isConnected || generation !== predictionGeneration) return false;
+    if (!predicted || !currentCanvas(canvas)) return false;
     canvas.predicted = predicted;
-    mapRenderer.drawPredictedTile(
-      ctx, predicted, lod, isNetherDimension(dimIndex), tileX * span, tileZ * span
-    );
+    paintTile(canvas);
   }
   return true;
 }
@@ -805,24 +922,29 @@ function tileKey(dim,lod,tileX,tileZ) {
 }
 function tileStillCurrent(canvas, dim, lod, tileX, tileZ, generation) {
   const tile = canvas.mapTile;
-  return canvas.isConnected && generation === predictionGeneration
+  return !canvas.disposed && canvas.isConnected && generation === predictionGeneration
     && dim === Number(dimension.value) && tile?.dim === dim && tile.lod === lod
     && tile.x === tileX && tile.z === tileZ && tile.generation === generation;
 }
 function playerIcon(player) {
   const root = document.createElement('div');
   root.className = `web-player${player.translucent ? ' translucent' : ''}`;
+  installPlayerAvatar(root, player, 'skin-loaded');
+  return L.divIcon({className: '', html: root, iconSize: [28, 28], iconAnchor: [14, 14]});
+}
+
+function installPlayerAvatar(root, player, loadedClass) {
   const image = document.createElement('img');
   image.alt = '';
-  image.src = `/api/v1/avatars/${player.id}.png`;
-  image.addEventListener('load', () => root.classList.add('skin-loaded'));
+  image.addEventListener('load', () => root.classList.add(loadedClass));
   image.addEventListener('error', () => {
-    image.src = Math.random() < 0.5 ? '/default-steve.svg' : '/default-alex.svg';
+    const isAlex = Number.parseInt(player.id.slice(-1), 16) % 2 === 1;
+    image.src = isAlex ? '/default-alex.svg' : '/default-steve.svg';
   }, {once: true});
+  image.src = apiPath(`/api/v1/avatars/${player.id}.png`);
   const fallback = document.createElement('span');
   fallback.textContent = player.name.slice(0, 1).toUpperCase();
   root.append(image, fallback);
-  return L.divIcon({className: '', html: root, iconSize: [28, 28], iconAnchor: [14, 14]});
 }
 
 function message(key, values = {}) {
@@ -852,6 +974,14 @@ function updateScaleLabel() {
     scale: formatZoomMultiplier(map.getZoom())
   });
 }
+function updateCenterCoordinates() {
+  const {lat, lng} = map.getCenter();
+  const label = message('centerCoordinates', {x: Math.floor(lng), z: Math.floor(-lat)});
+  if (centerCoordinates.textContent !== label) centerCoordinates.textContent = label;
+}
+function applyDefaultMode(value) {
+  mode.value = value === 'GENERATED' ? 'generated' : 'all';
+}
 function syncModeAvailability() {
   const selected = manifest.dimensions.find(item => item.index === Number(dimension.value));
   const all = mode.querySelector('[value="all"]');
@@ -859,6 +989,7 @@ function syncModeAvailability() {
   if (all.disabled) mode.value = 'generated';
 }
 function showLoadError() {
+  status.hidden = false;
   status.textContent = message('loadError');
   status.classList.add('error');
 }
@@ -866,7 +997,7 @@ function showLoadError() {
 function openDatabase() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(
-      `conflux-map-${manifest.worldId}-v${CACHE_SCHEMA_VERSION}`, 1
+      `conflux-map-${manifest.presentation?.serverInstanceId ?? 'legacy'}-${manifest.worldId}-v${CACHE_SCHEMA_VERSION}`, 1
     );
     request.onupgradeneeded = () => request.result.createObjectStore('regions');
     request.onsuccess = () => resolve(request.result);
@@ -874,11 +1005,13 @@ function openDatabase() {
   });
 }
 async function restoreRegion(cacheKey) {
-  if (revisions.has(cacheKey)) return;
+  if (revisions.has(cacheKey) || unavailableTiles.has(cacheKey)) return;
+  const epoch = regionEpochs.get(cacheKey) ?? 0;
   try {
     const db = await database;
     const stored = await transaction(db, 'readonly', store => store.get(cacheKey));
-    if (!stored) return;
+    if (!stored || revisions.has(cacheKey) || unavailableTiles.has(cacheKey)
+      || epoch !== (regionEpochs.get(cacheKey) ?? 0)) return;
     revisions.set(cacheKey, BigInt(stored.revision));
     compressedCache.set(cacheKey, new Uint8Array(stored.body));
   } catch {
@@ -913,8 +1046,9 @@ function transaction(db, transactionMode, operation) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('regions', transactionMode);
     const request = operation(tx.objectStore('regions'));
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    tx.oncomplete = () => resolve(request.result);
+    tx.onerror = () => reject(tx.error ?? request.error);
+    tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'));
   });
 }
 

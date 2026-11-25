@@ -20,6 +20,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$         try (var world = context.worldBuilder().create()) {
 //$$             context.waitFor(client -> ConfluxMapClient.get().waypointLibraryService().world() != null, 200);
 //$$             var app = ConfluxMapClient.get();
+//$$             testSingleplayerLoadStates(context, app);
 //$$             context.runOnClient(client -> {
 //$$                 app.config().uiTransitionsEnabled = false;
 //$$                 app.waypointListMemory().options().both = true;
@@ -361,6 +362,29 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$         context.setScreen(() -> null);
 //$$     }
 //$$
+//$$     private static void testSingleplayerLoadStates(
+//$$         ClientGameTestContext context, ConfluxMapClient app
+//$$     ) {
+//$$         final var modeBefore = context.computeOnClient(client -> app.config().fullscreenDisplayMode);
+//$$         final var player = context.computeOnClient(client -> app.gameBridge().player().orElseThrow());
+//$$         context.runOnClient(client -> {
+//$$             app.config().uiTransitionsEnabled = false;
+//$$             if (client.getSingleplayerServer().isPublished()) {
+//$$                 throw new AssertionError("Singleplayer load state drill must run without LAN");
+//$$             }
+//$$         });
+//$$         context.setScreen(() -> FullscreenMapScreen.focusedOnWaypoint(
+//$$             DimensionId.OVERWORLD, player.x(), player.z()));
+//$$         context.runOnClient(client -> ((FullscreenMapScreen) MinecraftAccess.screen(client)).setScaleForTest(1.0));
+//$$         clickLabeledWidget(context, "confluxmap.map.tools.view");
+//$$         clickLabeledWidget(context, "confluxmap.map.display_mode.chunk_load_state");
+//$$         context.waitFor(client -> app.chunkLoadStateClient().snapshot().complete()
+//$$             && !app.chunkLoadStateClient().snapshot().entries().isEmpty(), 140);
+//$$         cn.net.rms.confluxmap.ConfluxMapMod.LOGGER.info("Verified offline singleplayer chunk load states");
+//$$         context.setScreen(() -> null);
+//$$         context.runOnClient(client -> app.config().fullscreenDisplayMode = modeBefore);
+//$$     }
+//$$
 //$$     private static void testMapPositionControls(
 //$$         ClientGameTestContext context, ConfluxMapClient app
 //$$     ) {
@@ -370,13 +394,19 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$         double initialScale = context.computeOnClient(client -> (double) field(map, "scale"));
 //$$         context.runOnClient(client -> {
 //$$             var jump = labeledWidget(map, "confluxmap.map.coordinate_jump");
-//$$             var range = labeledWidget(map, "confluxmap.map.loaded_range");
-//$$             if (jump.getX() != range.getX() || jump.getY() >= range.getY()) {
+//$$             var view = labeledWidget(map, "confluxmap.map.tools.view");
+//$$             if (jump.getX() != view.getX() || jump.getY() >= view.getY()) {
 //$$                 throw new AssertionError("Map toolbar buttons are not vertically aligned");
 //$$             }
 //$$         });
+//$$         context.takeScreenshot("map-before-coordinate-jump");
 //$$         clickLabeledWidget(context, "confluxmap.map.coordinate_jump");
 //$$         context.waitForScreen(MapCoordinateJumpScreen.class);
+//$$         context.runOnClient(client -> {
+//$$             if (!(boolean) field(map, "openAnnounced")) {
+//$$                 throw new AssertionError("Opening the coordinate dialog closed the world map");
+//$$             }
+//$$         });
 //$$         context.runOnClient(client -> {
 //$$             var jump = MinecraftAccess.screen(client);
 //$$             var x = (net.minecraft.client.gui.components.EditBox) field(jump, "xField");
@@ -400,6 +430,12 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$             map.jumpToCoordinates(player.blockX(), player.blockZ());
 //$$             map.setScaleForTest(1.0);
 //$$         });
+//$$         clickLabeledWidget(context, "confluxmap.map.tools.view");
+//$$         boolean gridWasVisible = context.computeOnClient(client -> app.config().fullmapChunkGrid);
+//$$         clickLabeledWidget(context, "confluxmap.map.chunk_grid");
+//$$         context.waitFor(client -> app.config().fullmapChunkGrid != gridWasVisible, 20);
+//$$         clickLabeledWidget(context, "confluxmap.map.chunk_grid");
+//$$         context.waitFor(client -> app.config().fullmapChunkGrid == gridWasVisible, 20);
 //$$         clickLabeledWidget(context, "confluxmap.map.loaded_range");
 //$$         var overlay = context.computeOnClient(client -> (MapLoadedRangeOverlay) field(map, "loadedRange"));
 //$$         context.waitFor(client -> field(overlay, "coverage") instanceof ChunkLoadCoverage coverage
@@ -462,6 +498,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$         } finally {
 //$$             context.getInput().releaseMouse(left);
 //$$         }
+//$$         clickLabeledWidget(context, "confluxmap.map.tools.view");
 //$$         clickLabeledWidget(context, "confluxmap.map.loaded_range");
 //$$         context.waitFor(client -> !app.config().fullscreenLoadedRangeVisible
 //$$             && field(overlay, "coverage") == null, 100);

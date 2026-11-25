@@ -261,7 +261,7 @@ public final class ClientNetworking {
         );
         session.onPolicy(updated);
         final ChunkLoadStateClient loadStates = chunkLoadStates;
-        if (loadStates != null && !updated.flags().chunkLoadStateEnabled()) {
+        if (loadStates != null && !loadStates.available()) {
             loadStates.reset();
         }
         final ServerPlayerRadarState radar = playerRadar;

@@ -3,7 +3,7 @@ export const PATCH_MODE_RESIDUAL = 1;
 export const PATCH_MODE_ABSOLUTE = 2;
 export const PATCH_MODE_UNAVAILABLE = 3;
 export const PATCH_MODE_PARTIAL = 4;
-export const CACHE_SCHEMA_VERSION = 2;
+export const CACHE_SCHEMA_VERSION = 3;
 export const SUPPORTED_LOCALES = ['en', 'zh-CN'];
 
 /** Describes how one wire patch may affect committed browser state. */
@@ -64,7 +64,9 @@ export function cacheTileKey(manifest, dimensionIndex, lod, tileX, tileZ) {
   if (!dimensionId) throw new Error(`unknown dimension index ${dimensionIndex}`);
   const renderer = `${manifest.worldgenVersion}:${manifest.predictionVersion ?? -1}`;
   return [
-    'tile', `v${CACHE_SCHEMA_VERSION}`, encodeURIComponent(manifest.worldId), renderer,
+    'tile', `v${CACHE_SCHEMA_VERSION}`,
+    encodeURIComponent(manifest.presentation?.serverInstanceId ?? 'legacy'),
+    encodeURIComponent(manifest.worldId), renderer,
     encodeURIComponent(dimensionId), lod, tileX, tileZ
   ].join(':');
 }

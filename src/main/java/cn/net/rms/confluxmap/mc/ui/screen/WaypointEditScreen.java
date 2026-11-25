@@ -18,6 +18,7 @@ import cn.net.rms.confluxmap.core.waypoint.list.LocalWaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.SharedWaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointRow;
+import cn.net.rms.confluxmap.mc.net.WebMapClient;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
@@ -666,6 +667,14 @@ public final class WaypointEditScreen extends ConfluxScreen {
             }
             if (!nameField.visible) setFocused(null);
         }
+        if (createTarget == CreateTarget.PUBLIC && editingId != null && metadataWorld != null
+            && WebMapClient.flag("albumUpload")) {
+            addDrawableChild(Widgets.button(
+                Math.max(4, width - 112), 4, 108, FIELD_HEIGHT,
+                Texts.translatable("confluxmap.webmap.image_upload"), button ->
+                    openWebPhotoSelection()
+            ));
+        }
         final int footerY = WaypointEditLayout.footerY(height);
         final boolean editing = editingId != null;
         final int footerButtonWidth = editing ? WaypointEditLayout.FOOTER_EDIT_WIDTH : WaypointEditLayout.FOOTER_CREATE_WIDTH;
@@ -1065,6 +1074,15 @@ public final class WaypointEditScreen extends ConfluxScreen {
         final var library = ConfluxMapClient.get().waypointLibraryService();
         return supportsPrivateAttachments() && metadataWorld != null && metadataWorld.equals(library.world())
             && library.writable() && (createTarget != CreateTarget.LOCAL || boundLocalStore == localStoreSupplier.get());
+    }
+
+    private void openWebPhotoSelection() {
+        var album = new cn.net.rms.confluxmap.core.waypoint.library.WaypointMediaService.Key(
+            metadataWorld, true, metadataId
+        );
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WebMapImageScreen(this, album, List.of(),
+            selected -> WebMapClient.upload(editingId, album, selected), true
+        ));
     }
 
     private void openImages() {

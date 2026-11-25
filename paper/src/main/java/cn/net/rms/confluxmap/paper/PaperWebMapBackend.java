@@ -15,7 +15,6 @@ import cn.net.rms.confluxmap.server.web.WebMapSnapshot;
 import cn.net.rms.confluxmap.server.web.WebPlayerSnapshot;
 import cn.net.rms.confluxmap.server.web.WebAvatarCache;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.ArrayList;
@@ -31,14 +30,29 @@ import org.bukkit.entity.Player;
 final class PaperWebMapBackend implements WebMapBackend {
     private final ConfluxMapPaperPlugin plugin;
     private final PaperCompanion companion;
-    private final WebMapManifest manifest;
+    private volatile WebMapManifest manifest;
+    private volatile String defaultGameMode;
     private volatile WebMapSnapshot snapshot = WebMapSnapshot.EMPTY;
     private volatile Map<UUID, URI> skinUrls = Map.of();
     private final WebAvatarCache avatars = new WebAvatarCache();
+    private final cn.net.rms.confluxmap.server.web.WebMapFeatures features;
+    @Override public cn.net.rms.confluxmap.server.web.WebMapFeatures features(){return features;}
 
     PaperWebMapBackend(final ConfluxMapPaperPlugin plugin, final PaperCompanion companion) {
         this.plugin = plugin;
         this.companion = companion;
+        this.defaultGameMode = Bukkit.getDefaultGameMode().name();
+        features=new cn.net.rms.confluxmap.server.web.WebMapFeatures(companion.config().webMap,
+            companion.webMapImageDirectory(companion.worldId().toString()), id -> companion.sharedWaypointsEnabled() && companion.sharedWaypoints().snapshot().waypoints().stream().anyMatch(w -> w.id().equals(id)),
+            companion::saveWebMapConfig, task -> Bukkit.getScheduler().runTask(plugin,task),
+            text -> Bukkit.getOnlinePlayers().forEach(p -> p.sendMessage(net.kyori.adventure.text.Component.text(text))));
+        features.restrictAttachments((actor, id) -> companion.sharedWaypointsEnabled()
+            && companion.sharedWaypoints().snapshot().waypoints().stream()
+                .anyMatch(waypoint -> waypoint.id().equals(id) && waypoint.publisherId().equals(actor)));
+        refreshManifest();
+    }
+
+    void refreshManifest() {
         final List<WebMapManifest.Dimension> dimensions = new ArrayList<>();
         for (final PaperWorldDirectory.Entry entry : companion.worlds().entries()) {
             final DimensionId id = DimensionId.parse(entry.dimensionId());
@@ -64,6 +78,14 @@ final class PaperWebMapBackend implements WebMapBackend {
                     companion.config().minRequestIntervalMs,
                     companion.config().webMap.minRequestIntervalMs
                 )
+            ),
+            new WebMapManifest.Presentation(
+                companion.instanceId().toString(),
+                companion.config().webMap.serverDisplayName.isBlank()
+                    ? serverName(Bukkit.getMotd(), Bukkit.getWorlds().get(0).getName()) : companion.config().webMap.serverDisplayName,
+                companion.config().webMap.defaultMode,
+                companion.config().webMap.sharePlayers && companion.config().webMap.allowPlayerSearch,
+                companion.config().webMap.allowWaypointSearch
             )
         );
     }
@@ -113,7 +135,9 @@ final class PaperWebMapBackend implements WebMapBackend {
 
     @Override
     public CompletableFuture<byte[]> avatar(final UUID playerId) {
-        return avatars.face(skinUrls.get(playerId));
+        final URI skin = skinUrls.get(playerId);
+        return avatars.face(skin == null ? features.chatSkin(playerId) : skin,
+            snapshot.publicPlayerName(playerId));
     }
 
     private static PaperCorrectionService.MessageSender sender(
@@ -136,7 +160,20 @@ final class PaperWebMapBackend implements WebMapBackend {
         };
     }
 
+    private static String serverName(String motd,String fallback){String name=motd==null?"":motd.replaceAll("§.","").replaceAll("[\\p{Cc}\\p{Cf}]"," ").strip();if(name.isBlank())return fallback;return name.codePointCount(0,name.length())>80?name.substring(0,name.offsetByCodePoints(0,80)):name;}
+    void gameChat(Player player,String text){
+        if(!companion.config().webMap.enableChat||!companion.config().webMap.showGameChat)return;
+        URI skin=null;try{java.net.URL url=player.getPlayerProfile().getTextures().getSkin();if(url!=null)skin=url.toURI();}catch(Exception ignored){}
+        features.gameChat(player.getUniqueId(),player.getName(),text,skin);
+    }
+
+    @Override
+    public String defaultGameMode() {
+        return defaultGameMode;
+    }
+
     void updatePlayers() {
+        defaultGameMode = Bukkit.getDefaultGameMode().name();
         final List<WebPlayerSnapshot.Player> result = new ArrayList<>();
         final Map<UUID, URI> currentSkins = new HashMap<>();
         if (companion.config().webMap.sharePlayers) {
@@ -151,11 +188,8 @@ final class PaperWebMapBackend implements WebMapBackend {
                 ));
                 final java.net.URL skin = player.getPlayerProfile().getTextures().getSkin();
                 if (skin != null) {
-                    try {
-                        currentSkins.put(player.getUniqueId(), skin.toURI());
-                    } catch (final URISyntaxException ignored) {
-                        // The cache independently rejects non-Minecraft texture origins.
-                    }
+                    final URI texture = cn.net.rms.confluxmap.server.web.WebSkinTexture.officialUri(skin.toExternalForm());
+                    if (texture != null) currentSkins.put(player.getUniqueId(), texture);
                 }
             }
         }
