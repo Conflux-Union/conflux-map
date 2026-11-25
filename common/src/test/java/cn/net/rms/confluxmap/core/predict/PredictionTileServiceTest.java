@@ -2880,38 +2880,52 @@ class PredictionTileServiceTest {
     }
 
     @Test
-    void paddedRingIsSkippedOnceRequestedUnlessInvalidatedOrForgotten() throws InterruptedException {
+    void paddedRingIsSkippedOnceRequestedUnlessForgottenOrRequeuedWithinUploadBudget()
+        throws InterruptedException {
         final SessionGuard sessionGuard = new SessionGuard();
         final MapExecutors executors = new MapExecutors();
         final TileService uploads = new TileService(new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel());
-        final WaveHarness harness = newWaveHarness(sessionGuard, executors, uploads);
-        final PredictionTileService service = harness.service;
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.FLAT, WorldPreset.DEFAULT);
+        state.setFlatBaseline(new FlatBaseline(1, 63, SurfaceKind.LAND.ordinal(), 11, 0));
+        final PredictionTileService service = newService(sessionGuard, state, executors, uploads);
         sessionGuard.begin(WORLD, DIM);
         try {
-            service.setViewport(DIM, 2, 0, 0, 0, 0);
+            service.setViewport(DIM, 0, 0, 0, 0, 0);
             service.preloadViewportPaddedRing();
             awaitIdle(service, 10_000L);
-            uploads.drainUploads(64);
-            final int firstCalls = harness.sampler.batchCalls.size() + harness.sampler.perTileCalls.size();
-            assertTrue(firstCalls > 0);
+            final List<TileUpdate> initial = uploads.drainUploads(64);
+            assertEquals(8, initial.size(), "initial 1x1 viewport padded ring should compose all 8 outer tiles");
 
-            // Second preload call on steady viewport must not re-queue already requested ring tiles.
-            service.preloadViewportPaddedRing();
-            awaitIdle(service, 10_000L);
-            assertEquals(
-                firstCalls,
-                harness.sampler.batchCalls.size() + harness.sampler.perTileCalls.size(),
-                "steady-state padded ring preload must not churn already-requested tiles"
-            );
-
-            // Forgetting one evicted ring tile allows a single clean preload again.
-            final TileKey forgotten = surfaceTile(-1, -1);
-            service.forgetTile(forgotten);
+            // Steady-state second preload call must not re-queue already-requested ring tiles.
             service.preloadViewportPaddedRing();
             awaitIdle(service, 10_000L);
             assertTrue(
-                harness.sampler.batchCalls.size() + harness.sampler.perTileCalls.size() > firstCalls,
-                "forgetting an evicted GPU ring tile must allow one fresh preload"
+                uploads.drainUploads(64).isEmpty(),
+                "steady-state padded ring preload must not churn already-requested tiles"
+            );
+
+            // Forgetting an evicted GPU tile allows requestTile to schedule it cleanly again.
+            final TileKey forgotten = new TileKey(WORLD, DIM, "surface!pred", 0, -1, -1);
+            service.forgetTile(forgotten);
+            service.requestTile(forgotten);
+            awaitIdle(service, 10_000L);
+            assertEquals(
+                List.of(forgotten),
+                uploads.drainUploads(64).stream().map(TileUpdate::key).toList(),
+                "re-requesting a forgotten tile must recompose cleanly"
+            );
+
+            // Backpressure: when the shared upload queue is >= half full, speculative ring preloads defer.
+            service.setViewport(DIM, 0, 20, 20, 20, 20);
+            for (int i = 0; i < uploads.uploadQueueCapacity() / 2; i++) {
+                final TileKey filler = new TileKey(WORLD, DIM, MapLayer.SURFACE.cacheId(), 0, 100 + i, 0);
+                uploads.submitUpload(TileUpdate.fullTile(filler, new int[RegionColumns.SIZE * RegionColumns.SIZE]));
+            }
+            service.preloadViewportPaddedRing();
+            assertTrue(
+                service.queuedOrInFlightKeysForTest().isEmpty(),
+                "padded ring preload must back off when the upload queue is already under load"
             );
         } finally {
             executors.shutdown(2000L);
@@ -2955,6 +2969,63 @@ class PredictionTileServiceTest {
             service.setViewport(DIM, 0, 0, 0, 0, 0);
             awaitIdle(service, 10_000L);
             assertTrue(service.compositionCurrent(target));
+        } finally {
+            executors.shutdown(2000L);
+        }
+    }
+
+    @Test
+    void viewModeCurrentIgnoresRealCoverageInvalidationButRejectsViewModeChangesAndUploadEvictions()
+        throws InterruptedException {
+        final SessionGuard sessionGuard = new SessionGuard();
+        sessionGuard.begin(WORLD, DIM);
+        final SessionGuard.Session active = sessionGuard.current();
+        final MapExecutors executors = new MapExecutors();
+        final MapWorldService mapWorlds = new MapWorldService();
+        mapWorlds.switchSession(active);
+        final TileService wired = new TileService(mapWorlds, executors, new ConfluxConfig(), new DaylightModel());
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.FLAT, WorldPreset.DEFAULT);
+        state.setFlatBaseline(new FlatBaseline(1, 63, SurfaceKind.LAND.ordinal(), 11, 0));
+        final PredictionTileService linked = newService(sessionGuard, state, executors, wired);
+        try {
+            final TileKey target = new TileKey(WORLD, DIM, "surface!pred", 0, 0, 0);
+            linked.setViewport(DIM, 0, 0, 0, 0, 0);
+            linked.requestTile(target);
+            awaitIdle(linked, 10_000L);
+            wired.drainUploads(64);
+            assertTrue(linked.compositionCurrent(target));
+            assertTrue(linked.viewModeCurrent(target));
+
+            // Move offscreen so real coverage invalidation marks target stale without immediately recomposing it.
+            linked.setViewport(DIM, 0, 40, 40, 40, 40);
+            wired.markChunkStored(active.token(), DIM, MapLayer.SURFACE, 8, 8);
+            assertFalse(
+                linked.compositionCurrent(target),
+                "real-coverage invalidation must clear compositionCurrent"
+            );
+            assertTrue(
+                linked.viewModeCurrent(target),
+                "real-coverage invalidation alone must keep viewModeCurrent valid for underlay draws"
+            );
+
+            // View mode changes still invalidate viewModeCurrent until recomposed.
+            linked.setViewMode(PredictionViewMode.GENERATED_ONLY);
+            assertFalse(
+                linked.viewModeCurrent(target),
+                "changing view mode must invalidate viewModeCurrent until recomposed"
+            );
+            linked.setViewport(DIM, 0, 0, 0, 0, 0);
+            awaitIdle(linked, 10_000L);
+            assertTrue(linked.viewModeCurrent(target));
+
+            // Overflowing uploads evicts target and invalidates viewModeCurrent too.
+            linked.setViewport(DIM, 0, 40, 40, 40, 40);
+            for (int i = 1; i <= wired.uploadQueueCapacity() + 4; i++) {
+                final TileKey filler = new TileKey(WORLD, DIM, MapLayer.SURFACE.cacheId(), 0, i, 0);
+                wired.submitUpload(TileUpdate.fullTile(filler, new int[RegionColumns.SIZE * RegionColumns.SIZE]));
+            }
+            assertFalse(linked.viewModeCurrent(target));
         } finally {
             executors.shutdown(2000L);
         }

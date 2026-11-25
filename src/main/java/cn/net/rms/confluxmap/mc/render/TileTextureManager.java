@@ -399,6 +399,55 @@ public final class TileTextureManager {
         return true;
     }
 
+    /** True when {@code key} currently holds an uploaded GPU texture without triggering requests. */
+    public boolean isResident(final TileKey key) {
+        return textures.containsKey(key);
+    }
+
+    /** Binds {@code key} only if its GPU texture is resident, without queueing missing tiles. */
+    public boolean bindResident(final TileKey key) {
+        return bindIfResident(key);
+    }
+
+    /** Enqueues a missing real tile unless it is already tracked as composing to zero alpha. */
+    public void requestMissingReal(final TileKey key) {
+        if (textures.containsKey(key)) {
+            return;
+        }
+        if (emptyRealTiles.get(key) != null) {
+            emptyProbedThisFrame.add(key);
+        } else {
+            tiles.requestTile(key);
+        }
+    }
+
+    /** Enqueues a missing predicted tile when no GPU texture is resident for {@code key}. */
+    public void requestMissingPredicted(final TileKey key) {
+        if (!textures.containsKey(key)) {
+            predictionTiles.requestTile(key);
+        }
+    }
+
+    /**
+     * Whether {@code key} has a resident GPU texture valid as a cross-LOD underlay (rejecting
+     * predicted tiles whose {@link cn.net.rms.confluxmap.core.predict.PredictionViewMode} is
+     * stale, while tolerating real-coverage staleness because real tiles draw on top).
+     */
+    public boolean isUnderlayFallbackUsable(final TileKey key) {
+        if (!textures.containsKey(key)) {
+            return false;
+        }
+        return !PredictedTileKeys.isPredicted(key) || predictionTiles.viewModeCurrent(key);
+    }
+
+    /** Binds an underlay fallback texture if {@link #isUnderlayFallbackUsable(TileKey)} holds. */
+    public boolean bindUnderlayFallback(final TileKey key) {
+        if (!isUnderlayFallbackUsable(key)) {
+            return false;
+        }
+        return bindIfResident(key);
+    }
+
     /**
      * Whether {@code key} has a resident GPU texture whose contents are valid to draw as a
      * cross-LOD fallback without enqueueing any work.

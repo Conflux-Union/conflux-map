@@ -243,6 +243,7 @@ public final class PredictionTileService {
         synchronized (this) {
             if (requestedTiles.contains(key)) {
                 staleRealCoverageTiles.add(key);
+                staleViewModeTiles.add(key);
             }
             if (dirty.containsKey(key) || inFlight.contains(key)) {
                 return;
@@ -1124,14 +1125,6 @@ public final class PredictionTileService {
     }
 
     /**
-     * Whether the composition last uploaded for {@code key} still matches the state it was
-     * composed under. A predicted tile's pixels are transparent exactly where real data won at
-     * compose time; once real coverage (or the view mode) changes under it, that mask overstates
-     * prediction until a recompose lands - and only the current viewport's LOD recomposes. A
-     * cross-LOD consumer drawing a stale tile would paint fabricated terrain over newer real
-     * tiles, so {@code TileTextureManager}'s fallback probes consult this before binding.
-     */
-    /**
      * Render thread: the predicted texture for {@code key} was evicted from the GPU cache.
      * Removing it from {@link #requestedTiles} lets a subsequent ring preload or bind schedule it
      * again cleanly without keeping dead keys pinned in {@link #requestedTiles}.
@@ -1140,10 +1133,28 @@ public final class PredictionTileService {
         requestedTiles.remove(key);
     }
 
+    /**
+     * Whether the composition last uploaded for {@code key} still matches the state it was
+     * composed under. A predicted tile's pixels are transparent exactly where real data won at
+     * compose time; once real coverage (or the view mode) changes under it, that mask overstates
+     * prediction until a recompose lands - and only the current viewport's LOD recomposes. A
+     * cross-LOD consumer drawing a stale tile would paint fabricated terrain over newer real
+     * tiles, so {@code TileTextureManager}'s fallback probes consult this before binding.
+     */
     public boolean compositionCurrent(final TileKey key) {
         synchronized (this) {
             return !staleRealCoverageTiles.contains(key) && !staleViewModeTiles.contains(key);
         }
+    }
+
+    /**
+     * Whether {@code key}'s texture still matches the active {@link PredictionViewMode} and was
+     * not invalidated by an upload eviction. Used ONLY by predicted cross-LOD underlays drawn
+     * underneath real terrain/exact tiles, where real-coverage masks can safely be covered by the
+     * real layers on top.
+     */
+    public synchronized boolean viewModeCurrent(final TileKey key) {
+        return !staleViewModeTiles.contains(key);
     }
 
     private void markBiomeDirtyIfRequested(final TileKey key, final long token) {
