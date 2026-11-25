@@ -30,6 +30,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import org.apache.logging.log4j.Logger;
 
 /**
@@ -85,6 +86,8 @@ public final class RegionDiskCache {
     private boolean regionLoadDrainScheduled;
     /** Last {@link RegionColumns#version()} successfully written to disk, per (layer, region). */
     private final Map<RegionSlot, Integer> flushedVersion = new ConcurrentHashMap<>();
+    /** Increments whenever {@link #sweep} evicts at least one loaded region back to disk. */
+    private final AtomicLong evictionEpoch = new AtomicLong();
     private volatile long lastSweepAtMs = System.currentTimeMillis();
 
     public RegionDiskCache(
@@ -430,6 +433,16 @@ public final class RegionDiskCache {
         io.execute(() -> sweep(playerRegionX, playerRegionZ));
     }
 
+    /** Monotonic counter bumped whenever {@link #sweep} evicts any region back to disk. */
+    public long evictionEpoch() {
+        return evictionEpoch.get();
+    }
+
+    /** Test-support only: runs one flush + eviction sweep immediately. */
+    void sweepForTest(final int playerRegionX, final int playerRegionZ) {
+        sweep(playerRegionX, playerRegionZ);
+    }
+
     private void sweep(final int playerRegionX, final int playerRegionZ) {
         final MapWorld world = mapWorlds.ifCurrent(token);
         if (world == null) {
@@ -443,7 +456,9 @@ public final class RegionDiskCache {
                 final FlushResult result = flushIfDirty(region, type);
                 flushed += result.written() ? 1 : 0;
                 final boolean farAway = chebyshev(region.regionX, region.regionZ, playerRegionX, playerRegionZ) > EVICT_DISTANCE_REGIONS;
-                if (farAway && result.diskVersion() >= 0 && store.evictIfUnchanged(region, result.diskVersion())) {
+                final boolean pinnedByViewport = tiles.isRegionInActiveViewport(type, region.regionX, region.regionZ);
+                if (farAway && !pinnedByViewport
+                    && result.diskVersion() >= 0 && store.evictIfUnchanged(region, result.diskVersion())) {
                     final RegionSlot slot = new RegionSlot(type, region.regionX, region.regionZ);
                     flushedVersion.remove(slot);
                     regionLoadTouched.remove(slot);
@@ -456,6 +471,7 @@ public final class RegionDiskCache {
             logger.info("cache: flushed {} regions", flushed);
         }
         if (evicted > 0) {
+            evictionEpoch.incrementAndGet();
             logger.info("cache: evicted {} regions from memory (kept on disk)", evicted);
         }
     }

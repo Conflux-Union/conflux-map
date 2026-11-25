@@ -89,6 +89,8 @@ public final class TileService {
     private ViewportRect viewport;
     /** Next LOD-0 region in the current viewport to offer to the bounded disk-load queue. */
     private long viewportRegionLoadCursor;
+    /** Last disk-cache eviction epoch observed by {@link #setViewport}. */
+    private long observedEvictionEpoch;
     /** Invalidates a composition that started before a global rendering-input change. Guarded by this. */
     private long compositionGeneration;
 
@@ -154,6 +156,7 @@ public final class TileService {
             uploads.clear();
             viewport = null;
             viewportRegionLoadCursor = 0L;
+            observedEvictionEpoch = 0L;
         }
         localAuthorityViewport = null;
     }
@@ -179,10 +182,16 @@ public final class TileService {
         final ViewportRect next = new ViewportRect(layer.type(), lod, minTileX, maxTileX, minTileZ, maxTileZ);
         final MapWorld world = mapWorlds.current();
         final long token = world == null ? 0L : world.session().token();
+        final RegionCacheService cacheService = regionCache;
+        final RegionDiskCache cache = cacheService == null ? null : cacheService.current();
+        final long currentEvictionEpoch = cache == null ? 0L : cache.evictionEpoch();
         synchronized (this) {
-            if (!next.equals(viewport)) {
+            final boolean viewportChanged = !next.equals(viewport);
+            final boolean cacheEvictedSinceLastViewport = currentEvictionEpoch != observedEvictionEpoch;
+            if (viewportChanged || cacheEvictedSinceLastViewport) {
                 viewportRegionLoadCursor = 0L;
-                if (world != null) {
+                observedEvictionEpoch = currentEvictionEpoch;
+                if (world != null && viewportChanged) {
                     promoteStale(next, token);
                 }
             }
@@ -190,6 +199,20 @@ public final class TileService {
         }
         scheduleViewportRegionLoads(next);
         pump();
+    }
+
+    /** True when {@code (type, regionX, regionZ)} feeds any tile in the open fullscreen viewport. */
+    public synchronized boolean isRegionInActiveViewport(
+        final MapLayer.Type type, final int regionX, final int regionZ
+    ) {
+        final ViewportRect active = viewport;
+        if (active == null || active.layerType() != type) {
+            return false;
+        }
+        final int tileX = regionX >> active.lod();
+        final int tileZ = regionZ >> active.lod();
+        return tileX >= active.minTileX() && tileX <= active.maxTileX()
+            && tileZ >= active.minTileZ() && tileZ <= active.maxTileZ();
     }
 
     /**
