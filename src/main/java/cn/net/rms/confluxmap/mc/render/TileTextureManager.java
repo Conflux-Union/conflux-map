@@ -501,6 +501,9 @@ public final class TileTextureManager {
             forgetResidentTile(entry.getKey());
         }
         textures.clear();
+        for (final TileKey emptyKey : emptyRealTiles.keySet()) {
+            tiles.forgetTile(emptyKey);
+        }
         emptyRealTiles.clear();
         drawnThisFrame.clear();
         drawnLastFrame.clear();
@@ -541,5 +544,10 @@ public final class TileTextureManager {
     /** Test-support only: snapshot of the keys with a resident GPU texture (monitor-guarded). */
     public synchronized Set<TileKey> residentTexturesForTest() {
         return new HashSet<>(textures.keySet());
+    }
+
+    /** Test-support only: snapshot of real-tile keys currently tracked as empty (monitor-guarded). */
+    public synchronized Set<TileKey> emptyTrackedTilesForTest() {
+        return new HashSet<>(emptyRealTiles.keySet());
     }
 }
