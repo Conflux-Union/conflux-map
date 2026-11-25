@@ -897,24 +897,28 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
         }
 
-        addViewToggle(x, top, MAP_LOADED_RANGE_ICON, "confluxmap.map.loaded_range",
-            config.fullscreenLoadedRangeVisible, this::toggleLoadedRange);
-        addViewToggle(x, top, MAP_CHUNK_GRID_ICON, "confluxmap.map.chunk_grid",
-            config.fullmapChunkGrid, this::toggleChunkGrid);
+        final boolean loadedRangeVisible = config.fullscreenLoadedRangeVisible;
+        addViewToggle(x, top, MAP_LOADED_RANGE_ICON, "confluxmap.map.loaded_range", loadedRangeVisible,
+            loadedRangeVisible ? "confluxmap.map.loaded_range.on" : "confluxmap.map.loaded_range.off",
+            this::toggleLoadedRange);
+        final boolean chunkGridVisible = config.fullmapChunkGrid;
+        addViewToggle(x, top, MAP_CHUNK_GRID_ICON, "confluxmap.map.chunk_grid", chunkGridVisible,
+            chunkGridVisible ? "confluxmap.map.chunk_grid.on" : "confluxmap.map.chunk_grid.off",
+            this::toggleChunkGrid);
         layoutExpandedControls(x, top);
         refreshDisplayModeButton();
     }
 
     private void addViewToggle(
         final int x, final int top, final Identifier icon, final String key,
-        final boolean selected, final Runnable toggle
+        final boolean selected, final String tooltipKey, final Runnable toggle
     ) {
         final MapIconButton button = addDrawableChild(
             new MapIconButton(x, top, icon, Texts.translatable(key), ignored -> toggle.run())
         );
         trackExpansionButton(button);
         button.setSelected(selected);
-        setHoverTooltip(button, key + (selected ? ".on" : ".off"));
+        setHoverTooltip(button, tooltipKey);
     }
 
     private void rebuildWaypointGroupControls(final int top) {

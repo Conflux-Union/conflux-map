@@ -8,6 +8,7 @@ import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import java.lang.reflect.Proxy;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -83,11 +84,18 @@ final class UiResourceThemeTest {
             "structure_visibility.png"
         );
 
+        final Set<Identifier> expected = new HashSet<>();
         for (final String file : nativeOnly) {
             final Identifier icon = Ids.of("confluxmap", "textures/gui/" + file);
+            expected.add(icon);
             assertEquals(UiIcon.monochrome(icon), theme.icon(icon), file);
         }
-        assertEquals(43, UiResourceTheme.auditedIconIds().size());
+        for (final String file : List.of(
+            "group_waypoints.png", "waypoint_manage.png", "map_export.png", "map_settings.png"
+        )) {
+            expected.add(Ids.of("confluxmap", "textures/gui/" + file));
+        }
+        assertEquals(expected, UiResourceTheme.auditedIconIds());
     }
 
     @Test
