@@ -36,14 +36,54 @@ package cn.net.rms.confluxmap.gametest;
 //$$     /** Zoom (blocks per GUI pixel) pinned in every phase; ULTRA_QUALITY keeps LOD 1 on screen. */
 //$$     private static final double MAP_SCALE = 12.4;
 //$$
-//$$     /** One phase's residency observation: what left the cache, and how visible residency moved. */
+//$$     /** Point-in-time view of GPU-resident textures and real tiles tracked as empty without textures. */
+//$$     private record Snapshot(Set<TileKey> resident, Set<TileKey> emptyTracked) {
+//$$         boolean covers(final TileKey key) {
+//$$             return resident.contains(key) || emptyTracked.contains(key);
+//$$         }
+//$$
+//$$         boolean coversAll(final Set<TileKey> visible) {
+//$$             for (final TileKey key : visible) {
+//$$                 if (!covers(key)) {
+//$$                     return false;
+//$$                 }
+//$$             }
+//$$             return true;
+//$$         }
+//$$
+//$$         int countResident(final Set<TileKey> visible) {
+//$$             int count = 0;
+//$$             for (final TileKey key : visible) {
+//$$                 if (resident.contains(key)) {
+//$$                     count++;
+//$$                 }
+//$$             }
+//$$             return count;
+//$$         }
+//$$
+//$$         int countEmptyTracked(final Set<TileKey> visible) {
+//$$             int count = 0;
+//$$             for (final TileKey key : visible) {
+//$$                 if (emptyTracked.contains(key)) {
+//$$                     count++;
+//$$                 }
+//$$             }
+//$$             return count;
+//$$         }
+//$$     }
+//$$
+//$$     /** One phase's residency observation: GPU evictions, unexpected empty-tracking losses, and bounds. */
 //$$     private record Sample(
 //$$         int samples,
 //$$         int visibleEvicted,
-//$$         int samplesWithVisibleEviction,
+//$$         int emptyLost,
+//$$         int samplesWithVisibleLoss,
 //$$         int minVisibleResident,
 //$$         int maxVisibleResident,
-//$$         int residentAtEnd
+//$$         int visibleResidentAtEnd,
+//$$         int visibleEmptyAtEnd,
+//$$         int cacheResidentAtEnd,
+//$$         Snapshot endSnapshot
 //$$     ) {
 //$$     }
 //$$
@@ -84,27 +124,28 @@ package cn.net.rms.confluxmap.gametest;
 //$$         final Set<TileKey> visible = visibleKeys(prediction);
 //$$         closeMap(context);
 //$$         final int defaultLimit = client.config().gpuTileCacheLimit;
-//$$         // Half the drawn set, never below the smallest value the config accepts (16).
-//$$         final int smallLimit = Math.max(16, visible.size() / 2);
-//$$         ConfluxMapMod.LOGGER.info(
-//$$             "[texture-eviction-guard] drawn={} defaultLimit={} smallLimit={}",
-//$$             visible.size(), defaultLimit, smallLimit
-//$$         );
 //$$
 //$$         // A: the ordinary case - drawn set fits under the default limit.
 //$$         resetCache(context, client, textures, defaultLimit);
 //$$         openMap(context);
-//$$         final boolean aLoaded = awaitFullResidency(context, visible, textures);
+//$$         final boolean aLoaded = awaitVisibleCovered(context, visible, textures);
 //$$         final Sample a = sample(context, visible, textures);
-//$$         assertPhase("A default limit", a, visible, textures, aLoaded, defaultLimit);
+//$$         assertPhase("A default limit", a, visible, aLoaded, defaultLimit);
 //$$         closeMap(context);
 //$$
-//$$         // B: limit pushed below the drawn set from a cold cache.
+//$$         // Half the actual visible GPU-resident set from phase A, never below the smallest config limit (16).
+//$$         final int smallLimit = Math.max(16, a.visibleResidentAtEnd() / 2);
+//$$         ConfluxMapMod.LOGGER.info(
+//$$             "[texture-eviction-guard] drawn={} visibleResident={} visibleEmpty={} defaultLimit={} smallLimit={}",
+//$$             visible.size(), a.visibleResidentAtEnd(), a.visibleEmptyAtEnd(), defaultLimit, smallLimit
+//$$         );
+//$$
+//$$         // B: limit pushed below the visible GPU-resident set from a cold cache.
 //$$         resetCache(context, client, textures, smallLimit);
 //$$         openMap(context);
-//$$         final boolean bFull = awaitCacheFull(context, textures, smallLimit);
+//$$         final boolean bFull = awaitVisibleCoveredAndCacheAtLeast(context, visible, textures, smallLimit);
 //$$         final Sample b = sample(context, visible, textures);
-//$$         assertPhase("B under limit", b, visible, textures, bFull, smallLimit);
+//$$         assertPhase("B under limit", b, visible, bFull, smallLimit);
 //$$         closeMap(context);
 //$$
 //$$         // C: default limit with a drawn set that exceeds it for real - GUI scale 1 on the
@@ -121,43 +162,53 @@ package cn.net.rms.confluxmap.gametest;
 //$$         resetCache(context, client, textures, defaultLimit);
 //$$         openMap(context);
 //$$         final Set<TileKey> wideVisible = visibleKeys(prediction);
-//$$         // Wait for the full post-reset rebuild: on slow software-GL machines a premature
-//$$         // start blames the eviction guard for tiles the uploader has not produced yet.
-//$$         final boolean cFull = awaitFullResidency(context, wideVisible, textures);
+//$$         // Wait for full visible coverage and over-limit cache population: on slow software-GL
+//$$         // machines a premature start blames the eviction guard for tiles not yet uploaded.
+//$$         final boolean cFull = awaitVisibleCoveredAndCacheAtLeast(context, wideVisible, textures, defaultLimit);
 //$$         final Sample c = sample(context, wideVisible, textures);
-//$$         assertPhase("C default limit over", c, wideVisible, textures, cFull, defaultLimit);
+//$$         assertPhase("C default limit over", c, wideVisible, cFull, defaultLimit);
 //$$         closeMap(context);
 //$$     }
 //$$
-//$$     /** Fails the test unless the phase kept every drawn tile resident for the whole window. */
+//$$     /** Fails the test unless every drawn key stayed covered (GPU-resident or monotonically empty-tracked). */
 //$$     private static void assertPhase(
 //$$         final String phase,
 //$$         final Sample sample,
 //$$         final Set<TileKey> visible,
-//$$         final TileTextureManager textures,
 //$$         final boolean preconditionReached,
 //$$         final int limit
 //$$     ) {
 //$$         if (!preconditionReached) {
 //$$             throw new AssertionError(
 //$$                 phase + ": precondition not reached (drawn=" + visible.size()
-//$$                     + " limit=" + limit + " residentAtEnd=" + sample.residentAtEnd() + ")"
+//$$                     + " limit=" + limit + " visibleResidentAtEnd=" + sample.visibleResidentAtEnd()
+//$$                     + " visibleEmptyAtEnd=" + sample.visibleEmptyAtEnd()
+//$$                     + " cacheResidentAtEnd=" + sample.cacheResidentAtEnd() + ")"
 //$$             );
 //$$         }
 //$$         if (sample.visibleEvicted() > 0) {
 //$$             throw new AssertionError(
-//$$                 phase + ": " + sample.visibleEvicted() + " drawn tiles left the cache across "
-//$$                     + sample.samplesWithVisibleEviction() + " of " + sample.samples()
+//$$                 phase + ": " + sample.visibleEvicted() + " drawn GPU tiles left resident cache across "
+//$$                     + sample.samplesWithVisibleLoss() + " of " + sample.samples()
 //$$                     + " samples (drawn=" + visible.size() + " limit=" + limit
 //$$                     + " residentRange=[" + sample.minVisibleResident() + ".."
 //$$                     + sample.maxVisibleResident() + "])"
 //$$             );
 //$$         }
-//$$         if (!textures.residentTexturesForTest().containsAll(visible)) {
+//$$         if (sample.emptyLost() > 0) {
 //$$             throw new AssertionError(
-//$$                 phase + ": drawn tiles missing from residency after the sample window (drawn="
-//$$                     + visible.size() + " limit=" + limit + " residentAtEnd="
-//$$                     + sample.residentAtEnd() + ")"
+//$$                 phase + ": " + sample.emptyLost()
+//$$                     + " empty-tracked visible tiles disappeared without promoting to GPU across "
+//$$                     + sample.samplesWithVisibleLoss() + " of " + sample.samples()
+//$$                     + " samples (drawn=" + visible.size() + " limit=" + limit + ")"
+//$$             );
+//$$         }
+//$$         if (!sample.endSnapshot().coversAll(visible)) {
+//$$             throw new AssertionError(
+//$$                 phase + ": drawn tiles missing from coverage after the sample window (drawn="
+//$$                     + visible.size() + " limit=" + limit
+//$$                     + " visibleResidentAtEnd=" + sample.visibleResidentAtEnd()
+//$$                     + " visibleEmptyAtEnd=" + sample.visibleEmptyAtEnd() + ")"
 //$$             );
 //$$         }
 //$$     }
@@ -208,13 +259,17 @@ package cn.net.rms.confluxmap.gametest;
 //$$         return keys;
 //$$     }
 //$$
-//$$     private static boolean awaitFullResidency(
+//$$     private static Snapshot captureSnapshot(final TileTextureManager textures) {
+//$$         return new Snapshot(textures.residentTexturesForTest(), textures.emptyTrackedTilesForTest());
+//$$     }
+//$$
+//$$     private static boolean awaitVisibleCovered(
 //$$         final ClientGameTestContext context,
 //$$         final Set<TileKey> visible,
 //$$         final TileTextureManager textures
 //$$     ) {
 //$$         for (int waited = 0; waited < LOAD_TICKS; waited++) {
-//$$             if (context.computeOnClient(minecraft -> textures.residentTexturesForTest().containsAll(visible))) {
+//$$             if (context.computeOnClient(minecraft -> captureSnapshot(textures).coversAll(visible))) {
 //$$                 return true;
 //$$             }
 //$$             context.waitTick();
@@ -222,13 +277,17 @@ package cn.net.rms.confluxmap.gametest;
 //$$         return false;
 //$$     }
 //$$
-//$$     private static boolean awaitCacheFull(
+//$$     private static boolean awaitVisibleCoveredAndCacheAtLeast(
 //$$         final ClientGameTestContext context,
+//$$         final Set<TileKey> visible,
 //$$         final TileTextureManager textures,
-//$$         final int limit
+//$$         final int minResidentCache
 //$$     ) {
 //$$         for (int waited = 0; waited < LOAD_TICKS; waited++) {
-//$$             if (context.computeOnClient(minecraft -> textures.residentTexturesForTest().size() >= limit)) {
+//$$             if (context.computeOnClient(minecraft -> {
+//$$                 final Snapshot snapshot = captureSnapshot(textures);
+//$$                 return snapshot.resident().size() >= minResidentCache && snapshot.coversAll(visible);
+//$$             })) {
 //$$                 return true;
 //$$             }
 //$$             context.waitTick();
@@ -236,46 +295,60 @@ package cn.net.rms.confluxmap.gametest;
 //$$         return false;
 //$$     }
 //$$
-//$$     /** Once per tick: which drawn keys left since the previous sample, and drawn residency bounds. */
+//$$     /**
+//$$      * Once per tick: which drawn GPU textures left resident cache, and whether any empty-tracked
+//$$      * real tile disappeared without promoting into resident GPU cache.
+//$$      */
 //$$     private static Sample sample(
 //$$         final ClientGameTestContext context,
 //$$         final Set<TileKey> visible,
 //$$         final TileTextureManager textures
 //$$     ) {
-//$$         final Set<TileKey> previous = new HashSet<>(textures.residentTexturesForTest());
+//$$         final Snapshot[] previous = {
+//$$             context.computeOnClient(minecraft -> captureSnapshot(textures))
+//$$         };
 //$$         final int[] taken = {0};
 //$$         final int[] visibleEvicted = {0};
-//$$         final int[] samplesWithVisibleEviction = {0};
-//$$         final int[] leftThisTick = {0};
+//$$         final int[] emptyLost = {0};
+//$$         final int[] samplesWithVisibleLoss = {0};
 //$$         final int[] minResident = {Integer.MAX_VALUE};
 //$$         final int[] maxResident = {Integer.MIN_VALUE};
 //$$         context.waitFor(waitClient -> {
-//$$             final Set<TileKey> resident = textures.residentTexturesForTest();
-//$$             leftThisTick[0] = 0;
-//$$             for (final TileKey key : previous) {
-//$$                 if (!resident.contains(key) && visible.contains(key)) {
+//$$             final Snapshot current = captureSnapshot(textures);
+//$$             int lostThisTick = 0;
+//$$             for (final TileKey key : previous[0].resident()) {
+//$$                 if (!current.resident().contains(key) && visible.contains(key)) {
 //$$                     visibleEvicted[0]++;
-//$$                     leftThisTick[0]++;
+//$$                     lostThisTick++;
 //$$                 }
 //$$             }
-//$$             if (leftThisTick[0] > 0) {
-//$$                 samplesWithVisibleEviction[0]++;
-//$$             }
-//$$             int visibleResident = 0;
-//$$             for (final TileKey key : visible) {
-//$$                 if (resident.contains(key)) {
-//$$                     visibleResident++;
+//$$             for (final TileKey key : previous[0].emptyTracked()) {
+//$$                 if (visible.contains(key) && !current.covers(key)) {
+//$$                     emptyLost[0]++;
+//$$                     lostThisTick++;
 //$$                 }
 //$$             }
+//$$             if (lostThisTick > 0) {
+//$$                 samplesWithVisibleLoss[0]++;
+//$$             }
+//$$             final int visibleResident = current.countResident(visible);
 //$$             minResident[0] = Math.min(minResident[0], visibleResident);
 //$$             maxResident[0] = Math.max(maxResident[0], visibleResident);
-//$$             previous.clear();
-//$$             previous.addAll(resident);
+//$$             previous[0] = current;
 //$$             return ++taken[0] >= SAMPLES;
 //$$         }, SAMPLES + 40);
+//$$         final Snapshot end = previous[0];
 //$$         return new Sample(
-//$$             taken[0], visibleEvicted[0], samplesWithVisibleEviction[0],
-//$$             minResident[0], maxResident[0], previous.size()
+//$$             taken[0],
+//$$             visibleEvicted[0],
+//$$             emptyLost[0],
+//$$             samplesWithVisibleLoss[0],
+//$$             minResident[0],
+//$$             maxResident[0],
+//$$             end.countResident(visible),
+//$$             end.countEmptyTracked(visible),
+//$$             end.resident().size(),
+//$$             end
 //$$         );
 //$$     }
 //$$ }

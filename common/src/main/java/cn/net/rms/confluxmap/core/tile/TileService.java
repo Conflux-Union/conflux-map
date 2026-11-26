@@ -66,6 +66,8 @@ public final class TileService {
     private final Map<TileKey, DirtyWork> dirty = new HashMap<>();
     /** Guarded by {@code this}: tiles currently being composed on a worker. */
     private final Set<TileKey> inFlight = new HashSet<>();
+    /** Guarded by {@code this}: in-flight compositions started from partial region/chunk dirty work. */
+    private final Set<TileKey> inFlightIncremental = new HashSet<>();
     /**
      * Guarded by {@code this}: tiles the renderer has asked for at least once and has not
      * reported dropping. A tile outside this set has no texture to keep fresh, so invalidating
@@ -87,6 +89,8 @@ public final class TileService {
     private ViewportRect viewport;
     /** Next LOD-0 region in the current viewport to offer to the bounded disk-load queue. */
     private long viewportRegionLoadCursor;
+    /** Last disk-cache eviction epoch observed by {@link #setViewport}. */
+    private long observedEvictionEpoch;
     /** Invalidates a composition that started before a global rendering-input change. Guarded by this. */
     private long compositionGeneration;
 
@@ -146,11 +150,13 @@ public final class TileService {
         synchronized (this) {
             dirty.clear();
             inFlight.clear();
+            inFlightIncremental.clear();
             requestedTiles.clear();
             staleTiles.clear();
             uploads.clear();
             viewport = null;
             viewportRegionLoadCursor = 0L;
+            observedEvictionEpoch = 0L;
         }
         localAuthorityViewport = null;
     }
@@ -176,10 +182,16 @@ public final class TileService {
         final ViewportRect next = new ViewportRect(layer.type(), lod, minTileX, maxTileX, minTileZ, maxTileZ);
         final MapWorld world = mapWorlds.current();
         final long token = world == null ? 0L : world.session().token();
+        final RegionCacheService cacheService = regionCache;
+        final RegionDiskCache cache = cacheService == null ? null : cacheService.current();
+        final long currentEvictionEpoch = cache == null ? 0L : cache.evictionEpoch();
         synchronized (this) {
-            if (!next.equals(viewport)) {
+            final boolean viewportChanged = !next.equals(viewport);
+            final boolean cacheEvictedSinceLastViewport = currentEvictionEpoch != observedEvictionEpoch;
+            if (viewportChanged || cacheEvictedSinceLastViewport) {
                 viewportRegionLoadCursor = 0L;
-                if (world != null) {
+                observedEvictionEpoch = currentEvictionEpoch;
+                if (world != null && viewportChanged) {
                     promoteStale(next, token);
                 }
             }
@@ -187,6 +199,20 @@ public final class TileService {
         }
         scheduleViewportRegionLoads(next);
         pump();
+    }
+
+    /** True when {@code (type, regionX, regionZ)} feeds any tile in the open fullscreen viewport. */
+    public synchronized boolean isRegionInActiveViewport(
+        final MapLayer.Type type, final int regionX, final int regionZ
+    ) {
+        final ViewportRect active = viewport;
+        if (active == null || active.layerType() != type) {
+            return false;
+        }
+        final int tileX = regionX >> active.lod();
+        final int tileZ = regionZ >> active.lod();
+        return tileX >= active.minTileX() && tileX <= active.maxTileX()
+            && tileZ >= active.minTileZ() && tileZ <= active.maxTileZ();
     }
 
     /**
@@ -608,12 +634,20 @@ public final class TileService {
         synchronized (this) {
             requestedTiles.add(key);
             staleTiles.remove(key);
-            // A missing texture is checked once per rendered frame. Do not turn that repeated
-            // check into an invalidation loop while the same tile is already queued or composing.
-            if (dirty.containsKey(key) || inFlight.contains(key)) {
+            // A missing texture is checked once per rendered frame. Upgrade any pending incremental
+            // patch to a full composition so an evicted texture never initializes with partial data,
+            // while avoiding duplicate enqueues when a full composition is already queued or running.
+            final DirtyWork queued = dirty.get(key);
+            if (queued != null && queued.regions == null) {
+                return;
+            }
+            if (inFlight.contains(key) && !inFlightIncremental.contains(key)) {
                 return;
             }
             dirty.merge(key, DirtyWork.full(session.token()), DirtyWork::merge);
+            if (inFlight.contains(key)) {
+                return;
+            }
         }
         pump();
         // A viewport proactively schedules every covered region at higher LODs. Keep this direct
@@ -637,6 +671,8 @@ public final class TileService {
     public synchronized void forgetTile(final TileKey key) {
         requestedTiles.remove(key);
         staleTiles.remove(key);
+        dirty.remove(key);
+        uploads.remove(key);
     }
 
     /**
@@ -795,6 +831,11 @@ public final class TileService {
                 work = dirty.remove(next);
                 generation = compositionGeneration;
                 inFlight.add(next);
+                if (work.regions != null) {
+                    inFlightIncremental.add(next);
+                } else {
+                    inFlightIncremental.remove(next);
+                }
             }
             executors.workers().execute(() -> composeAndFinish(next, work, generation));
         }
@@ -849,6 +890,7 @@ public final class TileService {
         } finally {
             synchronized (this) {
                 inFlight.remove(key);
+                inFlightIncremental.remove(key);
             }
             pump();
         }
@@ -864,8 +906,14 @@ public final class TileService {
     ) {
         final List<TileKey> evicted;
         synchronized (this) {
-            evicted = update == null ? List.of() : enqueueUploadLocked(update, generation);
+            final boolean wasIncremental = inFlightIncremental.remove(key);
             inFlight.remove(key);
+            final boolean supersededByFullRequest = wasIncremental
+                && dirty.containsKey(key) && dirty.get(key).regions == null;
+            final boolean dropped = update == null
+                || (!PredictedTileKeys.isPredicted(key)
+                    && (!requestedTiles.contains(key) || supersededByFullRequest));
+            evicted = dropped ? List.of() : enqueueUploadLocked(update, generation);
         }
         // Outside the monitor: recomposing goes back through markDirty() and pump().
         for (final TileKey evictedKey : evicted) {
@@ -977,7 +1025,7 @@ public final class TileService {
             ? null
             : new TileUpdate.Relight(daylightFactor, gamma, lightPlane, mapColorStyle);
         return payloadBounds == null
-            ? new TileUpdate(key, pixels, List.copyOf(changed), relight)
+            ? TileUpdate.composed(key, pixels, List.copyOf(changed), relight, work.regions == null)
             : TileUpdate.patch(key, pixels, payloadBounds, relight);
     }
 
@@ -1631,6 +1679,16 @@ public final class TileService {
     /** Drops queued uploads matching a cache-plane predicate before that plane is rebuilt. */
     public synchronized void discardUploads(final Predicate<TileKey> predicate) {
         uploads.keySet().removeIf(predicate);
+    }
+
+    /** Pending uploads waiting for the render thread to drain them. */
+    public synchronized int pendingUploadCount() {
+        return uploads.size();
+    }
+
+    /** Hard bound on {@link #uploads} before enqueueing a new update evicts the oldest one. */
+    public int uploadQueueCapacity() {
+        return UPLOAD_QUEUE_CAPACITY;
     }
 
     /** Render thread: pop up to {@code max} freshly-composed tiles to upload to the GPU. */

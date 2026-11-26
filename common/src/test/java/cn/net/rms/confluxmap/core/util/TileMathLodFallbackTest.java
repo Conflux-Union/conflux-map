@@ -61,6 +61,20 @@ class TileMathLodFallbackTest {
     }
 
     @Test
+    void multiLevelAncestorTilesAndUvsMapArbitraryPositiveAndNegativeCoordinates() {
+        assertEquals(1, TileMath.ancestorTile(5, 2));
+        assertEquals(-1, TileMath.ancestorTile(-1, 3));
+        assertEquals(-1, TileMath.ancestorTile(-4, 2));
+        assertEquals(-2, TileMath.ancestorTile(-5, 2));
+
+        final float[] uv = new float[4];
+        TileMath.ancestorUv(-4, -1, 2, uv);
+        assertArrayEquals(new float[]{0.0f, 0.75f, 0.25f, 1.0f}, uv);
+        TileMath.ancestorUv(7, 5, 3, uv);
+        assertArrayEquals(new float[]{0.875f, 0.625f, 1.0f, 0.75f}, uv);
+    }
+
+    @Test
     void childTilesReconstructAllFourQuadrants() {
         assertEquals(4, TileMath.childTile(2, 0));
         assertEquals(5, TileMath.childTile(2, 1));

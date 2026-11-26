@@ -258,6 +258,67 @@ class RegionCacheViewportLoadTest {
         }
     }
 
+    @Test
+    void sweepKeepsActiveViewportRegionsResidentAndResetsCursorAfterEviction(@TempDir final Path tempDir)
+        throws Exception {
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final WorldIdentity identity = new WorldIdentity("local", "viewport-eviction-test");
+            final SessionGuard.Session session = new SessionGuard.Session(1L, identity, DimensionId.OVERWORLD);
+            final MapWorldService mapWorlds = new MapWorldService();
+            final TileService tiles = new TileService(
+                mapWorlds, executors, new ConfluxConfig(), new DaylightModel()
+            );
+            final RegionCacheService cacheService = new RegionCacheService(
+                tempDir, mapWorlds, executors, tiles, LogManager.getLogger("RegionCacheViewportLoadTest")
+            );
+            tiles.bindRegionCache(cacheService);
+            cacheService.onSessionChanged(session);
+            writeRegion(tempDir, session, 20, 0);
+            writeRegion(tempDir, session, 21, 0);
+
+            final RegionDiskCache cache = cacheService.current();
+            assertNotNull(cache);
+
+            // Pin (20, 0) inside the open fullscreen viewport while leaving (21, 0) outside.
+            tiles.setViewport(MapLayer.SURFACE, 0, 20, 20, 0, 0);
+            final MapWorld world = mapWorlds.current();
+            final long deadline = System.nanoTime() + 5_000_000_000L;
+            while (System.nanoTime() < deadline
+                && world.store(MapLayer.SURFACE).region(20, 0) == null) {
+                Thread.sleep(10L);
+            }
+            assertNotNull(world.store(MapLayer.SURFACE).region(20, 0));
+            assertTrue(cache.awaitRegionLoaded(MapLayer.Type.SURFACE, 21, 0).get() == null);
+            assertNotNull(world.store(MapLayer.SURFACE).region(21, 0));
+
+            // Player is at (0, 0), far beyond EVICT_DISTANCE_REGIONS from both (20, 0) and (21, 0).
+            cache.sweepForTest(0, 0);
+            assertNotNull(
+                world.store(MapLayer.SURFACE).region(20, 0),
+                "Active fullscreen viewport must protect visible far regions from sweep eviction"
+            );
+            assertFalse(
+                world.store(MapLayer.SURFACE).region(21, 0) != null,
+                "Far unpinned region should still be evicted from memory"
+            );
+
+            // Keeping the same viewport coordinates after an eviction must reload the evicted region.
+            tiles.setViewport(MapLayer.SURFACE, 0, 21, 21, 0, 0);
+            final long reloadDeadline = System.nanoTime() + 5_000_000_000L;
+            while (System.nanoTime() < reloadDeadline
+                && world.store(MapLayer.SURFACE).region(21, 0) == null) {
+                Thread.sleep(10L);
+            }
+            assertNotNull(
+                world.store(MapLayer.SURFACE).region(21, 0),
+                "Viewport targeting an evicted region must reload it from disk"
+            );
+        } finally {
+            executors.shutdown(2_000L);
+        }
+    }
+
     private static void awaitRegions(final MapWorld world, final int regionsPerSide) throws InterruptedException {
         final long deadline = System.nanoTime() + 5_000_000_000L;
         while (System.nanoTime() < deadline) {

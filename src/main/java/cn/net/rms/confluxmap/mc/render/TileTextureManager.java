@@ -54,6 +54,8 @@ public final class TileTextureManager {
      * wide GUIs on the finest tiers - evicts drawn tiles again.
      */
     private static final int HARD_CACHE_LIMIT = 2048;
+    /** Tracks empty real tiles so frames avoid re-requesting without allocating GPU textures. */
+    private static final int EMPTY_TILE_TRACK_LIMIT = HARD_CACHE_LIMIT * 4;
 
     private final ConfluxConfig config;
     private final TileService tiles;
@@ -61,6 +63,8 @@ public final class TileTextureManager {
     private final DaylightModel daylightModel;
     /** Access-order so the least-recently-bound tile is always first (LRU eviction). */
     private final LinkedHashMap<TileKey, TileTexture> textures = new LinkedHashMap<>(64, 0.75f, true);
+    /** Access-order LRU of real tiles that composed completely transparent; holds zero GPU textures. */
+    private final LinkedHashMap<TileKey, Boolean> emptyRealTiles = new LinkedHashMap<>(64, 0.75f, true);
     /**
      * Keys bound by a draw this frame and last frame, across every bind path (fullscreen real,
      * predicted, minimap, fallbacks): eviction skips them, so the cap limits tiles nothing is
@@ -68,6 +72,8 @@ public final class TileTextureManager {
      */
     private final Set<TileKey> drawnThisFrame = new HashSet<>();
     private final Set<TileKey> drawnLastFrame = new HashSet<>();
+    private final Set<TileKey> emptyProbedThisFrame = new HashSet<>();
+    private final Set<TileKey> emptyProbedLastFrame = new HashSet<>();
     /** Set once per hard-cap excursion so the warning can't spam every frame. */
     private boolean hardCapLogged;
 
@@ -108,6 +114,9 @@ public final class TileTextureManager {
         drawnLastFrame.clear();
         drawnLastFrame.addAll(drawnThisFrame);
         drawnThisFrame.clear();
+        emptyProbedLastFrame.clear();
+        emptyProbedLastFrame.addAll(emptyProbedThisFrame);
+        emptyProbedThisFrame.clear();
         final List<TileUpdate> updates = tiles.drainUploads(UPLOADS_PER_FRAME);
         for (final TileUpdate update : updates) {
             upload(update);
@@ -117,25 +126,42 @@ public final class TileTextureManager {
     }
 
     private void upload(final TileUpdate update) {
+        final TileKey key = update.key();
+        final boolean predicted = PredictedTileKeys.isPredicted(key);
         // Debug-gated e2e accounting: the completion report closes the prediction viewport
         // window's "displayed" half, so it must fire only when the texture actually uploaded.
-        final boolean timed = PredictedTileKeys.isPredicted(update.key())
-            && PredictionTileService.debugTimingEnabled();
+        final boolean timed = predicted && PredictionTileService.debugTimingEnabled();
         final long uploadStartNanos = timed ? System.nanoTime() : 0L;
-        TileTexture entry = textures.get(update.key());
+        TileTexture entry = textures.get(key);
         final boolean fresh = entry == null;
+        final boolean wasTrackedEmpty = !predicted && emptyRealTiles.remove(key) != null;
+        if (fresh && !predicted) {
+            if (!update.fullComposition() && !wasTrackedEmpty) {
+                if (emptyProbedThisFrame.contains(key) || emptyProbedLastFrame.contains(key)
+                    || drawnThisFrame.contains(key) || drawnLastFrame.contains(key)) {
+                    tiles.requestTile(key);
+                }
+                return;
+            }
+            if (!update.hasVisiblePixels()) {
+                emptyRealTiles.put(key, Boolean.TRUE);
+                emptyProbedThisFrame.add(key);
+                tiles.retainTile(key);
+                return;
+            }
+        }
         if (fresh) {
             //#if MC>=12105
             //$$ entry = new TileTexture(new NativeImageBackedTexture("Conflux Map tile", TILE_SIZE, TILE_SIZE, false));
             //#else
             entry = new TileTexture(new NativeImageBackedTexture(TILE_SIZE, TILE_SIZE, false));
             //#endif
-            textures.put(update.key(), entry);
+            textures.put(key, entry);
             // Guard the fresh texture against same-frame eviction; tiles nothing draws lose
             // the guard on the next frame's roll.
-            drawnThisFrame.add(update.key());
-            if (!PredictedTileKeys.isPredicted(update.key())) {
-                tiles.retainTile(update.key());
+            drawnThisFrame.add(key);
+            if (!predicted) {
+                tiles.retainTile(key);
             }
         }
         final NativeImage image = entry.texture.getImage();
@@ -296,6 +322,7 @@ public final class TileTextureManager {
      * regardless of drawing to keep the VRAM use bounded.
      */
     private void evictOverLimit() {
+        trimEmptyRealTiles();
         final int limit = config.gpuTileCacheLimit;
         int over = textures.size() - limit;
         if (over <= 0) {
@@ -311,7 +338,7 @@ public final class TileTextureManager {
             oldest.getValue().texture.close();
             // Nothing holds this tile's pixels any more, so the composer must stop refreshing it
             // and go back to composing it in full when bind() next asks for it.
-            tiles.forgetTile(oldest.getKey());
+            forgetResidentTile(oldest.getKey());
             over--;
         }
         if (over > 0 && textures.size() > HARD_CACHE_LIMIT) {
@@ -329,9 +356,26 @@ public final class TileTextureManager {
                 final Map.Entry<TileKey, TileTexture> oldest = it.next();
                 it.remove();
                 oldest.getValue().texture.close();
-                tiles.forgetTile(oldest.getKey());
+                forgetResidentTile(oldest.getKey());
                 over--;
             }
+        }
+    }
+
+    private void trimEmptyRealTiles() {
+        int over = emptyRealTiles.size() - EMPTY_TILE_TRACK_LIMIT;
+        if (over <= 0) {
+            return;
+        }
+        final Iterator<Map.Entry<TileKey, Boolean>> it = emptyRealTiles.entrySet().iterator();
+        while (over > 0 && it.hasNext()) {
+            final TileKey oldest = it.next().getKey();
+            if (emptyProbedThisFrame.contains(oldest) || emptyProbedLastFrame.contains(oldest)) {
+                continue;
+            }
+            it.remove();
+            tiles.forgetTile(oldest);
+            over--;
         }
     }
 
@@ -345,6 +389,8 @@ public final class TileTextureManager {
         if (!bindIfResident(key)) {
             if (PredictedTileKeys.isPredicted(key)) {
                 predictionTiles.requestTile(key);
+            } else if (emptyRealTiles.get(key) != null) {
+                emptyProbedThisFrame.add(key);
             } else {
                 tiles.requestTile(key);
             }
@@ -353,46 +399,72 @@ public final class TileTextureManager {
         return true;
     }
 
-    /**
-     * Binds the parent tile one LOD coarser than {@code key} when it is resident, filling
-     * {@code uvOut} with the {@code [u0, v0, u1, v1]} quadrant of that parent covering {@code key}.
-     * Read-only on a miss: a missing parent is not requested, because the caller only wants it as a
-     * stand-in while {@code key} itself loads. Returns false (leaving {@code uvOut} untouched) when
-     * no coarser tile exists - at {@link TileMath#MAX_LOD}, before that parent has uploaded, or
-     * when a predicted parent's composition has gone stale (see {@link #bindFallbackChild}).
-     */
-    public boolean bindFallbackParent(final TileKey key, final float[] uvOut) {
-        if (key.lod() >= TileMath.MAX_LOD) {
-            return false;
+    /** True when {@code key} currently holds an uploaded GPU texture without triggering requests. */
+    public boolean isResident(final TileKey key) {
+        return textures.containsKey(key);
+    }
+
+    /** Binds {@code key} only if its GPU texture is resident, without queueing missing tiles. */
+    public boolean bindResident(final TileKey key) {
+        return bindIfResident(key);
+    }
+
+    /** Enqueues a missing real tile unless it is already tracked as composing to zero alpha. */
+    public void requestMissingReal(final TileKey key) {
+        if (textures.containsKey(key)) {
+            return;
         }
-        final TileKey parent = new TileKey(
-            key.world(), key.dimension(), key.layerId(),
-            key.lod() + 1,
-            TileMath.parentTile(key.tileX()),
-            TileMath.parentTile(key.tileZ())
-        );
-        if (!bindFallbackIfFresh(parent)) {
-            return false;
+        if (emptyRealTiles.get(key) != null) {
+            emptyProbedThisFrame.add(key);
+        } else {
+            tiles.requestTile(key);
         }
-        TileMath.parentUv(key.tileX(), key.tileZ(), uvOut);
-        return true;
+    }
+
+    /** Enqueues a missing predicted tile when no GPU texture is resident for {@code key}. */
+    public void requestMissingPredicted(final TileKey key) {
+        if (!textures.containsKey(key)) {
+            predictionTiles.requestTile(key);
+        }
     }
 
     /**
-     * Binds a resident finer tile for the children fallback, read-only like the parent probe.
-     * A predicted tile additionally passes {@link PredictionTileService#compositionCurrent}:
-     * only the viewport's own LOD recomposes, so a tile left stale behind a zoom still claims
-     * terrain the real layer has since filled in, and drawing it across LODs would paint
-     * fabricated terrain over resident real tiles. A refused stand-in leaves the gap showing
-     * the background until the tile's LOD is viewed again.
+     * Whether {@code key} has a resident GPU texture valid as a cross-LOD underlay (rejecting
+     * predicted tiles whose {@link cn.net.rms.confluxmap.core.predict.PredictionViewMode} is
+     * stale, while tolerating real-coverage staleness because real tiles draw on top).
      */
-    public boolean bindFallbackChild(final TileKey key) {
-        return bindFallbackIfFresh(key);
+    public boolean isUnderlayFallbackUsable(final TileKey key) {
+        if (!textures.containsKey(key)) {
+            return false;
+        }
+        return !PredictedTileKeys.isPredicted(key) || predictionTiles.viewModeCurrent(key);
     }
 
-    /** Residency plus the predicted-composition validity every cross-LOD probe is gated on. */
-    private boolean bindFallbackIfFresh(final TileKey key) {
-        if (PredictedTileKeys.isPredicted(key) && !predictionTiles.compositionCurrent(key)) {
+    /** Binds an underlay fallback texture if {@link #isUnderlayFallbackUsable(TileKey)} holds. */
+    public boolean bindUnderlayFallback(final TileKey key) {
+        if (!isUnderlayFallbackUsable(key)) {
+            return false;
+        }
+        return bindIfResident(key);
+    }
+
+    /**
+     * Whether {@code key} has a resident GPU texture whose contents are valid to draw as a
+     * cross-LOD fallback without enqueueing any work.
+     */
+    public boolean isFallbackUsable(final TileKey key) {
+        if (!textures.containsKey(key)) {
+            return false;
+        }
+        return !PredictedTileKeys.isPredicted(key) || predictionTiles.compositionCurrent(key);
+    }
+
+    /**
+     * Binds {@code key} for a cross-LOD fallback draw without triggering any tile request on a
+     * miss; returns false when absent or (for predicted tiles) when its composition is stale.
+     */
+    public boolean bindFallback(final TileKey key) {
+        if (!isFallbackUsable(key)) {
             return false;
         }
         return bindIfResident(key);
@@ -426,11 +498,17 @@ public final class TileTextureManager {
         assert RenderSystem.isOnRenderThread() : "TileTextureManager.releaseAll() must run on the render thread";
         for (final Map.Entry<TileKey, TileTexture> entry : textures.entrySet()) {
             entry.getValue().texture.close();
-            tiles.forgetTile(entry.getKey());
+            forgetResidentTile(entry.getKey());
         }
         textures.clear();
+        for (final TileKey emptyKey : emptyRealTiles.keySet()) {
+            tiles.forgetTile(emptyKey);
+        }
+        emptyRealTiles.clear();
         drawnThisFrame.clear();
         drawnLastFrame.clear();
+        emptyProbedThisFrame.clear();
+        emptyProbedLastFrame.clear();
         hardCapLogged = false;
         ConfluxMapMod.LOGGER.debug("TileTextureManager: released all tile textures");
     }
@@ -455,8 +533,21 @@ public final class TileTextureManager {
         drawnLastFrame.clear();
     }
 
+    private void forgetResidentTile(final TileKey key) {
+        if (PredictedTileKeys.isPredicted(key)) {
+            predictionTiles.forgetTile(key);
+        } else {
+            tiles.forgetTile(key);
+        }
+    }
+
     /** Test-support only: snapshot of the keys with a resident GPU texture (monitor-guarded). */
     public synchronized Set<TileKey> residentTexturesForTest() {
         return new HashSet<>(textures.keySet());
+    }
+
+    /** Test-support only: snapshot of real-tile keys currently tracked as empty (monitor-guarded). */
+    public synchronized Set<TileKey> emptyTrackedTilesForTest() {
+        return new HashSet<>(emptyRealTiles.keySet());
     }
 }

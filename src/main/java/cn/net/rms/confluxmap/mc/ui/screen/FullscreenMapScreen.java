@@ -44,6 +44,7 @@ import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.BiomeTileKeys;
+import cn.net.rms.confluxmap.core.tile.LodFallbackResolver;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.trail.PlayerTrail;
 import cn.net.rms.confluxmap.core.trail.PlayerTrailProjection;
@@ -96,6 +97,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.UUID;
+import java.util.function.Predicate;
 import net.minecraft.client.MinecraftClient;
 //#if MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
@@ -272,6 +274,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     double centerZ;
     double scale;
     SplitMapLayout embeddedLayout;
+    private int lastRenderedLod = -1;
+    private boolean preferFinerFallback;
+    private final List<LodFallbackResolver.FallbackQuad> fallbackQuads = new ArrayList<>(16);
 
     /** Recomputed every frame by {@link #drawWaypoints} - the marker nearest the cursor within {@link #HOVER_RADIUS_PX}, or none. */
     private final MapScreenshotOverlay screenshotOverlay = new MapScreenshotOverlay();
@@ -1212,6 +1217,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         ConfluxMapClient.get().mcaBackfillService().clearViewport();
         structureMarkers.flush();
         mapBrowser.clear();
+        lastRenderedLod = -1;
+        preferFinerFallback = false;
     }
 
     @Override
@@ -2378,6 +2385,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             retireExpandedGroupButtons();
             toolPanel.close();
             annotations.resetForTargetChange();
+            lastRenderedLod = -1;
+            preferFinerFallback = false;
         }
         centerX = DimensionScale.convertHorizontal(
             previousCenterX, previous.dimension(), selected.dimension()
@@ -2530,50 +2539,157 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
         }
 
-        TextureBinds.beginTexturedQuads();
-        for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
-            for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
-                final TileKey terrainKey = new TileKey(
-                    session.world(), session.dimension(), layerId, lod, tileX, tileZ
-                );
-                final TileKey key = biomeMode ? BiomeTileKeys.toBiome(terrainKey) : terrainKey;
-                if (viewTextures().bind(key)) {
-                    final float screenX = (float) (width / 2.0 + (key.originBlockX() - centerX) * pxPerBlock);
-                    final float screenY = (float) (height / 2.0 + (key.originBlockZ() - centerZ) * pxPerBlock);
-                    final float quadSize = (float) (blocksPerTile * pxPerBlock);
-                    GuiShapes.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
-                } else {
-                    // The exact LOD is still uploading. Cover the hole from whatever neighbouring LOD
-                    // is already on the GPU: the coarser parent stretched over this quadrant first,
-                    // otherwise the finer children shrunk into their quarters. Neither probe requests
-                    // anything, so the fallback can never jump the queue ahead of the tile itself.
-                    final float screenX = (float) (width / 2.0 + (key.originBlockX() - centerX) * pxPerBlock);
-                    final float screenY = (float) (height / 2.0 + (key.originBlockZ() - centerZ) * pxPerBlock);
-                    final float quadSize = (float) (blocksPerTile * pxPerBlock);
-                    if (!tryDrawParentFallback(viewTextures(), matrices, key, screenX, screenY, quadSize, false)) {
-                        tryDrawChildrenFallback(viewTextures(), matrices, key, screenX, screenY, quadSize, false);
-                    }
-                }
-            }
+        final boolean preferFiner = resolveFallbackPreference(lod, updateViewport);
+        final TileTextureManager realTextures = viewTextures();
+
+        // Pass 1a: predicted cross-LOD underlays (missing exact predicted tiles only).
+        if (predictionActive) {
+            TextureBinds.beginTexturedQuads();
+            drawPredictedUnderlays(
+                matrices, session, layerId, lod, firstTileX, lastTileX,
+                firstTileZ, lastTileZ, pxPerBlock, blocksPerTile, biomeMode, preferFiner
+            );
         }
 
-        // The predicted texture is already transparent wherever local real data wins. Drawing it
-        // last lets a newer synchronized chunk cover an older local capture without a third texture.
+        // Pass 1a uses tinted quads, which switch to POSITION_TEXTURE_COLOR on MC < 1.21.5;
+        // reset to the textured quad shader before drawing plain real underlays and exact tiles.
+        TextureBinds.beginTexturedQuads();
+
+        // Pass 1b: real cross-LOD underlays (missing exact real tiles only).
+        drawRealUnderlays(
+            realTextures, matrices, session, layerId, lod, firstTileX, lastTileX,
+            firstTileZ, lastTileZ, pxPerBlock, blocksPerTile, biomeMode, preferFiner
+        );
+
+        // Pass 2: exact-LOD real tiles over all cross-LOD underlays.
+        drawExactRealTiles(
+            realTextures, matrices, session, layerId, lod, firstTileX, lastTileX,
+            firstTileZ, lastTileZ, pxPerBlock, blocksPerTile, biomeMode
+        );
+
+        // Pass 3: exact-LOD predicted/synchronized overlay last, preserving syncWins over local real tiles.
         if (predictionActive) {
-            drawPredictedTiles(
+            drawExactPredictedOverlay(
                 matrices, session, layerId, lod, firstTileX, lastTileX,
                 firstTileZ, lastTileZ, pxPerBlock, blocksPerTile, biomeMode
             );
         }
 
         if (preloadPaddedRing) {
-            // Only now: every visible predicted tile above has been bound, so every one of them is
-            // already queued/in flight ahead of the ring.
+            // Only now: every visible predicted tile above has been requested ahead of the ring.
             predictionTiles.preloadViewportPaddedRing(biomeMode ? layerId + "!biome" : layerId);
         }
     }
 
-    private void drawPredictedTiles(
+    private boolean resolveFallbackPreference(final int lod, final boolean updateViewport) {
+        if (!updateViewport) {
+            return preferFinerFallback;
+        }
+        if (lastRenderedLod >= 0 && lod != lastRenderedLod) {
+            preferFinerFallback = lod > lastRenderedLod;
+        }
+        lastRenderedLod = lod;
+        return preferFinerFallback;
+    }
+
+    private static TileKey visibleTileKey(
+        final SessionGuard.Session session,
+        final String layerId,
+        final int lod,
+        final int tileX,
+        final int tileZ,
+        final boolean biomeMode
+    ) {
+        final TileKey terrainKey = new TileKey(session.world(), session.dimension(), layerId, lod, tileX, tileZ);
+        return biomeMode ? BiomeTileKeys.toBiome(terrainKey) : terrainKey;
+    }
+
+    private float tileScreenX(final TileKey key, final double pxPerBlock) {
+        return (float) (width / 2.0 + (key.originBlockX() - centerX) * pxPerBlock);
+    }
+
+    private float tileScreenY(final TileKey key, final double pxPerBlock) {
+        return (float) (height / 2.0 + (key.originBlockZ() - centerZ) * pxPerBlock);
+    }
+
+    private void drawPredictedUnderlays(
+        final MatrixStack matrices,
+        final SessionGuard.Session session,
+        final String layerId,
+        final int lod,
+        final int firstTileX,
+        final int lastTileX,
+        final int firstTileZ,
+        final int lastTileZ,
+        final double pxPerBlock,
+        final double blocksPerTile,
+        final boolean biomeMode,
+        final boolean preferFiner
+    ) {
+        final float quadSize = (float) (blocksPerTile * pxPerBlock);
+        for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
+            for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
+                final TileKey key = visibleTileKey(session, layerId, lod, tileX, tileZ, biomeMode);
+                final TileKey predictedKey = PredictedTileKeys.toPredicted(key);
+                if (textures.isResident(predictedKey)) {
+                    continue;
+                }
+                textures.requestMissingPredicted(predictedKey);
+                drawLodFallback(
+                    matrices,
+                    predictedKey,
+                    preferFiner,
+                    textures::isUnderlayFallbackUsable,
+                    textures::bindUnderlayFallback,
+                    tileScreenX(key, pxPerBlock),
+                    tileScreenY(key, pxPerBlock),
+                    quadSize,
+                    true
+                );
+            }
+        }
+    }
+
+    private void drawRealUnderlays(
+        final TileTextureManager realTextures,
+        final MatrixStack matrices,
+        final SessionGuard.Session session,
+        final String layerId,
+        final int lod,
+        final int firstTileX,
+        final int lastTileX,
+        final int firstTileZ,
+        final int lastTileZ,
+        final double pxPerBlock,
+        final double blocksPerTile,
+        final boolean biomeMode,
+        final boolean preferFiner
+    ) {
+        final float quadSize = (float) (blocksPerTile * pxPerBlock);
+        for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
+            for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
+                final TileKey key = visibleTileKey(session, layerId, lod, tileX, tileZ, biomeMode);
+                if (realTextures.isResident(key)) {
+                    continue;
+                }
+                realTextures.requestMissingReal(key);
+                drawLodFallback(
+                    matrices,
+                    key,
+                    preferFiner,
+                    realTextures::isFallbackUsable,
+                    realTextures::bindFallback,
+                    tileScreenX(key, pxPerBlock),
+                    tileScreenY(key, pxPerBlock),
+                    quadSize,
+                    false
+                );
+            }
+        }
+    }
+
+    private void drawExactRealTiles(
+        final TileTextureManager realTextures,
         final MatrixStack matrices,
         final SessionGuard.Session session,
         final String layerId,
@@ -2586,113 +2702,84 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final double blocksPerTile,
         final boolean biomeMode
     ) {
+        final float quadSize = (float) (blocksPerTile * pxPerBlock);
         for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
             for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
-                final TileKey terrainKey = new TileKey(
-                    session.world(), session.dimension(), layerId, lod, tileX, tileZ
-                );
-                final TileKey key = biomeMode ? BiomeTileKeys.toBiome(terrainKey) : terrainKey;
+                final TileKey key = visibleTileKey(session, layerId, lod, tileX, tileZ, biomeMode);
+                if (realTextures.bindResident(key)) {
+                    GuiShapes.drawQuad(
+                        matrices,
+                        tileScreenX(key, pxPerBlock),
+                        tileScreenY(key, pxPerBlock),
+                        quadSize, quadSize, 0f, 0f, 1f, 1f
+                    );
+                }
+            }
+        }
+    }
+
+    private void drawExactPredictedOverlay(
+        final MatrixStack matrices,
+        final SessionGuard.Session session,
+        final String layerId,
+        final int lod,
+        final int firstTileX,
+        final int lastTileX,
+        final int firstTileZ,
+        final int lastTileZ,
+        final double pxPerBlock,
+        final double blocksPerTile,
+        final boolean biomeMode
+    ) {
+        final float quadSize = (float) (blocksPerTile * pxPerBlock);
+        for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
+            for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
+                final TileKey key = visibleTileKey(session, layerId, lod, tileX, tileZ, biomeMode);
                 final TileKey predictedKey = PredictedTileKeys.toPredicted(key);
-                if (textures.bind(predictedKey)) {
-                    final float screenX = (float) (
-                        width / 2.0 + (key.originBlockX() - centerX) * pxPerBlock
-                    );
-                    final float screenY = (float) (
-                        height / 2.0 + (key.originBlockZ() - centerZ) * pxPerBlock
-                    );
-                    final float quadSize = (float) (blocksPerTile * pxPerBlock);
+                if (textures.bindResident(predictedKey)) {
                     GuiShapes.drawTintedQuad(
-                        matrices, screenX, screenY, quadSize, quadSize,
-                        0f, 0f, 1f, 1f, 0xFFFFFFFF
+                        matrices,
+                        tileScreenX(key, pxPerBlock),
+                        tileScreenY(key, pxPerBlock),
+                        quadSize, quadSize, 0f, 0f, 1f, 1f, 0xFFFFFFFF
                     );
-                } else {
-                    // Same cross-LOD cover as the real tiles, so a zoom that outruns the predicted
-                    // underlay shows the neighbouring predicted LOD instead of the bare background.
-                    final float screenX = (float) (
-                        width / 2.0 + (key.originBlockX() - centerX) * pxPerBlock
-                    );
-                    final float screenY = (float) (
-                        height / 2.0 + (key.originBlockZ() - centerZ) * pxPerBlock
-                    );
-                    final float quadSize = (float) (blocksPerTile * pxPerBlock);
-                    if (!tryDrawParentFallback(textures, matrices, predictedKey, screenX, screenY, quadSize, true)) {
-                        tryDrawChildrenFallback(textures, matrices, predictedKey, screenX, screenY, quadSize, true);
-                    }
                 }
             }
         }
     }
 
-    /** Scratch UV rectangle reused by the parent fallback, so the per-tile probe allocates nothing. */
-    private final float[] fallbackUv = new float[4];
-
-    /**
-     * Covers a missing tile by stretching the quadrant of its coarser parent that contains it.
-     * Sampling stays {@code GL_NEAREST}, so the stand-in reads as chunky pixels until the real tile
-     * arrives and replaces it. Returns false when no coarser texture is resident.
-     */
-    private boolean tryDrawParentFallback(
-        final TileTextureManager source,
+    /** Covers a missing tile with the zoom-direction-ordered multi-level fallback hierarchy. */
+    private void drawLodFallback(
         final MatrixStack matrices,
         final TileKey key,
+        final boolean preferFiner,
+        final Predicate<TileKey> usable,
+        final Predicate<TileKey> binder,
         final float screenX,
         final float screenY,
         final float quadSize,
         final boolean tinted
     ) {
-        if (!source.bindFallbackParent(key, fallbackUv)) {
-            return false;
+        if (!LodFallbackResolver.resolve(key, preferFiner, usable, fallbackQuads)) {
+            return;
         }
-        drawFallbackQuad(
-            matrices, screenX, screenY, quadSize, quadSize,
-            fallbackUv[0], fallbackUv[1], fallbackUv[2], fallbackUv[3], tinted
-        );
-        return true;
-    }
-
-    /**
-     * Covers a missing tile by drawing each resident finer child shrunk into its quarter: NW, NE,
-     * SW, SE. Children that have not loaded yet leave their quarter empty, so a partially resident
-     * LOD still fills everything it can. Read-only on the children, so stitching never requests the
-     * whole finer LOD. Returns true when at least one quarter was drawn.
-     */
-    private boolean tryDrawChildrenFallback(
-        final TileTextureManager source,
-        final MatrixStack matrices,
-        final TileKey key,
-        final float screenX,
-        final float screenY,
-        final float quadSize,
-        final boolean tinted
-    ) {
-        if (key.lod() <= 0) {
-            return false;
-        }
-        final float half = quadSize / 2f;
-        boolean covered = false;
-        for (int quadrantZ = 0; quadrantZ <= 1; quadrantZ++) {
-            for (int quadrantX = 0; quadrantX <= 1; quadrantX++) {
-                final TileKey child = new TileKey(
-                    key.world(), key.dimension(), key.layerId(),
-                    key.lod() - 1,
-                    TileMath.childTile(key.tileX(), quadrantX),
-                    TileMath.childTile(key.tileZ(), quadrantZ)
-                );
-                if (!source.bindFallbackChild(child)) {
-                    continue;
-                }
-                drawFallbackQuad(
-                    matrices,
-                    screenX + quadrantX * half,
-                    screenY + quadrantZ * half,
-                    half, half,
-                    0f, 0f, 1f, 1f,
-                    tinted
-                );
-                covered = true;
+        for (final LodFallbackResolver.FallbackQuad quad : fallbackQuads) {
+            if (!binder.test(quad.key())) {
+                continue;
             }
+            drawFallbackQuad(
+                matrices,
+                screenX + quad.relX() * quadSize,
+                screenY + quad.relY() * quadSize,
+                quad.relSize() * quadSize,
+                quad.relSize() * quadSize,
+                quad.u0(),
+                quad.v0(),
+                quad.u1(),
+                quad.v1(),
+                tinted
+            );
         }
-        return covered;
     }
 
     /** One fallback quad, tinted for the predicted underlay and plain for the real terrain tiles. */
