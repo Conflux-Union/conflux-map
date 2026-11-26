@@ -24,7 +24,7 @@ public final class ConfluxConfig {
     public static final int SCHEMA_VERSION = 13;
     public static final String DEFAULT_TELEPORT_COMMAND = "execute in {dimension} run tp @s {x} {y} {z}";
     public static final int DEFAULT_MINIMAP_SIZE = 90;
-    public static final int MINIMAP_ZOOM_LEVEL_COUNT = 4;
+    public static final int MINIMAP_ZOOM_LEVEL_COUNT = 5;
     public static final int MIN_FULLSCREEN_ZOOM_LIMIT_PERCENT = 20;
     public static final int MIN_FULLSCREEN_MIN_ZOOM_LIMIT_PERCENT = 80;
     public static final int MAX_FULLSCREEN_ZOOM_LIMIT_PERCENT = 200;

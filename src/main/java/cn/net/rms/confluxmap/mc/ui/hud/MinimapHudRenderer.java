@@ -54,7 +54,7 @@ import net.minecraft.client.util.math.MatrixStack;
 /**
  * Renders the always-on minimap HUD, showing whichever layer {@link LayerSelector}
  * currently has active for the player's dimension (surface, cave, nether, etc).
- * Supports zoom (0.5/1/2/4 blocks per pixel), player-facing-up rotation
+ * Supports zoom (0.5/1/2/4/8 blocks per pixel), player-facing-up rotation
  * (map rotates, arrow stays up) or north-locked mode (arrow rotates),
  * square scissor or circular alpha-mask clipping, a center arrow,
  * upright cardinal letters, and a coordinates/biome info line.
@@ -71,7 +71,7 @@ import net.minecraft.client.util.math.MatrixStack;
  */
 public final class MinimapHudRenderer {
     private static final int BACKGROUND_RGB = 0x101018;
-    private static final float[] BLOCKS_PER_PIXEL = {0.5f, 1f, 2f, 4f};
+    private static final float[] BLOCKS_PER_PIXEL = {0.5f, 1f, 2f, 4f, 8f};
 
     private final MinecraftClient client;
     private final ConfluxConfig config;
@@ -239,6 +239,7 @@ public final class MinimapHudRenderer {
             : List.of();
 
         final float minimapBlocksPerPixel = BLOCKS_PER_PIXEL[config.minimapZoomIndex];
+        final double windowScaleFactor = client.getWindow().getScaleFactor();
         // While fading out under an open fullscreen map, FullscreenMapScreen owns
         // radarViewRange (same rule as the settled-hidden path), so leave its range alone;
         // the disappearing icons draw from the scanner's last snapshot instead.
@@ -254,7 +255,7 @@ public final class MinimapHudRenderer {
             // the whole composite once.
             final int canvasPx = Math.max(
                 64,
-                (int) Math.round(contentSize * client.getWindow().getScaleFactor())
+                (int) Math.round(contentSize * windowScaleFactor)
             );
             canvas.begin(canvasPx);
             final MatrixStack fbo = new MatrixStack();
@@ -267,7 +268,9 @@ public final class MinimapHudRenderer {
                 GuiShapes.rotateZ(fbo, mapAngle);
             }
             TextureBinds.beginTexturedQuads();
-            tilePainter.drawTiles(fbo, contentSize, circle, mapAngle, player, minimapBlocksPerPixel, 1f);
+            tilePainter.drawTiles(
+                fbo, contentSize, circle, mapAngle, player, minimapBlocksPerPixel, windowScaleFactor, 1f
+            );
             fbo.pop();
             fbo.push();
             fbo.translate(contentSize / 2f, contentSize / 2f, 0);
@@ -326,7 +329,9 @@ public final class MinimapHudRenderer {
             if (rotate) {
                 GuiShapes.rotateZ(matrices, mapAngle);
             }
-            tilePainter.drawTiles(matrices, contentSize, circle, mapAngle, player, minimapBlocksPerPixel, fadeAlpha);
+            tilePainter.drawTiles(
+                matrices, contentSize, circle, mapAngle, player, minimapBlocksPerPixel, windowScaleFactor, fadeAlpha
+            );
             matrices.pop();
             matrices.push();
             matrices.translate(centerX, centerY, 0);

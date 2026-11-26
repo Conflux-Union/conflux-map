@@ -350,6 +350,8 @@ final class ConfluxConfigTest {
         config.cycleMinimapZoom();
         assertEquals(3, config.minimapZoomIndex);
         config.cycleMinimapZoom();
+        assertEquals(4, config.minimapZoomIndex);
+        config.cycleMinimapZoom();
         assertEquals(0, config.minimapZoomIndex);
     }
 
