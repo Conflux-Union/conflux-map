@@ -47,15 +47,13 @@ final class WaypointMapPhotoOverlay {
         if (key == null) return;
         var photo = firstPhotos.get(key);
         if (photo == null) return;
-        final int offset = 34;
-        final int screenX = Math.round(x);
-        final int screenY = Math.round(y);
+        final float offset = 34f;
         final java.util.function.Supplier<java.util.concurrent.CompletableFuture<WaypointMediaService.Pixels>> decode =
             () -> ConfluxMapClient.get().waypointMediaService().waypointThumbnail(key, photo);
-        var bounds = canvas.draw(draw, screen, font, screenX - offset, screenY,
+        var bounds = canvas.draw(draw, screen, font, x - offset, y,
             1, true, mx, my, photo.id(), photo.rotation(), decode);
         if (bounds == null) {
-            bounds = canvas.draw(draw, screen, font, screenX + offset, screenY,
+            bounds = canvas.draw(draw, screen, font, x + offset, y,
                 1, true, mx, my, photo.id(), photo.rotation(), decode);
         }
         if (bounds != null) markers.put(bounds, key);

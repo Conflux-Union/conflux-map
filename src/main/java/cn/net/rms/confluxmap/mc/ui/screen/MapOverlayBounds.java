@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.core.radar.RadarCategory;
+import cn.net.rms.confluxmap.mc.ui.StructureMarkerRenderer;
 
 record MapOverlayBounds(float left, float top, float right, float bottom) {
     private static final float RADAR_PADDING = 4f;
@@ -10,10 +11,17 @@ record MapOverlayBounds(float left, float top, float right, float bottom) {
         final float centerY,
         final boolean hovered
     ) {
-        final int size = hovered ? 20 : 18;
-        final int left = Math.round(centerX - size / 2f);
-        final int top = Math.round(centerY - size / 2f);
-        return new MapOverlayBounds(left, top, left + size, top + size);
+        final float half = StructureMarkerRenderer.SIZE * 0.5f;
+        return new MapOverlayBounds(centerX - half, centerY - half, centerX + half, centerY + half);
+    }
+
+    static MapOverlayBounds portalIcon(
+        final float centerX,
+        final float centerY,
+        final int size
+    ) {
+        final float half = size * 0.5f;
+        return new MapOverlayBounds(centerX - half, centerY - half, centerX + half, centerY + half);
     }
 
     static MapOverlayBounds text(

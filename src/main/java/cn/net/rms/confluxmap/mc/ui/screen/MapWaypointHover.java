@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.library.WaypointMetadata;
 import cn.net.rms.confluxmap.core.waypoint.library.WaypointGridLayout.Cell;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import java.util.ArrayList;
@@ -95,9 +96,9 @@ final class MapWaypointHover {
         draw.drawTextWithShadow(font, font.trimToWidth(point.name(), nameWidth), x + PADDING, y + 7, 0xFFFFFFFF);
         if (camera != null) {
             boolean hovered = camera.contains(mx, my);
-            draw.fill(camera.x(), camera.y(), camera.x() + camera.w(), camera.y() + camera.h(),
+            GuiShapes.fillRect(draw.matrices(), camera.x(), camera.y(), camera.w(), camera.h(),
                 hovered ? 0xFF535353 : 0xFF383838);
-            MapPhotoMarkers.drawCamera(draw, camera.x() + camera.w() / 2, camera.y() + camera.h() / 2, hovered);
+            MapPhotoMarkers.drawCamera(draw, camera.x() + camera.w() * 0.5f, camera.y() + camera.h() * 0.5f, hovered);
             if (hovered) photos.previewIcon(thumbnails, point, photo);
         }
         for (int i = 0; i < rows; i++) {

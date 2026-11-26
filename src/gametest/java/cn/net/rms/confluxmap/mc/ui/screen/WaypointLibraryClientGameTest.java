@@ -647,9 +647,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$         context.takeScreenshot("map-screenshot-thumbnail");
 //$$         int[] marker = context.computeOnClient(client -> {
 //$$             var markers = (java.util.List<?>) field(field(MinecraftAccess.screen(client), "screenshotOverlay"), "markers");
-//$$             var bounds = (MapPhotoMarkers.Bounds) field(markers.get(0), "bounds");
-//$$             int scale = client.getWindow().getGuiScale();
-//$$             return new int[]{(bounds.x() + bounds.w()/2) * scale, (bounds.y() + bounds.h()/2) * scale};
+//$$             return pointerAt((MapPhotoMarkers.Bounds) field(markers.get(0), "bounds"), client.getWindow().getGuiScale());
 //$$         });
 //$$         context.getInput().setCursorPos(marker[0], marker[1]);
 //$$         context.getInput().pressMouse(cn.net.rms.confluxmap.compat.MouseButtons.LEFT);
@@ -852,7 +850,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$         } finally { context.getInput().releaseControl(); }
 //$$     }
 //$$     private static int[] pointerAt(MapPhotoMarkers.Bounds bounds, int scale) {
-//$$         return new int[]{(bounds.x() + bounds.w() / 2) * scale, (bounds.y() + bounds.h() / 2) * scale};
+//$$         return new int[]{Math.round((bounds.x() + bounds.w() / 2f) * scale), Math.round((bounds.y() + bounds.h() / 2f) * scale)};
 //$$     }
 //$$     private static boolean hoverReady(Object screen) {
 //$$         return field(field(screen, "mapPhotoMarkers"), "hoveredIcon") != null && thumbnailReady(screen);

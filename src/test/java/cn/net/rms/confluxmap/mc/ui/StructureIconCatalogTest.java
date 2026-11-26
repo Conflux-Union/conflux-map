@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.portal.PortalKind;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import java.io.InputStream;
 import org.junit.jupiter.api.Test;
@@ -39,11 +40,23 @@ class StructureIconCatalogTest {
     //#endif
 
     @Test
-    void candidateAndVerifiedMarkersKeepDistinctFrames() {
-        assertNotEquals(
-            StructureMarkerRenderer.borderColor(StructureIndex.State.CANDIDATE),
-            StructureMarkerRenderer.borderColor(StructureIndex.State.VERIFIED)
-        );
+    void candidateAndVerifiedMarkersKeepDistinctFramesAndBrightenOnHover() {
+        final int candidate = StructureMarkerRenderer.borderColor(StructureIndex.State.CANDIDATE);
+        final int verified = StructureMarkerRenderer.borderColor(StructureIndex.State.VERIFIED);
+        final int candidateHovered = StructureMarkerRenderer.borderColor(StructureIndex.State.CANDIDATE, true);
+        final int verifiedHovered = StructureMarkerRenderer.borderColor(StructureIndex.State.VERIFIED, true);
+        assertNotEquals(candidate, verified);
+        assertNotEquals(candidate, candidateHovered);
+        assertNotEquals(verified, verifiedHovered);
+        assertEquals(0xFF000000, candidateHovered & 0xFF000000);
+        assertEquals(0xFF000000, verifiedHovered & 0xFF000000);
+
+        for (final PortalKind kind : PortalKind.values()) {
+            final int normal = PortalMarkerRenderer.borderColor(kind, false);
+            final int hovered = PortalMarkerRenderer.borderColor(kind, true);
+            assertNotEquals(normal, hovered);
+            assertEquals(0xFF000000, hovered & 0xFF000000);
+        }
     }
 
     @Test

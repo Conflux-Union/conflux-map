@@ -3088,11 +3088,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 continue;
             }
             final boolean isHovered = marker.equals(hovered);
-            final MapOverlayBounds bounds = new MapOverlayBounds(
-                screenX - config.portalIconSize / 2f,
-                screenY - config.portalIconSize / 2f,
-                screenX + config.portalIconSize / 2f,
-                screenY + config.portalIconSize / 2f
+            final MapOverlayBounds bounds = MapOverlayBounds.portalIcon(
+                screenX, screenY, config.portalIconSize
             );
             if (mapOverlayIntersectsUi(bounds)) {
                 continue;

@@ -7,10 +7,13 @@ import org.junit.jupiter.api.Test;
 
 final class MapOverlayBoundsTest {
     @Test
-    void hoveredStructureBoundsMatchTheRenderedIcon() {
+    void structureAndPortalBoundsPreserveSubpixelCenterWithoutHoverShift() {
+        final MapOverlayBounds expectedStructure = new MapOverlayBounds(91.25f, 41.75f, 109.25f, 59.75f);
+        assertEquals(expectedStructure, MapOverlayBounds.structureIcon(100.25f, 50.75f, false));
+        assertEquals(expectedStructure, MapOverlayBounds.structureIcon(100.25f, 50.75f, true));
         assertEquals(
-            new MapOverlayBounds(90f, 40f, 110f, 60f),
-            MapOverlayBounds.structureIcon(100f, 50f, true)
+            new MapOverlayBounds(92.25f, 42.75f, 108.25f, 58.75f),
+            MapOverlayBounds.portalIcon(100.25f, 50.75f, 16)
         );
     }
 
