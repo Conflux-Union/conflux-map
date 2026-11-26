@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.compat.Keys;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import fi.dy.masa.malilib.hotkeys.KeyAction;
@@ -55,6 +56,17 @@ final class KeybindActionTest {
         assertEquals("M", KeybindAction.OPEN_MAP.maliLibDefaultKeys());
         assertEquals("COMMA", KeybindAction.OPEN_CONFIG.maliLibDefaultKeys());
         assertEquals("F9", KeybindAction.RELOAD_PREDICTION.maliLibDefaultKeys());
+    }
+
+    @Test
+    void unboundVanillaDefaultUsesKeysUnknownAndDetectsPollutedNegativeBindings() {
+        assertEquals(Keys.UNKNOWN, KeybindAction.TEMPORARY_WAYPOINT.vanillaDefaultKey());
+        assertTrue(Keybinds.hasNegativeKeyboardBinding("key.keyboard.-1"));
+        assertTrue(Keybinds.hasNegativeKeyboardBinding("key.keyboard.-100"));
+        assertFalse(Keybinds.hasNegativeKeyboardBinding("key.keyboard.unknown"));
+        assertFalse(Keybinds.hasNegativeKeyboardBinding("key.keyboard.m"));
+        assertFalse(Keybinds.hasNegativeKeyboardBinding(""));
+        assertFalse(Keybinds.hasNegativeKeyboardBinding(null));
     }
 
     @Test
