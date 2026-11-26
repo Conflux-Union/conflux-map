@@ -26,9 +26,10 @@ public final class ConfluxConfig {
     public static final int DEFAULT_MINIMAP_SIZE = 90;
     public static final int MINIMAP_ZOOM_LEVEL_COUNT = 4;
     public static final int MIN_FULLSCREEN_ZOOM_LIMIT_PERCENT = 20;
+    public static final int MIN_FULLSCREEN_MIN_ZOOM_LIMIT_PERCENT = 80;
     public static final int MAX_FULLSCREEN_ZOOM_LIMIT_PERCENT = 200;
     public static final int DEFAULT_FULLSCREEN_ZOOM_LIMIT_PERCENT = 100;
-    public static final double ORIGINAL_FULLSCREEN_MIN_ZOOM = 0.0625;
+    public static final double ORIGINAL_FULLSCREEN_MIN_ZOOM = 0.015625;
     public static final double ORIGINAL_FULLSCREEN_MAX_ZOOM = 8.0;
     public static final int MIN_MINIMAP_BACKGROUND_OPACITY = 0;
     public static final int MAX_MINIMAP_BACKGROUND_OPACITY = 100;
@@ -698,26 +699,48 @@ public final class ConfluxConfig {
     }
 
     public static double fullscreenZoomLimit(final double originalMultiplier, final int percent) {
-        return originalMultiplier * normalizedFullscreenZoomPercent(percent) / 100.0;
+        return fullscreenZoomLimit(originalMultiplier, percent, MIN_FULLSCREEN_ZOOM_LIMIT_PERCENT);
+    }
+
+    public static double fullscreenZoomLimit(
+        final double originalMultiplier,
+        final int percent,
+        final int minPercent
+    ) {
+        return originalMultiplier * normalizedFullscreenZoomPercent(percent, minPercent) / 100.0;
     }
 
     /** The renderer uses blocks per pixel, the reciprocal of the displayed zoom multiplier. */
     public double clampFullscreenMapScale(final double blocksPerPixel) {
         return clamp(
             blocksPerPixel,
-            1.0 / fullscreenZoomLimit(ORIGINAL_FULLSCREEN_MAX_ZOOM, fullscreenMaxZoomPercent),
-            1.0 / fullscreenZoomLimit(ORIGINAL_FULLSCREEN_MIN_ZOOM, fullscreenMinZoomPercent)
+            1.0 / fullscreenZoomLimit(
+                ORIGINAL_FULLSCREEN_MAX_ZOOM,
+                fullscreenMaxZoomPercent,
+                MIN_FULLSCREEN_ZOOM_LIMIT_PERCENT
+            ),
+            1.0 / fullscreenZoomLimit(
+                ORIGINAL_FULLSCREEN_MIN_ZOOM,
+                fullscreenMinZoomPercent,
+                MIN_FULLSCREEN_MIN_ZOOM_LIMIT_PERCENT
+            )
         );
     }
 
-    private static int normalizedFullscreenZoomPercent(final int percent) {
-        return clamp(percent, MIN_FULLSCREEN_ZOOM_LIMIT_PERCENT, MAX_FULLSCREEN_ZOOM_LIMIT_PERCENT);
+    private static int normalizedFullscreenZoomPercent(final int percent, final int minPercent) {
+        return clamp(percent, minPercent, MAX_FULLSCREEN_ZOOM_LIMIT_PERCENT);
     }
 
     /** Clamp out-of-range values loaded from a hand-edited file. */
     public void normalize() {
-        fullscreenMinZoomPercent = normalizedFullscreenZoomPercent(fullscreenMinZoomPercent);
-        fullscreenMaxZoomPercent = normalizedFullscreenZoomPercent(fullscreenMaxZoomPercent);
+        fullscreenMinZoomPercent = normalizedFullscreenZoomPercent(
+            fullscreenMinZoomPercent,
+            MIN_FULLSCREEN_MIN_ZOOM_LIMIT_PERCENT
+        );
+        fullscreenMaxZoomPercent = normalizedFullscreenZoomPercent(
+            fullscreenMaxZoomPercent,
+            MIN_FULLSCREEN_ZOOM_LIMIT_PERCENT
+        );
         if (fullscreenLoadedRangeStyle == null) {
             fullscreenLoadedRangeStyle = LoadedRangeStyle.DIM;
         }

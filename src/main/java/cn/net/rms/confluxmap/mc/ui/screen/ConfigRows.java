@@ -398,11 +398,13 @@ final class ConfigRows {
                 y = addFullscreenZoomLimit(
                     y, "confluxmap.config.map.min_zoom",
                     ConfluxConfig.ORIGINAL_FULLSCREEN_MIN_ZOOM,
+                    ConfluxConfig.MIN_FULLSCREEN_MIN_ZOOM_LIMIT_PERCENT,
                     () -> config.fullscreenMinZoomPercent, v -> config.fullscreenMinZoomPercent = v
                 );
                 y = addFullscreenZoomLimit(
                     y, "confluxmap.config.map.max_zoom",
                     ConfluxConfig.ORIGINAL_FULLSCREEN_MAX_ZOOM,
+                    ConfluxConfig.MIN_FULLSCREEN_ZOOM_LIMIT_PERCENT,
                     () -> config.fullscreenMaxZoomPercent, v -> config.fullscreenMaxZoomPercent = v
                 );
                 y = addSectionRow(y, "confluxmap.screen.config.section.loaded_range");
@@ -1192,11 +1194,11 @@ final class ConfigRows {
 
     private int addFullscreenZoomLimit(
         final int y, final String labelKey, final double originalMultiplier,
-        final IntSupplier getter, final IntConsumer setter
+        final int minPercent, final IntSupplier getter, final IntConsumer setter
     ) {
         final String tooltipKey = "confluxmap.config.map.zoom_limit.tooltip";
         return addIntSliderRow(
-            y, labelKey, ConfluxConfig.MIN_FULLSCREEN_ZOOM_LIMIT_PERCENT,
+            y, labelKey, minPercent,
             ConfluxConfig.MAX_FULLSCREEN_ZOOM_LIMIT_PERCENT, getter, value -> {
                 setter.accept(value);
                 configIo.save(config);
@@ -1204,7 +1206,9 @@ final class ConfigRows {
             () -> Texts.translatable(
                 tooltipKey,
                 FullscreenZoomLabel.formatMultiplier(originalMultiplier),
-                FullscreenZoomLabel.formatMultiplier(ConfluxConfig.fullscreenZoomLimit(originalMultiplier, getter.getAsInt()))
+                FullscreenZoomLabel.formatMultiplier(
+                    ConfluxConfig.fullscreenZoomLimit(originalMultiplier, getter.getAsInt(), minPercent)
+                )
             )
         );
     }

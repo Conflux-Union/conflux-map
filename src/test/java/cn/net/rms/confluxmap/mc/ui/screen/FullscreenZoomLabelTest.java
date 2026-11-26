@@ -12,6 +12,9 @@ final class FullscreenZoomLabelTest {
         assertEquals("1.00x", FullscreenZoomLabel.format(1.0));
         assertEquals("0.25x", FullscreenZoomLabel.format(4.0));
         assertEquals("0.0625x", FullscreenZoomLabel.format(16.0));
+        assertEquals("0.03125x", FullscreenZoomLabel.format(32.0));
+        assertEquals("0.015625x", FullscreenZoomLabel.format(64.0));
+        assertEquals("0.0125x", FullscreenZoomLabel.format(80.0));
         assertEquals(0.125, FullscreenZoomLabel.multiplier(8.0));
         assertTrue(FullscreenZoomLabel.isAtOrBelow(8.0, 0.125));
         assertTrue(FullscreenZoomLabel.isAtOrBelow(16.0, 0.125));

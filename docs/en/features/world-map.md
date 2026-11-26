@@ -8,7 +8,7 @@ Press `M` to open the fullscreen world map for browsing explored terrain, predic
 
 ## Navigation & Interaction
 
-- **Zoom & Pan**: Continuous zoom centered on the cursor, smooth panning, and an adjustable zoom range — both vanilla zoom limits can be set between 20% and 200% of their originals (hover the slider to see the original limit).
+- **Zoom & Pan**: Continuous zoom centered on the cursor, smooth panning, and an adjustable zoom range — the minimum zoom limit can be set between 80% and 200% of its 0.015625x default, and the maximum zoom limit between 20% and 200% of its 8x default (hover either slider to see the original limit).
 - **Coordinate Jump**: Enter `X`/`Z` coordinates (within ±30,000,000) and jump there while the background map stays visible.
 - **Dynamic Lighting**: Map lighting follows the vanilla brightness setting, in-game time of day, and nearby block light.
 - **Context Menu**: Right-click anywhere on the map to create a waypoint or share coordinates; teleportation (including cross-dimension targets) is offered when permitted by the server.

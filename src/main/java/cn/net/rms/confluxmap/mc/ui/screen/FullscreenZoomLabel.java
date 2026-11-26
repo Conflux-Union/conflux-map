@@ -16,8 +16,9 @@ final class FullscreenZoomLabel {
     }
 
     static String format(final double blocksPerPixel) {
+        final double zoom = multiplier(blocksPerPixel);
         final String fixedPrecision = String.format(
-            Locale.ROOT, "%.4f", multiplier(blocksPerPixel)
+            Locale.ROOT, zoom < 0.0625 ? "%.6f" : "%.4f", zoom
         );
         final int minimumLength = fixedPrecision.indexOf('.') + 3;
         int length = fixedPrecision.length();
