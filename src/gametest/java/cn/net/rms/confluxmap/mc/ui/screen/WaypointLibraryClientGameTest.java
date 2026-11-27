@@ -539,8 +539,8 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$         var search = context.computeOnClient(client -> (net.minecraft.client.gui.components.EditBox)
 //$$             field(MinecraftAccess.screen(client), "searchField"));
 //$$         var minInput = findZoomLimitInput(context, search, "最小缩放倍率", "Minimum Zoom");
-//$$         context.runOnClient(client -> minInput.setValue("20"));
-//$$         context.waitFor(client -> app.config().fullscreenMinZoomPercent == 20, 100);
+//$$         context.runOnClient(client -> minInput.setValue("80"));
+//$$         context.waitFor(client -> app.config().fullscreenMinZoomPercent == 80, 100);
 //$$         int[] at = context.computeOnClient(client -> {
 //$$             int gui = client.getWindow().getGuiScale();
 //$$             return new int[]{(minInput.getX() + minInput.getWidth() / 2) * gui,
@@ -548,15 +548,15 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 //$$         });
 //$$         context.getInput().setCursorPos(at[0], at[1]);
 //$$         context.getInput().scroll(1);
-//$$         context.waitFor(client -> app.config().fullscreenMinZoomPercent == 21, 100);
+//$$         context.waitFor(client -> app.config().fullscreenMinZoomPercent == 81, 100);
 //$$         context.getInput().scroll(-1);
-//$$         context.waitFor(client -> app.config().fullscreenMinZoomPercent == 20, 100);
+//$$         context.waitFor(client -> app.config().fullscreenMinZoomPercent == 80, 100);
 //$$         context.takeScreenshot("fullscreen-zoom-limits-tooltip");
 //$$         var maxInput = findZoomLimitInput(context, search, "最大缩放倍率", "Maximum Zoom");
 //$$         context.runOnClient(client -> maxInput.setValue("200"));
 //$$         context.waitFor(client -> app.config().fullscreenMaxZoomPercent == 200, 100);
 //$$         var saved = app.configIo().load();
-//$$         if (saved.fullscreenMinZoomPercent != 20 || saved.fullscreenMaxZoomPercent != 200) {
+//$$         if (saved.fullscreenMinZoomPercent != 80 || saved.fullscreenMaxZoomPercent != 200) {
 //$$             throw new AssertionError("Fullscreen zoom limits were not saved");
 //$$         }
 //$$         context.clickScreenButton("confluxmap.screen.waypoint.done");

@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
+import cn.net.rms.confluxmap.core.tile.LodFallbackResolver;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.ChunkViewport;
@@ -12,6 +13,8 @@ import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
 import net.minecraft.client.util.math.MatrixStack;
 
@@ -21,11 +24,14 @@ import net.minecraft.client.util.math.MatrixStack;
  * the minimap shows, and the tile quads themselves.
  */
 final class MinimapTilePainter {
+    static final int MAX_MINIMAP_TILE_LOD = 2;
+
     private final TileService tiles;
     private final TileTextureManager textures;
     private final GameBridge gameBridge;
     private final LayerSelector layerSelector;
     private final Consumer<ChunkViewport> captureViewportPublisher;
+    private final List<LodFallbackResolver.FallbackQuad> fallbackQuads = new ArrayList<>(16);
 
     MinimapTilePainter(
         final TileService tiles,
@@ -69,11 +75,11 @@ final class MinimapTilePainter {
     }
 
     /**
-     * Tiles are drawn as full 256-block quads positioned relative to the player,
-     * in a coordinate space whose origin is the minimap center (the caller has
-     * already translated/rotated the matrix). Clipping crops the excess. {@code alpha}
-     * carries the HUD fade; the circle caller passes 1 and lets the canvas composite's
-     * disk tint fade the tiles once, instead of twice.
+     * Tiles are drawn as full LOD-scaled tile quads ({@code 256 << lod} blocks per edge)
+     * positioned relative to the player, in a coordinate space whose origin is the minimap
+     * center (the caller has already translated/rotated the matrix). Clipping crops the
+     * excess. {@code alpha} carries the HUD fade; the circle caller passes 1 and lets the
+     * canvas composite's disk tint fade the tiles once, instead of twice.
      */
     void drawTiles(
         final MatrixStack matrices,
@@ -82,6 +88,7 @@ final class MinimapTilePainter {
         final float mapAngle,
         final PlayerView player,
         final float blocksPerPixel,
+        final double windowScaleFactor,
         final float alpha
     ) {
         final float pxPerBlock = 1f / blocksPerPixel;
@@ -100,31 +107,63 @@ final class MinimapTilePainter {
             mapAngle
         ));
 
-        final int firstTileX = TileMath.blockToTile((int) Math.floor(player.x() - coverRadius));
-        final int lastTileX = TileMath.blockToTile((int) Math.ceil(player.x() + coverRadius));
-        final int firstTileZ = TileMath.blockToTile((int) Math.floor(player.z() - coverRadius));
-        final int lastTileZ = TileMath.blockToTile((int) Math.ceil(player.z() + coverRadius));
+        final int lod = minimapTileLod(blocksPerPixel, windowScaleFactor);
+        final int firstTileX = TileMath.blockToTile((int) Math.floor(player.x() - coverRadius), lod);
+        final int lastTileX = TileMath.blockToTile((int) Math.ceil(player.x() + coverRadius), lod);
+        final int firstTileZ = TileMath.blockToTile((int) Math.floor(player.z() - coverRadius), lod);
+        final int lastTileZ = TileMath.blockToTile((int) Math.ceil(player.z() + coverRadius), lod);
         final MapLayer layer = layerSelector.current().layer();
         final String layerId = layer.cacheId();
-        tiles.setViewport(layer, 0, firstTileX, lastTileX, firstTileZ, lastTileZ);
+        tiles.setViewport(layer, lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
 
+        final float quadSize = TileMath.blocksPerTile(lod) * pxPerBlock;
         for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
             for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
                 final TileKey key = new TileKey(
                     gameBridge.session().world(), gameBridge.session().dimension(),
-                    layerId, 0, tileX, tileZ
+                    layerId, lod, tileX, tileZ
                 );
-                if (!textures.bind(key)) {
-                    continue;
-                }
                 final float screenX = (float) ((key.originBlockX() - player.x()) * pxPerBlock);
                 final float screenY = (float) ((key.originBlockZ() - player.z()) * pxPerBlock);
-                final float quadSize = TileMath.TILE_SIZE * pxPerBlock;
-                GuiDraw.drawTexturedQuad(
-                    matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f, tint
-                );
+                if (textures.bind(key)) {
+                    GuiDraw.drawTexturedQuad(
+                        matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f, tint
+                    );
+                } else if (LodFallbackResolver.resolve(
+                    key, preferFinerFallback(lod), textures::isFallbackUsable, fallbackQuads
+                )) {
+                    for (final LodFallbackResolver.FallbackQuad quad : fallbackQuads) {
+                        if (!textures.bindFallback(quad.key())) {
+                            continue;
+                        }
+                        GuiDraw.drawTexturedQuad(
+                            matrices,
+                            screenX + quad.relX() * quadSize,
+                            screenY + quad.relY() * quadSize,
+                            quad.relSize() * quadSize,
+                            quad.relSize() * quadSize,
+                            quad.u0(),
+                            quad.v0(),
+                            quad.u1(),
+                            quad.v1(),
+                            tint
+                        );
+                    }
+                }
             }
         }
+    }
+
+    static boolean preferFinerFallback(final int lod) {
+        return lod > 0;
+    }
+
+    static int minimapTileLod(final float blocksPerPixel, final double windowScaleFactor) {
+        if (blocksPerPixel <= 4f) {
+            return 0;
+        }
+        final double physicalBlocksPerPixel = blocksPerPixel / Math.max(1.0, windowScaleFactor);
+        return Math.min(MAX_MINIMAP_TILE_LOD, TileMath.lodForScale(physicalBlocksPerPixel));
     }
 
     static ChunkViewport captureViewport(

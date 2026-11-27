@@ -1,7 +1,9 @@
 package cn.net.rms.confluxmap.mc.net;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
@@ -25,6 +27,7 @@ import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
+import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
 import cn.net.rms.confluxmap.core.util.ChunkViewport;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -281,5 +284,24 @@ class MapSyncChunkViewportTest {
         } finally {
             executors.shutdown(2_000L);
         }
+    }
+
+    @Test
+    void visibleRegionSlicePredicateMatchesMaterializedRegionSlices() {
+        final ChunkViewport chunks = new ChunkViewport(-18, 20, -4, 19);
+        final ChunkViewport excluded = new ChunkViewport(-2, 17, 1, 16);
+        final List<ChunkRegionSlice> materialized = chunks.regionSlicesExcluding(excluded);
+        for (final ChunkRegionSlice slice : materialized) {
+            assertTrue(MapSyncClient.isVisibleRegionSlice(slice, chunks, excluded));
+        }
+        assertFalse(MapSyncClient.isVisibleRegionSlice(
+            new ChunkRegionSlice(-3, 0, 0, 0, 15, 15), chunks, excluded
+        ));
+        assertFalse(MapSyncClient.isVisibleRegionSlice(
+            new ChunkRegionSlice(0, 0, 0, 0, 15, 15), chunks, excluded
+        ));
+        assertTrue(MapSyncClient.isVisibleRegionSlice(
+            new ChunkRegionSlice(0, 0, 0, 0, 15, 15), chunks, null
+        ));
     }
 }

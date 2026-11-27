@@ -423,13 +423,12 @@ public final class MapSyncClient {
             lastLod = lod;
             lastChunkViewport = chunks;
             lastExcludedChunkViewport = excludedChunks;
-            final Set<ChunkRegionSlice> visible = new HashSet<>(visibleRegionSlices(
-                chunks, excludedChunks
-            ));
             settledRegions.removeIf(stamp -> !stamp.dimension().equals(dimensionId)
-                || stamp.lod() != lod || !visible.contains(stamp.slice()));
+                || stamp.lod() != lod
+                || !isVisibleRegionSlice(stamp.slice(), chunks, excludedChunks));
             invalidatedRegions.removeIf(stamp -> !stamp.dimension().equals(dimensionId)
-                || stamp.lod() != lod || !visible.contains(stamp.slice()));
+                || stamp.lod() != lod
+                || !isVisibleRegionSlice(stamp.slice(), chunks, excludedChunks));
             sender.send(new MapRegionSyncSubscribeC2S(
                 dimIndex, lod, true,
                 chunks.minChunkX(), chunks.maxChunkX(), chunks.minChunkZ(), chunks.maxChunkZ()
@@ -866,6 +865,38 @@ public final class MapSyncClient {
         final ChunkViewport chunks, final ChunkViewport excludedChunks
     ) {
         return chunks.regionSlicesExcluding(excludedChunks);
+    }
+
+    /**
+     * Exact membership check matching {@link #visibleRegionSlices(ChunkViewport, ChunkViewport)}
+     * without materializing every region slice in a wide zoomed-out viewport on each pan frame.
+     */
+    static boolean isVisibleRegionSlice(
+        final ChunkRegionSlice slice,
+        final ChunkViewport chunks,
+        final ChunkViewport excludedChunks
+    ) {
+        final int minRegionX = Math.floorDiv(chunks.minChunkX(), ChunkRegionSlice.REGION_CHUNKS);
+        final int maxRegionX = Math.floorDiv(chunks.maxChunkX(), ChunkRegionSlice.REGION_CHUNKS);
+        final int minRegionZ = Math.floorDiv(chunks.minChunkZ(), ChunkRegionSlice.REGION_CHUNKS);
+        final int maxRegionZ = Math.floorDiv(chunks.maxChunkZ(), ChunkRegionSlice.REGION_CHUNKS);
+        if (slice.regionX() < minRegionX || slice.regionX() > maxRegionX
+            || slice.regionZ() < minRegionZ || slice.regionZ() > maxRegionZ) {
+            return false;
+        }
+        final int regionMinChunkX = Math.multiplyExact(slice.regionX(), ChunkRegionSlice.REGION_CHUNKS);
+        final int regionMinChunkZ = Math.multiplyExact(slice.regionZ(), ChunkRegionSlice.REGION_CHUNKS);
+        final ChunkRegionSlice base = new ChunkRegionSlice(
+            slice.regionX(),
+            slice.regionZ(),
+            Math.max(0, chunks.minChunkX() - regionMinChunkX),
+            Math.max(0, chunks.minChunkZ() - regionMinChunkZ),
+            Math.min(ChunkRegionSlice.REGION_CHUNKS - 1, chunks.maxChunkX() - regionMinChunkX),
+            Math.min(ChunkRegionSlice.REGION_CHUNKS - 1, chunks.maxChunkZ() - regionMinChunkZ)
+        );
+        return excludedChunks == null
+            ? base.equals(slice)
+            : base.excluding(excludedChunks).contains(slice);
     }
 
     public MapSyncProgress.Snapshot status() {

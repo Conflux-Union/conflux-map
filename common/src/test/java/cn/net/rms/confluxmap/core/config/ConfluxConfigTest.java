@@ -76,21 +76,21 @@ final class ConfluxConfigTest {
     @Test
     void fullscreenZoomLimitsPreserveDefaultsAndClampEditedPercentages() {
         final ConfluxConfig config = new ConfluxConfig();
-        assertEquals(16.0, config.clampFullscreenMapScale(100.0));
+        assertEquals(64.0, config.clampFullscreenMapScale(100.0));
         assertEquals(0.125, config.clampFullscreenMapScale(0.01));
 
-        config.fullscreenMinZoomPercent = 19;
+        config.fullscreenMinZoomPercent = 79;
         config.fullscreenMaxZoomPercent = 201;
         config.normalize();
         final ConfluxConfig copy = config.copy();
-        assertEquals(20, copy.fullscreenMinZoomPercent);
+        assertEquals(80, copy.fullscreenMinZoomPercent);
         assertEquals(200, copy.fullscreenMaxZoomPercent);
         assertEquals(80.0, copy.clampFullscreenMapScale(100.0));
         assertEquals(0.0625, copy.clampFullscreenMapScale(0.01));
 
         copy.fullscreenMinZoomPercent = 200;
         copy.fullscreenMaxZoomPercent = 20;
-        assertEquals(8.0, copy.clampFullscreenMapScale(100.0));
+        assertEquals(32.0, copy.clampFullscreenMapScale(100.0));
         assertEquals(0.625, copy.clampFullscreenMapScale(0.01));
         assertEquals(2.0, copy.clampFullscreenMapScale(2.0));
     }
@@ -349,6 +349,8 @@ final class ConfluxConfigTest {
         assertEquals(2, config.minimapZoomIndex);
         config.cycleMinimapZoom();
         assertEquals(3, config.minimapZoomIndex);
+        config.cycleMinimapZoom();
+        assertEquals(4, config.minimapZoomIndex);
         config.cycleMinimapZoom();
         assertEquals(0, config.minimapZoomIndex);
     }

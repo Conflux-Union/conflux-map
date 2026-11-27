@@ -18,7 +18,8 @@ final class ConfigValueLabels {
         "confluxmap.value.zoom_0_5",
         "confluxmap.value.zoom_1",
         "confluxmap.value.zoom_2",
-        "confluxmap.value.zoom_4"
+        "confluxmap.value.zoom_4",
+        "confluxmap.value.zoom_8"
     };
 
     private ConfigValueLabels() {
