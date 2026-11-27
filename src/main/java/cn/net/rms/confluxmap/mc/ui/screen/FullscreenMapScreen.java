@@ -1938,11 +1938,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         )) {
             return;
         }
-        draw.fill(
-            (int) plateLeft,
-            (int) plateTop,
-            (int) plateLeft + plateWidth,
-            (int) plateTop + plateHeight,
+        GuiShapes.fillRect(
+            draw.matrices(),
+            plateLeft,
+            plateTop,
+            plateWidth,
+            plateHeight,
             REGION_SELECT_LABEL_BACKGROUND
         );
         draw.drawTextWithShadow(
@@ -2990,7 +2991,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         for (final StructureIndex.Marker marker : visibleMarkers) {
             final float screenX = (float) (width / 2.0 + (marker.blockX() - centerX) * pxPerBlock);
             final float screenY = (float) (height / 2.0 + (marker.blockZ() - centerZ) * pxPerBlock);
-            if (mapOverlayIntersectsUi(MapOverlayBounds.structureIcon(screenX, screenY, true))) {
+            if (mapOverlayIntersectsUi(MapOverlayBounds.structureIcon(screenX, screenY))) {
                 continue;
             }
             final double hoverDistance = Math.hypot(mouseX - screenX, mouseY - screenY);
@@ -3007,7 +3008,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
             final boolean hovered = marker.equals(hoveredStructure);
             final MapOverlayBounds iconBounds = MapOverlayBounds.structureIcon(
-                screenX, screenY, hovered
+                screenX, screenY
             );
             if (!mapOverlayIntersectsUi(iconBounds)) {
                 StructureMarkerRenderer.draw(draw, marker, screenX, screenY, hovered);
@@ -3088,11 +3089,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 continue;
             }
             final boolean isHovered = marker.equals(hovered);
-            final MapOverlayBounds bounds = new MapOverlayBounds(
-                screenX - config.portalIconSize / 2f,
-                screenY - config.portalIconSize / 2f,
-                screenX + config.portalIconSize / 2f,
-                screenY + config.portalIconSize / 2f
+            final MapOverlayBounds bounds = MapOverlayBounds.portalIcon(
+                screenX, screenY, config.portalIconSize
             );
             if (mapOverlayIntersectsUi(bounds)) {
                 continue;

@@ -50,9 +50,9 @@ final class MapScreenshotOverlay {
         for (var group : groups) {
             var shot = group.get(0);
             var point = shot.location();
-            int x = (int) Math.round(width / 2.0 + (point.x() - centerX) / scale);
-            int y = (int) Math.round(height / 2.0 + (point.z() - centerZ) / scale);
-            if (x < 0 || y < 0 || x >= width || y >= height) continue;
+            float x = (float) (width / 2.0 + (point.x() - centerX) / scale);
+            float y = (float) (height / 2.0 + (point.z() - centerZ) / scale);
+            if (x < 0f || y < 0f || x >= width || y >= height) continue;
             var bounds = photos.draw(draw, map, font, x, y, group.size(), mode == MapPhotoMode.THUMBNAIL, mx, my, shot.file(), shot.rotation(),
                 () -> ConfluxMapClient.get().waypointMediaService().screenshotPixels(index().file(shot), true));
             if (bounds != null) markers.add(new Marker(bounds, group));

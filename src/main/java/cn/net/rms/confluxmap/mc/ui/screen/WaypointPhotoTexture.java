@@ -28,9 +28,9 @@ public final class WaypointPhotoTexture implements AutoCloseable {
         texture.upload();
         LIVE.add(this);
     }
-    void draw(GuiDraw draw, int x, int y, int w, int h, float zoom) {
+    void draw(GuiDraw draw, float x, float y, float w, float h, float zoom) {
         if (closed) return;
-        float scale = Math.min((float) w / width, (float) h / height) * zoom;
+        float scale = Math.min(w / width, h / height) * zoom;
         float dw = width * scale, dh = height * scale;
         // Zoom crops UVs to the fixed image viewport, keeping controls outside the image.
         float cw = Math.min(w, dw), ch = Math.min(h, dh);
@@ -39,7 +39,7 @@ public final class WaypointPhotoTexture implements AutoCloseable {
         GuiShapes.drawTintedQuad(draw.matrices(), x + (w - cw) / 2, y + (h - ch) / 2, cw, ch, u, v, 1 - u, 1 - v, 0xFFFFFFFF);
     }
 
-    void draw(GuiDraw draw, int x, int y, int w, int h, float zoom, double panX, double panY, double rotation) {
+    void draw(GuiDraw draw, float x, float y, float w, float h, float zoom, double panX, double panY, double rotation) {
         if (closed) return;
         if (panX != 0 || panY != 0 || rotation != 0) {
             drawTransformed(draw, x, y, w, h, zoom, panX, panY, (float) rotation);
@@ -48,7 +48,7 @@ public final class WaypointPhotoTexture implements AutoCloseable {
         draw(draw, x, y, w, h, zoom);
     }
 
-    private void drawTransformed(GuiDraw draw, int x, int y, int w, int h, float zoom,
+    private void drawTransformed(GuiDraw draw, float x, float y, float w, float h, float zoom,
                                  double panX, double panY, float rotation) {
         double radians = Math.toRadians(rotation);
         double sin = Math.abs(Math.sin(radians)), cos = Math.abs(Math.cos(radians));

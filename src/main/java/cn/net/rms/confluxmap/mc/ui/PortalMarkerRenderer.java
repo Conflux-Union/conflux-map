@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.core.portal.PortalKind;
+import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.render.TextureBinds;
 import java.util.Map;
@@ -29,6 +30,7 @@ import net.minecraft.util.Identifier;
  */
 public final class PortalMarkerRenderer {
     private static final int PLATE = 0x101010;
+    private static final int HOVER_TINT = 0x80FFFFFF;
     /**
      * Vanilla resource-location charset: namespace {@code [a-z0-9_.-]+}, path
      * {@code [a-z0-9_./-]+}. Validating here keeps {@link Ids#of} from throwing
@@ -48,6 +50,11 @@ public final class PortalMarkerRenderer {
             case END_PORTAL -> 0xFF52D273;
             case END_GATEWAY -> 0xFF5BC0EB;
         };
+    }
+
+    static int borderColor(final PortalKind kind, final boolean hovered) {
+        final int base = borderColor(kind);
+        return hovered ? Argb.blendOver(base, HOVER_TINT) : base;
     }
 
     static Identifier defaultTexture(final PortalKind kind) {
@@ -111,18 +118,24 @@ public final class PortalMarkerRenderer {
         final int opacityPercent,
         final boolean hovered
     ) {
-        final int iconSize = hovered ? size + 2 : size;
-        final int left = Math.round(centerX - iconSize / 2f);
-        final int top = Math.round(centerY - iconSize / 2f);
+        final float iconSize = size;
+        final float left = centerX - iconSize * 0.5f;
+        final float top = centerY - iconSize * 0.5f;
         final float opacity = Math.max(0f, Math.min(100f, opacityPercent)) / 100f;
-        draw.fill(left, top, left + iconSize, top + iconSize, alpha(0xE0000000 | PLATE, opacity));
-        draw.fill(left + 1, top + 1, left + iconSize - 1, top + iconSize - 1,
-            alpha(0xFF000000 | borderColor(kind), opacity));
-        draw.fill(left + 2, top + 2, left + iconSize - 2, top + iconSize - 2,
-            alpha(0xE0000000 | PLATE, opacity));
-        final int inset = 3;
-        final int inner = iconSize - inset * 2;
-        if (inner <= 0) {
+        GuiShapes.fillRect(draw.matrices(), left, top, iconSize, iconSize, alpha(0xE0000000 | PLATE, opacity));
+        GuiShapes.fillRect(
+            draw.matrices(),
+            left + 1f, top + 1f, iconSize - 2f, iconSize - 2f,
+            alpha(borderColor(kind, hovered), opacity)
+        );
+        GuiShapes.fillRect(
+            draw.matrices(),
+            left + 2f, top + 2f, iconSize - 4f, iconSize - 4f,
+            alpha(0xE0000000 | PLATE, opacity)
+        );
+        final float inset = 3f;
+        final float inner = iconSize - inset * 2f;
+        if (inner <= 0f) {
             return;
         }
         // Buffered fills queued earlier would paint over the texture; flush first
