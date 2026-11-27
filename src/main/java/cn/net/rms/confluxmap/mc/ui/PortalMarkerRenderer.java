@@ -53,7 +53,7 @@ public final class PortalMarkerRenderer {
     }
 
     static int borderColor(final PortalKind kind, final boolean hovered) {
-        final int base = 0xFF000000 | borderColor(kind);
+        final int base = borderColor(kind);
         return hovered ? Argb.blendOver(base, HOVER_TINT) : base;
     }
 

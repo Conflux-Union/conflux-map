@@ -8,8 +8,7 @@ record MapOverlayBounds(float left, float top, float right, float bottom) {
 
     static MapOverlayBounds structureIcon(
         final float centerX,
-        final float centerY,
-        final boolean hovered
+        final float centerY
     ) {
         final float half = StructureMarkerRenderer.SIZE * 0.5f;
         return new MapOverlayBounds(centerX - half, centerY - half, centerX + half, centerY + half);

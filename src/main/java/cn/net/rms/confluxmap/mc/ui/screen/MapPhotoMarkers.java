@@ -100,7 +100,7 @@ final class MapPhotoMarkers {
         if (width <= 4 || height <= 4) return false;
         final int x = Math.max(0, mx + width + 12 <= viewportWidth ? mx + 12 : mx - width - 8);
         final int y = Math.max(0, my + height + 12 <= viewportHeight ? my + 12 : my - height - 8);
-        GuiShapes.fillRect(draw.matrices(), x, y, width, height, 0xF0202020);
+        draw.fill(x, y, x + width, y + height, 0xF0202020);
         if (texture != null) {
             texture.draw(draw, x + 2, y + 2, width - 4, height - 4, 1, 0, 0, hoveredIcon.rotation());
         } else {
