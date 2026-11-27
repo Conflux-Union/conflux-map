@@ -75,11 +75,11 @@ final class MinimapTilePainter {
     }
 
     /**
-     * Tiles are drawn as full 256-block quads positioned relative to the player,
-     * in a coordinate space whose origin is the minimap center (the caller has
-     * already translated/rotated the matrix). Clipping crops the excess. {@code alpha}
-     * carries the HUD fade; the circle caller passes 1 and lets the canvas composite's
-     * disk tint fade the tiles once, instead of twice.
+     * Tiles are drawn as full LOD-scaled tile quads ({@code 256 << lod} blocks per edge)
+     * positioned relative to the player, in a coordinate space whose origin is the minimap
+     * center (the caller has already translated/rotated the matrix). Clipping crops the
+     * excess. {@code alpha} carries the HUD fade; the circle caller passes 1 and lets the
+     * canvas composite's disk tint fade the tiles once, instead of twice.
      */
     void drawTiles(
         final MatrixStack matrices,
@@ -129,8 +129,9 @@ final class MinimapTilePainter {
                     GuiDraw.drawTexturedQuad(
                         matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f, tint
                     );
-                } else if (lod > 0
-                    && LodFallbackResolver.resolve(key, true, textures::isFallbackUsable, fallbackQuads)) {
+                } else if (LodFallbackResolver.resolve(
+                    key, preferFinerFallback(lod), textures::isFallbackUsable, fallbackQuads
+                )) {
                     for (final LodFallbackResolver.FallbackQuad quad : fallbackQuads) {
                         if (!textures.bindFallback(quad.key())) {
                             continue;
@@ -151,6 +152,10 @@ final class MinimapTilePainter {
                 }
             }
         }
+    }
+
+    static boolean preferFinerFallback(final int lod) {
+        return lod > 0;
     }
 
     static int minimapTileLod(final float blocksPerPixel, final double windowScaleFactor) {
