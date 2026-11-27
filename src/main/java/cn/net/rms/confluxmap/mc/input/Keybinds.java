@@ -8,6 +8,9 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.EnumMap;
 import java.util.Map;
+//#if MC>=260300
+//$$ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+//#endif
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 //#if MC>=260100
 //$$ import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
@@ -38,6 +41,9 @@ public final class Keybinds {
     private final KeybindActionHandler actionHandler;
     private final MaliLibKeybindBackend maliLibBackend;
     private final KeyBinding maliLibHint;
+    //#if MC>=260300
+    //$$ private boolean negativeBindingsChecked;
+    //#endif
 
     public Keybinds(final ConfluxConfig config, final ConfigIo configIo, final LayerSelector layerSelector) {
         MaliLibKeybindBackend detectedBackend = null;
@@ -78,6 +84,9 @@ public final class Keybinds {
             maliLibHint = null;
         }
         ClientTickEvents.END_CLIENT_TICK.register(client -> poll());
+        //#if MC>=260300
+        //$$ ClientLifecycleEvents.CLIENT_STARTED.register(this::repairNegativeKeyMappings);
+        //#endif
     }
 
     private static KeyBinding register(final String name, final int key) {
@@ -130,6 +139,9 @@ public final class Keybinds {
     }
 
     private void poll() {
+        //#if MC>=260300
+        //$$ repairNegativeKeyMappingsOnce(Minecraft.getInstance());
+        //#endif
         if (maliLibBackend != null) {
             if (maliLibHint != null) {
                 maliLibBackend.syncConfigScreenKey(maliLibHint);
@@ -149,4 +161,47 @@ public final class Keybinds {
             }
         }
     }
+
+    static boolean hasNegativeKeyboardBinding(final String saveString) {
+        return saveString != null && saveString.startsWith("key.keyboard.-");
+    }
+
+    //#if MC>=260300
+    //$$ private void repairNegativeKeyMappingsOnce(final Minecraft client) {
+    //$$     if (!negativeBindingsChecked) {
+    //$$         repairNegativeKeyMappings(client);
+    //$$     }
+    //$$ }
+    //$$
+    //$$ private void repairNegativeKeyMappings(final Minecraft client) {
+    //$$     negativeBindingsChecked = true;
+    //$$     boolean repaired = false;
+    //$$     for (final KeyMapping binding : vanillaBindings.values()) {
+    //$$         if (repairNegativeKeyMapping(binding)) {
+    //$$             repaired = true;
+    //$$         }
+    //$$     }
+    //$$     if (maliLibHint != null && repairNegativeKeyMapping(maliLibHint)) {
+    //$$         repaired = true;
+    //$$     }
+    //$$     if (repaired) {
+    //$$         KeyMapping.resetMapping();
+    //$$         if (client != null && client.options != null) {
+    //$$             client.options.save();
+    //$$         }
+    //$$     }
+    //$$ }
+    //$$
+    //$$ static boolean repairNegativeKeyMapping(final KeyMapping binding) {
+    //$$     if (!hasNegativeKeyboardBinding(binding.saveString())) {
+    //$$         return false;
+    //$$     }
+    //$$     binding.setKey(InputConstants.UNKNOWN);
+    //$$     ConfluxMapMod.LOGGER.warn(
+    //$$         "Reset invalid negative keybinding '{}' from options.txt to unbound",
+    //$$         binding.getName()
+    //$$     );
+    //$$     return true;
+    //$$ }
+    //#endif
 }

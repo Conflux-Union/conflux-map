@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.compat.Keys;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import fi.dy.masa.malilib.hotkeys.KeyAction;
@@ -56,6 +57,44 @@ final class KeybindActionTest {
         assertEquals("COMMA", KeybindAction.OPEN_CONFIG.maliLibDefaultKeys());
         assertEquals("F9", KeybindAction.RELOAD_PREDICTION.maliLibDefaultKeys());
     }
+
+    @Test
+    void unboundVanillaDefaultUsesKeysUnknownAndDetectsPollutedNegativeBindings() {
+        assertEquals(Keys.UNKNOWN, KeybindAction.TEMPORARY_WAYPOINT.vanillaDefaultKey());
+        assertTrue(Keybinds.hasNegativeKeyboardBinding("key.keyboard.-1"));
+        assertTrue(Keybinds.hasNegativeKeyboardBinding("key.keyboard.-100"));
+        assertFalse(Keybinds.hasNegativeKeyboardBinding("key.keyboard.unknown"));
+        assertFalse(Keybinds.hasNegativeKeyboardBinding("key.keyboard.m"));
+        assertFalse(Keybinds.hasNegativeKeyboardBinding(""));
+        assertFalse(Keybinds.hasNegativeKeyboardBinding(null));
+    }
+
+    //#if MC>=260300
+    //$$ @Test
+    //$$ void repairNegativeKeyMappingResetsPollutedBindingToUnknown() {
+    //$$     final net.minecraft.client.KeyMapping polluted = new net.minecraft.client.KeyMapping(
+    //$$         "key.confluxmap.test_polluted",
+    //$$         com.mojang.blaze3d.platform.InputConstants.Type.KEYBOARD,
+    //$$         Keys.UNKNOWN,
+    //$$         Keybinds.CATEGORY
+    //$$     );
+    //$$     polluted.setKey(com.mojang.blaze3d.platform.InputConstants.getKey("key.keyboard.-1"));
+    //$$     assertEquals("key.keyboard.-1", polluted.saveString());
+    //$$     assertTrue(Keybinds.repairNegativeKeyMapping(polluted));
+    //$$     assertEquals(com.mojang.blaze3d.platform.InputConstants.UNKNOWN.getName(), polluted.saveString());
+    //$$     assertFalse(Keybinds.repairNegativeKeyMapping(polluted));
+    //$$
+    //$$     final net.minecraft.client.KeyMapping valid = new net.minecraft.client.KeyMapping(
+    //$$         "key.confluxmap.test_valid",
+    //$$         com.mojang.blaze3d.platform.InputConstants.Type.KEYBOARD,
+    //$$         Keys.M,
+    //$$         Keybinds.CATEGORY
+    //$$     );
+    //$$     final String before = valid.saveString();
+    //$$     assertFalse(Keybinds.repairNegativeKeyMapping(valid));
+    //$$     assertEquals(before, valid.saveString());
+    //$$ }
+    //#endif
 
     @Test
     void maliLibHotkeysAllowNativeGameKeysToRemainHeld() {

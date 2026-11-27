@@ -9,7 +9,8 @@ package cn.net.rms.confluxmap.compat;
  *
  * <p>Through 26.2 these are GLFW key symbols. 26.3 replaced GLFW with SDL and moved the codes
  * onto {@code InputConstants} with SDL values and a few renamed spellings (ENTER becomes
- * RETURN, KP_ENTER becomes NUMPADENTER, RIGHT_BRACKET becomes RBRACKET); "unknown" stays -1.
+ * RETURN, KP_ENTER becomes NUMPADENTER, RIGHT_BRACKET becomes RBRACKET); "unknown" delegates to
+ * {@code InputConstants.UNKNOWN.getValue()} (0 on 26.3 SDL, -1 on GLFW).
  * The SDL codes are not compile-time constants, so switch-case labels over these values are
  * not allowed - use {@code ==} comparisons instead.
  */
@@ -41,7 +42,7 @@ public final class Keys {
     //$$ public static final int UP = InputConstants.KEY_UP;
     //$$ public static final int Y = InputConstants.KEY_Y;
     //$$ public static final int Z = InputConstants.KEY_Z;
-    //$$ public static final int UNKNOWN = -1;
+    //$$ public static final int UNKNOWN = InputConstants.UNKNOWN.getValue();
     //$$ public static final int MOD_CONTROL = InputConstants.MOD_CONTROL;
     //$$ public static final int MOD_SHIFT = InputConstants.MOD_SHIFT;
     //$$ public static final int MOD_SUPER = InputConstants.MOD_SUPER;
