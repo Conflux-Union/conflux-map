@@ -69,6 +69,33 @@ final class KeybindActionTest {
         assertFalse(Keybinds.hasNegativeKeyboardBinding(null));
     }
 
+    //#if MC>=260300
+    //$$ @Test
+    //$$ void repairNegativeKeyMappingResetsPollutedBindingToUnknown() {
+    //$$     final net.minecraft.client.KeyMapping polluted = new net.minecraft.client.KeyMapping(
+    //$$         "key.confluxmap.test_polluted",
+    //$$         com.mojang.blaze3d.platform.InputConstants.Type.KEYBOARD,
+    //$$         Keys.UNKNOWN,
+    //$$         Keybinds.CATEGORY
+    //$$     );
+    //$$     polluted.setKey(com.mojang.blaze3d.platform.InputConstants.getKey("key.keyboard.-1"));
+    //$$     assertEquals("key.keyboard.-1", polluted.saveString());
+    //$$     assertTrue(Keybinds.repairNegativeKeyMapping(polluted));
+    //$$     assertEquals(com.mojang.blaze3d.platform.InputConstants.UNKNOWN.getName(), polluted.saveString());
+    //$$     assertFalse(Keybinds.repairNegativeKeyMapping(polluted));
+    //$$
+    //$$     final net.minecraft.client.KeyMapping valid = new net.minecraft.client.KeyMapping(
+    //$$         "key.confluxmap.test_valid",
+    //$$         com.mojang.blaze3d.platform.InputConstants.Type.KEYBOARD,
+    //$$         Keys.M,
+    //$$         Keybinds.CATEGORY
+    //$$     );
+    //$$     final String before = valid.saveString();
+    //$$     assertFalse(Keybinds.repairNegativeKeyMapping(valid));
+    //$$     assertEquals(before, valid.saveString());
+    //$$ }
+    //#endif
+
     @Test
     void maliLibHotkeysAllowNativeGameKeysToRemainHeld() {
         for (final KeybindAction action : KeybindAction.values()) {

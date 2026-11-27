@@ -192,7 +192,7 @@ public final class Keybinds {
     //$$     }
     //$$ }
     //$$
-    //$$ private static boolean repairNegativeKeyMapping(final KeyMapping binding) {
+    //$$ static boolean repairNegativeKeyMapping(final KeyMapping binding) {
     //$$     if (!hasNegativeKeyboardBinding(binding.saveString())) {
     //$$         return false;
     //$$     }
